@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using Microsoft.Win32;
 using ScottPlot;
 
+
 namespace SCPBrowser
 {
     public partial class MainControl : UserControl
@@ -16,12 +17,60 @@ namespace SCPBrowser
         private string _currentFilePath;
         private string _currentFileDirectory;
         private Dictionary<string, CellTypePredictionResult> _cellTypePredictions;
+        private readonly GoEnrichmentManager _goEnrichmentManager;
+        private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
 
         public MainControl()
         {
             InitializeComponent();
             _dataService = new ParquetDataService();
             _transcriptomicManager = new TranscriptomicManager();
+            _goEnrichmentManager = new GoEnrichmentManager();
+        }
+
+        private async System.Threading.Tasks.Task LoadGoEnrichmentAsync()
+        {
+            if (_goEnrichmentManager.IsLoaded)
+            {
+                StatusText.Text = "Running GO enrichment analysis...";
+                _goEnrichmentResults = _goEnrichmentManager.EnrichAllRuns(_currentData);
+
+                int enrichedCount = _goEnrichmentResults.Count(kvp => !string.IsNullOrEmpty(kvp.Value.TopGoTermId));
+                StatusText.Text += $" | GO enrichment: {enrichedCount}/{_currentData.TotalRawFiles} runs";
+                return;
+            }
+
+            var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            var referenceDataPath = Path.Combine(appDirectory, "ReferenceData");
+            var goAnnotationsPath = Path.Combine(referenceDataPath, "go_annotations_human.parquet");
+
+            if (File.Exists(goAnnotationsPath))
+            {
+                try
+                {
+                    StatusText.Text = "Loading GO enrichment database...";
+                    await _goEnrichmentManager.LoadDatabaseAsync(goAnnotationsPath);
+
+                    var db = _goEnrichmentManager.AnnotationDatabase;
+                    StatusText.Text = $"GO database loaded: {db.TotalProteins:N0} proteins, {db.GoTermToProteins.Count} GO terms";
+
+                    StatusText.Text = "Running GO enrichment analysis...";
+                    _goEnrichmentResults = _goEnrichmentManager.EnrichAllRuns(_currentData);
+
+                    int enrichedCount = _goEnrichmentResults.Count(kvp => !string.IsNullOrEmpty(kvp.Value.TopGoTermId));
+                    StatusText.Text += $" | GO enrichment: {enrichedCount}/{_currentData.TotalRawFiles} runs";
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Could not load GO enrichment database: {ex.Message}\n\nContinuing without GO enrichment.",
+                        "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    _goEnrichmentResults = null;
+                }
+            }
+            else
+            {
+                _goEnrichmentResults = null;
+            }
         }
 
         private async void OpenFileButton_Click(object sender, RoutedEventArgs e)
@@ -84,6 +133,7 @@ namespace SCPBrowser
                 StatusPanel.Visibility = Visibility.Visible;
 
                 await LoadTranscriptomicReferenceAsync();
+                await LoadGoEnrichmentAsync();
 
                 var targetInfo = targetIds.Count > 0
                     ? $" (tracking {targetIds.Count} target protein(s))"
@@ -208,6 +258,18 @@ namespace SCPBrowser
         {
             return _transcriptomicManager.IsLoaded
                 ? _transcriptomicManager.GenerateCellTypeColorMap()
+                : new Dictionary<string, System.Windows.Media.Color>();
+        }
+
+        public Dictionary<string, RunGoEnrichmentResult> GetGoEnrichmentResults()
+        {
+            return _goEnrichmentResults;
+        }
+
+        public Dictionary<string, System.Windows.Media.Color> GetGoTermColorMap()
+        {
+            return _goEnrichmentManager.IsLoaded && _goEnrichmentResults != null
+                ? _goEnrichmentManager.GenerateGoTermColorMap(_goEnrichmentResults)
                 : new Dictionary<string, System.Windows.Media.Color>();
         }
     }

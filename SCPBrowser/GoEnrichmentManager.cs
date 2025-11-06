@@ -6,6 +6,16 @@ using System.Threading.Tasks;
 
 namespace SCPBrowser
 {
+    public class RunGoEnrichmentResult
+    {
+        public string TopGoTermId { get; set; }
+        public string TopGoTermName { get; set; }
+        public string Namespace { get; set; }
+        public double PValue { get; set; }
+        public double FoldEnrichment { get; set; }
+        public int OverlapCount { get; set; }
+        public List<GoEnrichmentResult> AllSignificantTerms { get; set; } = new List<GoEnrichmentResult>();
+    }
 
     public class GoEnrichmentManager
     {
@@ -35,7 +45,7 @@ namespace SCPBrowser
             _analyzer = new GoEnrichmentAnalyzer(_goSlimDatabase, _annotationDatabase);
         }
 
-        public Dictionary<string, GoEnrichmentResult> EnrichAllRuns(
+        public Dictionary<string, RunGoEnrichmentResult> EnrichAllRuns(
             ProteomicsData proteomicsData,
             double pValueThreshold = 0.05,
             int minOverlap = 2)
@@ -43,7 +53,7 @@ namespace SCPBrowser
             if (!IsLoaded)
                 throw new InvalidOperationException("GO databases not loaded");
 
-            var results = new Dictionary<string, GoEnrichmentResult>();
+            var results = new Dictionary<string, RunGoEnrichmentResult>();
 
             foreach (var runName in proteomicsData.RawFileNames)
             {
@@ -54,7 +64,7 @@ namespace SCPBrowser
             return results;
         }
 
-        private GoEnrichmentResult EnrichRun(
+        private RunGoEnrichmentResult EnrichRun(
             ProteomicsData proteomicsData,
             string runName,
             double pValueThreshold,
@@ -65,7 +75,7 @@ namespace SCPBrowser
 
             if (detectedProteinIds.Count == 0)
             {
-                return new GoEnrichmentResult(); // Empty result
+                return new RunGoEnrichmentResult(); // Empty result
             }
 
             // Run enrichment analysis
@@ -76,13 +86,13 @@ namespace SCPBrowser
 
             if (enrichmentResults.Count == 0)
             {
-                return new GoEnrichmentResult(); // No significant enrichment
+                return new RunGoEnrichmentResult(); // No significant enrichment
             }
 
             // Pick top enriched term (lowest p-value)
             var topTerm = enrichmentResults.First();
 
-            return new GoEnrichmentResult
+            return new RunGoEnrichmentResult
             {
                 TopGoTermId = topTerm.GoTermId,
                 TopGoTermName = topTerm.GoTermName,
@@ -186,7 +196,7 @@ namespace SCPBrowser
         }
 
         public Dictionary<string, System.Windows.Media.Color> GenerateGoTermColorMap(
-            Dictionary<string, GoEnrichmentResult> enrichmentResults)
+            Dictionary<string, RunGoEnrichmentResult> enrichmentResults)
         {
             if (!IsLoaded)
                 return new Dictionary<string, System.Windows.Media.Color>();

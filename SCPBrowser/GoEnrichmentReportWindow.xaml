@@ -1,0 +1,135 @@
+﻿<Window x:Class="SCPBrowser.GoEnrichmentReportWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="GO Enrichment Report" 
+        Height="600" Width="900"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,15">
+            <TextBlock x:Name="RunNameText" 
+                       FontSize="16" 
+                       FontWeight="Bold"
+                       Margin="0,0,0,5"/>
+            <TextBlock x:Name="SummaryText" 
+                       FontSize="12"
+                       Foreground="#64748b"/>
+        </StackPanel>
+
+        <!-- Tabs for each GO namespace -->
+        <TabControl Grid.Row="1">
+            <TabItem Header="Biological Process">
+                <DataGrid x:Name="BiologicalProcessGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserReorderColumns="True"
+                          CanUserResizeColumns="True"
+                          CanUserSortColumns="True"
+                          GridLinesVisibility="All"
+                          HeadersVisibility="All"
+                          SelectionMode="Single"
+                          AlternatingRowBackground="#f9fafb"
+                          RowBackground="White">
+                    <DataGrid.ColumnHeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#e2e8f0"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="Padding" Value="8,5"/>
+                            <Setter Property="BorderBrush" Value="#cbd5e1"/>
+                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                        </Style>
+                    </DataGrid.ColumnHeaderStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="GO ID" Binding="{Binding GoTermId}" Width="100"/>
+                        <DataGridTextColumn Header="GO Term Name" Binding="{Binding GoTermName}" Width="*"/>
+                        <DataGridTextColumn Header="P-Value" Binding="{Binding PValue, StringFormat=E2}" Width="100"/>
+                        <DataGridTextColumn Header="Fold Enrichment" Binding="{Binding FoldEnrichment, StringFormat=F2}" Width="120"/>
+                        <DataGridTextColumn Header="Overlap" Binding="{Binding OverlapText}" Width="100"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem Header="Molecular Function">
+                <DataGrid x:Name="MolecularFunctionGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserReorderColumns="True"
+                          CanUserResizeColumns="True"
+                          CanUserSortColumns="True"
+                          GridLinesVisibility="All"
+                          HeadersVisibility="All"
+                          SelectionMode="Single"
+                          AlternatingRowBackground="#f9fafb"
+                          RowBackground="White">
+                    <DataGrid.ColumnHeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#e2e8f0"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="Padding" Value="8,5"/>
+                            <Setter Property="BorderBrush" Value="#cbd5e1"/>
+                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                        </Style>
+                    </DataGrid.ColumnHeaderStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="GO ID" Binding="{Binding GoTermId}" Width="100"/>
+                        <DataGridTextColumn Header="GO Term Name" Binding="{Binding GoTermName}" Width="*"/>
+                        <DataGridTextColumn Header="P-Value" Binding="{Binding PValue, StringFormat=E2}" Width="100"/>
+                        <DataGridTextColumn Header="Fold Enrichment" Binding="{Binding FoldEnrichment, StringFormat=F2}" Width="120"/>
+                        <DataGridTextColumn Header="Overlap" Binding="{Binding OverlapText}" Width="100"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem Header="Cellular Component">
+                <DataGrid x:Name="CellularComponentGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserReorderColumns="True"
+                          CanUserResizeColumns="True"
+                          CanUserSortColumns="True"
+                          GridLinesVisibility="All"
+                          HeadersVisibility="All"
+                          SelectionMode="Single"
+                          AlternatingRowBackground="#f9fafb"
+                          RowBackground="White">
+                    <DataGrid.ColumnHeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#e2e8f0"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="Padding" Value="8,5"/>
+                            <Setter Property="BorderBrush" Value="#cbd5e1"/>
+                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                        </Style>
+                    </DataGrid.ColumnHeaderStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="GO ID" Binding="{Binding GoTermId}" Width="100"/>
+                        <DataGridTextColumn Header="GO Term Name" Binding="{Binding GoTermName}" Width="*"/>
+                        <DataGridTextColumn Header="P-Value" Binding="{Binding PValue, StringFormat=E2}" Width="100"/>
+                        <DataGridTextColumn Header="Fold Enrichment" Binding="{Binding FoldEnrichment, StringFormat=F2}" Width="120"/>
+                        <DataGridTextColumn Header="Overlap" Binding="{Binding OverlapText}" Width="100"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+        </TabControl>
+
+        <!-- Close button -->
+        <Button Grid.Row="2" 
+                Content="Close" 
+                Click="CloseButton_Click"
+                Padding="20,5"
+                HorizontalAlignment="Right"
+                Margin="0,15,0,0"/>
+    </Grid>
+</Window>

@@ -21,6 +21,7 @@ namespace SCPBrowser
         private Dictionary<string, CellTypePredictionResult> _cellTypePredictions;
         private Dictionary<string, Color> _cellTypeColorMap;
         private bool _useCellTypeColoring = false;
+        private string _selectedRunName;
 
         private const double HoverTolerance = 12;
 
@@ -58,6 +59,14 @@ namespace SCPBrowser
             {
                 RefreshChart();
             }
+        }
+
+        public void SetGoEnrichmentResults(Dictionary<string, RunGoEnrichmentResult> results, Dictionary<string, Color> colorMap)
+        {
+            _goEnrichmentResults = results;
+            _goTermColorMap = colorMap;
+            // Don't enable the radio button - we're not using it for coloring
+            // ColorByGoTermRadio.IsEnabled = results != null && results.Count > 0;
         }
 
         private void ColorMode_Changed(object sender, RoutedEventArgs e)
@@ -394,12 +403,41 @@ namespace SCPBrowser
             }
 
             RunImage.Source = null;
+
+            // Show GO enrichment button if we have results for this run
+            if (_goEnrichmentResults != null &&
+                _goEnrichmentResults.ContainsKey(dataPoint.RunName) &&
+                _goEnrichmentResults[dataPoint.RunName].AllSignificantTerms != null &&
+                _goEnrichmentResults[dataPoint.RunName].AllSignificantTerms.Count > 0)
+            {
+                _selectedRunName = dataPoint.RunName;
+                ShowGoEnrichmentButton.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ShowGoEnrichmentButton.Visibility = Visibility.Collapsed;
+            }
         }
 
         private void ClearDetailsPanel()
         {
             RunImage.Source = null;
             DetailsText.Text = "Select a run to view details";
+            ShowGoEnrichmentButton.Visibility = Visibility.Collapsed;
+        }
+
+        private void ShowGoEnrichmentButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_selectedRunName) || _goEnrichmentResults == null)
+                return;
+
+            if (!_goEnrichmentResults.ContainsKey(_selectedRunName))
+                return;
+
+            var enrichmentResult = _goEnrichmentResults[_selectedRunName];
+            var window = new GoEnrichmentReportWindow(_selectedRunName, enrichmentResult);
+            window.Owner = Window.GetWindow(this);
+            window.ShowDialog();
         }
 
         private void PlotCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

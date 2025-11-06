@@ -42,6 +42,14 @@ namespace SCPBrowser
                     {
                         PeptideTicTab.SetCellTypePredictions(cellTypePredictions, cellTypeColorMap);
                     }
+
+                    var goEnrichmentResults = MainControlTab.GetGoEnrichmentResults();
+                    var goTermColorMap = MainControlTab.GetGoTermColorMap();
+
+                    if (goEnrichmentResults != null && goEnrichmentResults.Count > 0)
+                    {
+                        PeptideTicTab.SetGoEnrichmentResults(goEnrichmentResults, goTermColorMap);
+                    }
                 }
                 else if (MainTabControl.SelectedIndex == 2)
                 {

@@ -1,0 +1,258 @@
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace SCPBrowser
+{
+
+    public class GoEnrichmentManager
+    {
+        private GoSlimDatabase _goSlimDatabase;
+        private GoAnnotationDatabase _annotationDatabase;
+        private GoEnrichmentAnalyzer _analyzer;
+        private readonly GoAnnotationParquetService _parquetService;
+
+        public bool IsLoaded => _goSlimDatabase != null && _annotationDatabase != null && _analyzer != null;
+        public GoSlimDatabase GoSlimDatabase => _goSlimDatabase;
+        public GoAnnotationDatabase AnnotationDatabase => _annotationDatabase;
+
+        public GoEnrichmentManager()
+        {
+            _parquetService = new GoAnnotationParquetService();
+        }
+
+        public async Task LoadDatabaseAsync(string compiledParquetPath)
+        {
+            if (!File.Exists(compiledParquetPath))
+                throw new FileNotFoundException("Compiled GO annotations Parquet file not found", compiledParquetPath);
+
+            var (goSlimDb, annotationDb) = await _parquetService.ReadCompiledAnnotationsAsync(compiledParquetPath);
+
+            _goSlimDatabase = goSlimDb;
+            _annotationDatabase = annotationDb;
+            _analyzer = new GoEnrichmentAnalyzer(_goSlimDatabase, _annotationDatabase);
+        }
+
+        public Dictionary<string, GoEnrichmentResult> EnrichAllRuns(
+            ProteomicsData proteomicsData,
+            double pValueThreshold = 0.05,
+            int minOverlap = 2)
+        {
+            if (!IsLoaded)
+                throw new InvalidOperationException("GO databases not loaded");
+
+            var results = new Dictionary<string, GoEnrichmentResult>();
+
+            foreach (var runName in proteomicsData.RawFileNames)
+            {
+                var enrichmentResult = EnrichRun(proteomicsData, runName, pValueThreshold, minOverlap);
+                results[runName] = enrichmentResult;
+            }
+
+            return results;
+        }
+
+        private GoEnrichmentResult EnrichRun(
+            ProteomicsData proteomicsData,
+            string runName,
+            double pValueThreshold,
+            int minOverlap)
+        {
+            // Extract detected proteins for this run
+            var detectedProteinIds = ExtractProteinIdsForRun(proteomicsData, runName);
+
+            if (detectedProteinIds.Count == 0)
+            {
+                return new GoEnrichmentResult(); // Empty result
+            }
+
+            // Run enrichment analysis
+            var enrichmentResults = _analyzer.AnalyzeEnrichment(
+                detectedProteinIds,
+                pValueThreshold,
+                minOverlap);
+
+            if (enrichmentResults.Count == 0)
+            {
+                return new GoEnrichmentResult(); // No significant enrichment
+            }
+
+            // Pick top enriched term (lowest p-value)
+            var topTerm = enrichmentResults.First();
+
+            return new GoEnrichmentResult
+            {
+                TopGoTermId = topTerm.GoTermId,
+                TopGoTermName = topTerm.GoTermName,
+                Namespace = topTerm.Namespace,
+                PValue = topTerm.PValue,
+                FoldEnrichment = topTerm.FoldEnrichment,
+                OverlapCount = topTerm.Overlap,
+                AllSignificantTerms = enrichmentResults
+            };
+        }
+
+        private List<string> ExtractProteinIdsForRun(ProteomicsData proteomicsData, string runName)
+        {
+            var proteinIds = new HashSet<string>();
+
+            // Iterate through protein quant matrix
+            foreach (var proteinGroup in proteomicsData.ProteinQuantMatrix.Keys)
+            {
+                // Check if this protein was detected in this run
+                if (proteomicsData.ProteinQuantMatrix[proteinGroup].ContainsKey(runName))
+                {
+                    double abundance = proteomicsData.ProteinQuantMatrix[proteinGroup][runName];
+
+                    if (abundance > 0)
+                    {
+                        // Extract protein IDs from protein group string
+                        var extractedIds = ExtractProteinIds(proteinGroup);
+                        foreach (var id in extractedIds)
+                        {
+                            proteinIds.Add(id);
+                        }
+                    }
+                }
+            }
+
+            return proteinIds.ToList();
+        }
+
+        private List<string> ExtractProteinIds(string proteinGroup)
+        {
+            var ids = new List<string>();
+
+            // DIA-NN protein groups can be semicolon-separated
+            var parts = proteinGroup.Split(';', ',');
+
+            foreach (var part in parts)
+            {
+                var trimmed = part.Trim();
+                if (string.IsNullOrEmpty(trimmed))
+                    continue;
+
+                // Extract UniProt ID from various formats:
+                // - sp|P12345|PROT_HUMAN
+                // - P12345
+                // - P12345_HUMAN
+
+                string proteinId = null;
+
+                // Format: sp|P12345|PROT_HUMAN or tr|A0A0B4J2F2|...
+                if (trimmed.Contains("|"))
+                {
+                    var pipeParts = trimmed.Split('|');
+                    if (pipeParts.Length >= 2)
+                    {
+                        proteinId = pipeParts[1]; // P12345
+                    }
+                }
+                // Format: P12345_HUMAN or P12345-2 (isoform)
+                else if (trimmed.Contains("_") || trimmed.Contains("-"))
+                {
+                    // Take everything before _ or -
+                    int underscorePos = trimmed.IndexOf('_');
+                    int dashPos = trimmed.IndexOf('-');
+
+                    int splitPos = -1;
+                    if (underscorePos >= 0 && dashPos >= 0)
+                        splitPos = Math.Min(underscorePos, dashPos);
+                    else if (underscorePos >= 0)
+                        splitPos = underscorePos;
+                    else if (dashPos >= 0)
+                        splitPos = dashPos;
+
+                    if (splitPos > 0)
+                        proteinId = trimmed.Substring(0, splitPos);
+                    else
+                        proteinId = trimmed;
+                }
+                else
+                {
+                    // Already clean ID like P12345
+                    proteinId = trimmed;
+                }
+
+                if (!string.IsNullOrEmpty(proteinId))
+                {
+                    ids.Add(proteinId);
+                }
+            }
+
+            return ids;
+        }
+
+        public Dictionary<string, System.Windows.Media.Color> GenerateGoTermColorMap(
+            Dictionary<string, GoEnrichmentResult> enrichmentResults)
+        {
+            if (!IsLoaded)
+                return new Dictionary<string, System.Windows.Media.Color>();
+
+            // Collect all unique GO terms that appeared as top terms
+            var uniqueGoTerms = enrichmentResults.Values
+                .Where(r => !string.IsNullOrEmpty(r.TopGoTermId))
+                .Select(r => r.TopGoTermId)
+                .Distinct()
+                .OrderBy(g => g)
+                .ToList();
+
+            var colorMap = new Dictionary<string, System.Windows.Media.Color>();
+
+            for (int i = 0; i < uniqueGoTerms.Count; i++)
+            {
+                colorMap[uniqueGoTerms[i]] = GetDistinctColor(i, uniqueGoTerms.Count);
+            }
+
+            return colorMap;
+        }
+
+        private System.Windows.Media.Color GetDistinctColor(int index, int total)
+        {
+            double hue = (double)index / total * 360.0;
+            return HsvToRgb(hue, 0.7, 0.9);
+        }
+
+        private System.Windows.Media.Color HsvToRgb(double h, double s, double v)
+        {
+            double c = v * s;
+            double x = c * (1 - Math.Abs((h / 60.0) % 2 - 1));
+            double m = v - c;
+
+            double r, g, b;
+
+            if (h < 60)
+            {
+                r = c; g = x; b = 0;
+            }
+            else if (h < 120)
+            {
+                r = x; g = c; b = 0;
+            }
+            else if (h < 180)
+            {
+                r = 0; g = c; b = x;
+            }
+            else if (h < 240)
+            {
+                r = 0; g = x; b = c;
+            }
+            else if (h < 300)
+            {
+                r = x; g = 0; b = c;
+            }
+            else
+            {
+                r = c; g = 0; b = x;
+            }
+
+            return System.Windows.Media.Color.FromRgb(
+                (byte)((r + m) * 255),
+                (byte)((g + m) * 255),
+                (byte)((b + m) * 255)
+            );
+        }
+    }
+}

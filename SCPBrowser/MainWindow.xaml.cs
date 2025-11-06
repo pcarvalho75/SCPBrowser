@@ -129,6 +129,8 @@ namespace SCPBrowser
             }
         }
 
+        // Replace these methods in MainWindow.xaml.cs
+
         private async void CompileGoAnnotations_Click(object sender, RoutedEventArgs e)
         {
             var oboDialog = new OpenFileDialog
@@ -168,28 +170,34 @@ namespace SCPBrowser
                     oboDialog.FileName,
                     gafDialog.FileName);
 
-                // Save to Parquet
+                // Load GO Slim database for metadata
+                var goSlimParser = new GoSlimParser();
+                var goSlimDatabase = await goSlimParser.ParseOboFileAsync(oboDialog.FileName);
+
+                // Save to Parquet (now includes GO term metadata)
                 var parquetService = new GoAnnotationParquetService();
                 await parquetService.WriteCompiledAnnotationsAsync(
+                    goSlimDatabase,
                     compiledDatabase,
                     saveDialog.FileName);
 
                 // Test reading it back
-                var loadedDatabase = await parquetService.ReadCompiledAnnotationsAsync(
+                var (loadedGoSlim, loadedAnnotations) = await parquetService.ReadCompiledAnnotationsAsync(
                     saveDialog.FileName);
 
                 Mouse.OverrideCursor = null;
 
-                var sampleProteins = loadedDatabase.ProteinToGoTerms.Take(5);
+                var sampleProteins = loadedAnnotations.ProteinToGoTerms.Take(5);
                 var sampleText = string.Join("\n", sampleProteins.Select(p =>
                     $"  {p.Key}: {p.Value.Count} GO Slim terms"));
 
                 MessageBox.Show(
                     $"GO Annotations compiled and saved!\n\n" +
                     $"File: {System.IO.Path.GetFileName(saveDialog.FileName)}\n\n" +
-                    $"Proteins: {loadedDatabase.TotalProteins:N0}\n" +
-                    $"Annotations: {loadedDatabase.TotalAnnotations:N0}\n" +
-                    $"GO Slim terms: {loadedDatabase.GoTermToProteins.Count:N0}\n\n" +
+                    $"GO Terms stored: {loadedGoSlim.TotalTerms:N0}\n" +
+                    $"Proteins: {loadedAnnotations.TotalProteins:N0}\n" +
+                    $"Annotations: {loadedAnnotations.TotalAnnotations:N0}\n" +
+                    $"GO Slim terms used: {loadedAnnotations.GoTermToProteins.Count:N0}\n\n" +
                     $"Sample proteins:\n{sampleText}",
                     "Compilation Complete",
                     MessageBoxButton.OK,
@@ -269,13 +277,6 @@ namespace SCPBrowser
 
         private async void TestEnrichment_Click(object sender, RoutedEventArgs e)
         {
-            var oboDialog = new OpenFileDialog
-            {
-                Filter = "OBO files (*.obo)|*.obo|All files (*.*)|*.*",
-                Title = "Select GO Slim OBO File"
-            };
-            if (oboDialog.ShowDialog() != true) return;
-
             var parquetDialog = new OpenFileDialog
             {
                 Filter = "Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
@@ -287,11 +288,8 @@ namespace SCPBrowser
             {
                 Mouse.OverrideCursor = Cursors.Wait;
 
-                var goSlimParser = new GoSlimParser();
-                var goSlimDb = await goSlimParser.ParseOboFileAsync(oboDialog.FileName);
-
                 var parquetService = new GoAnnotationParquetService();
-                var annotationDb = await parquetService.ReadCompiledAnnotationsAsync(parquetDialog.FileName);
+                var (goSlimDb, annotationDb) = await parquetService.ReadCompiledAnnotationsAsync(parquetDialog.FileName);
 
                 // Test with a small sample of proteins (first 500)
                 var testProteins = annotationDb.ProteinToGoTerms.Keys.Take(500).ToList();

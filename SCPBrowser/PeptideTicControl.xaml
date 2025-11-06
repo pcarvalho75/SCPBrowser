@@ -1,0 +1,204 @@
+﻿<UserControl x:Class="SCPBrowser.PeptideTicControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="900">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*" MinHeight="300"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*" MinHeight="150"/>
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,10">
+            <CheckBox x:Name="LogLogCheckBox"
+                      Content="Log-Log Scale"
+                      IsChecked="True"
+                      Margin="0,0,20,0"
+                      Checked="LogLogCheckBox_Changed"
+                      Unchecked="LogLogCheckBox_Changed"/>
+
+            <TextBlock Text="Color by:" 
+                       VerticalAlignment="Center"
+                       Margin="0,0,5,0"
+                       FontWeight="SemiBold"/>
+
+            <RadioButton x:Name="ColorByTrypsinRadio"
+                         Content="Trypsin Ratio"
+                         IsChecked="True"
+                         GroupName="ColorMode"
+                         Margin="0,0,15,0"
+                         VerticalAlignment="Center"
+                         Checked="ColorMode_Changed"/>
+
+            <RadioButton x:Name="ColorByCellTypeRadio"
+                         Content="Cell Type"
+                         GroupName="ColorMode"
+                         Margin="0,0,20,0"
+                         VerticalAlignment="Center"
+                         Checked="ColorMode_Changed"
+                         IsEnabled="False"/>
+
+            <Button x:Name="ClearSelectionButton"
+                    Content="Clear Selection"
+                    Click="ClearSelectionButton_Click"
+                    Padding="10,5"
+                    IsEnabled="False"/>
+        </StackPanel>
+
+        <!-- Main content area with plot and details side by side -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" MinWidth="400"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*" MinWidth="250"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Plot area -->
+            <GroupBox Header="Peptides vs Total Ion Current per Raw File" 
+                      Grid.Column="0">
+                <Grid x:Name="PlotContainer">
+                    <Canvas x:Name="PlotCanvas" 
+                            Background="White"
+                            ClipToBounds="True"
+                            MouseMove="PlotCanvas_MouseMove"
+                            MouseLeave="PlotCanvas_MouseLeave"
+                            MouseLeftButtonDown="PlotCanvas_MouseLeftButtonDown"
+                            MouseLeftButtonUp="PlotCanvas_MouseLeftButtonUp"
+                            MouseRightButtonDown="PlotCanvas_MouseRightButtonDown"/>
+
+                    <Border x:Name="TooltipBorder"
+                            Background="White"
+                            BorderBrush="Black"
+                            BorderThickness="1"
+                            CornerRadius="3"
+                            Padding="8"
+                            Visibility="Collapsed"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top"
+                            IsHitTestVisible="False">
+                        <TextBlock x:Name="TooltipText"
+                                   FontSize="11"
+                                   FontFamily="Segoe UI"/>
+                    </Border>
+                </Grid>
+            </GroupBox>
+
+            <GridSplitter Grid.Column="1" 
+                          Width="5" 
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch"
+                          Background="#e2e8f0"/>
+
+            <!-- Details panel on the right -->
+            <GroupBox Header="Run Details" 
+                      Grid.Column="2"
+                      Padding="10">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <!-- Image display -->
+                        <Border BorderBrush="LightGray" 
+                                BorderThickness="1" 
+                                CornerRadius="3" 
+                                Padding="5" 
+                                Margin="0,0,0,10" 
+                                Background="#FFF9F9F9">
+                            <Image x:Name="RunImage" 
+                                   Stretch="Uniform" 
+                                   MaxHeight="300"
+                                   MinHeight="150"/>
+                        </Border>
+
+                        <!-- Details text -->
+                        <TextBlock x:Name="DetailsText" 
+                                   TextWrapping="Wrap" 
+                                   FontSize="11"
+                                   Foreground="#334155"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </GroupBox>
+        </Grid>
+
+        <TextBlock x:Name="StatusText" 
+                   Grid.Row="2" 
+                   Margin="0,10,0,5"
+                   Text="Load data to view scatter plot"/>
+
+        <GridSplitter Grid.Row="3" 
+                      Height="5" 
+                      HorizontalAlignment="Stretch"
+                      Background="#e2e8f0"
+                      Margin="0,5"/>
+
+        <!-- Selected points grid at bottom -->
+        <Expander Grid.Row="4"
+                  IsExpanded="True"
+                  Margin="0,5,0,0">
+            <Expander.Header>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Selected Points" 
+                               FontWeight="SemiBold"
+                               FontSize="12"
+                               Margin="0,0,10,0"/>
+                    <TextBlock x:Name="SelectionCountText" 
+                               Text=""
+                               FontSize="11"
+                               Foreground="#64748b"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Expander.Header>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <DataGrid x:Name="SelectedPointsGrid"
+                          Grid.Row="0"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserReorderColumns="True"
+                          CanUserResizeColumns="True"
+                          CanUserSortColumns="True"
+                          GridLinesVisibility="All"
+                          HeadersVisibility="All"
+                          SelectionMode="Single"
+                          SelectionChanged="SelectedPointsGrid_SelectionChanged"
+                          AlternatingRowBackground="#f9fafb"
+                          RowBackground="White">
+                    <DataGrid.ColumnHeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#e2e8f0"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="Padding" Value="8,5"/>
+                            <Setter Property="BorderBrush" Value="#cbd5e1"/>
+                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                        </Style>
+                    </DataGrid.ColumnHeaderStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Run Name" Binding="{Binding RunName}" Width="*"/>
+                        <DataGridTextColumn Header="Peptides" Binding="{Binding PeptideCount, StringFormat=N0}" Width="100"/>
+                        <DataGridTextColumn Header="TIC" Binding="{Binding TicValue, StringFormat=E2}" Width="120"/>
+                        <DataGridTextColumn Header="Proteins" Binding="{Binding ProteinCount, StringFormat=N0}" Width="100"/>
+                        <DataGridTextColumn Header="Trypsin Ratio" Binding="{Binding TrypsinRatioPercent}" Width="120"/>
+                        <DataGridTextColumn Header="Cell Type" Binding="{Binding CellType}" Width="150"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <TextBlock x:Name="SelectionStatusText" 
+                           Grid.Row="1"
+                           Margin="0,5,0,0"
+                           Text="Click a point or drag to select multiple points. Right-click a point to view details."
+                           FontStyle="Italic"
+                           Foreground="#64748b"/>
+            </Grid>
+        </Expander>
+    </Grid>
+</UserControl>

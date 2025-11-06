@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="SupportingFiles\goslim_generic.obo" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Parquet.Net" Version="5.2.0" />
+    <PackageReference Include="ScottPlot.WPF" Version="5.0.56" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="SupportingFiles\" />
+  </ItemGroup>
+
+</Project>

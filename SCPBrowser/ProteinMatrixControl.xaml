@@ -1,0 +1,80 @@
+﻿<UserControl x:Class="SCPBrowser.ProteinMatrixControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="900">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+            <TextBlock Text="Search Protein:" 
+                       VerticalAlignment="Center"
+                       Margin="0,0,5,0"/>
+
+            <TextBox x:Name="SearchTextBox"
+                     Width="250"
+                     VerticalAlignment="Center"
+                     TextChanged="SearchTextBox_TextChanged"
+                     ToolTip="Filter proteins by name or identifier"/>
+
+            <Button x:Name="ClearSearchButton"
+                    Content="Clear"
+                    Click="ClearSearchButton_Click"
+                    Padding="10,5"
+                    Margin="5,0,0,0"/>
+
+            <Button x:Name="ExportButton"
+                    Content="Export to CSV"
+                    Click="ExportButton_Click"
+                    Padding="10,5"
+                    Margin="10,0,0,0"
+                    IsEnabled="False"/>
+        </StackPanel>
+
+        <DataGrid x:Name="ProteinMatrixGrid"
+                  Grid.Row="1"
+                  AutoGenerateColumns="True"
+                  IsReadOnly="True"
+                  CanUserAddRows="False"
+                  CanUserDeleteRows="False"
+                  CanUserReorderColumns="True"
+                  CanUserResizeColumns="True"
+                  CanUserResizeRows="False"
+                  CanUserSortColumns="True"
+                  GridLinesVisibility="All"
+                  HeadersVisibility="All"
+                  SelectionMode="Extended"
+                  SelectionUnit="Cell"
+                  AlternatingRowBackground="#f9fafb"
+                  RowBackground="White"
+                  AutoGeneratingColumn="ProteinMatrixGrid_AutoGeneratingColumn">
+            <DataGrid.ColumnHeaderStyle>
+                <Style TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="#e2e8f0"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="Padding" Value="8,5"/>
+                    <Setter Property="BorderBrush" Value="#cbd5e1"/>
+                    <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                </Style>
+            </DataGrid.ColumnHeaderStyle>
+            <DataGrid.CellStyle>
+                <Style TargetType="DataGridCell">
+                    <Setter Property="Padding" Value="8,5"/>
+                    <Setter Property="BorderBrush" Value="#e2e8f0"/>
+                    <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                </Style>
+            </DataGrid.CellStyle>
+        </DataGrid>
+
+        <TextBlock x:Name="StatusText" 
+                   Grid.Row="2" 
+                   Margin="0,10,0,0"
+                   Text="Load data to view protein quantification matrix"/>
+    </Grid>
+</UserControl>

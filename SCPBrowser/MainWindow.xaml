@@ -1,0 +1,38 @@
+﻿<Window x:Class="SCPBrowser.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SCPBrowser"
+        mc:Ignorable="d"
+        Title="SCP Browser" Height="650" Width="950">
+    <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="E_xit" Click="Exit_Click"/>
+            </MenuItem>
+            <MenuItem Header="_Tools">
+                <MenuItem Header="_Convert Transcriptomic TSV to Parquet..." Click="ConvertTranscriptomic_Click"/>
+                <MenuItem Header="_Load GO Slim (Test)..." Click="LoadGoSlim_Click"/>
+                <MenuItem Header="Load GOA" Click="LoadGoa_Click"/>
+                <MenuItem Header="Compile GO Annotations" Click="CompileGoAnnotations_Click"/>
+                <MenuItem Header="Test Enrichment" Click="TestEnrichment_Click"/>
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_About" Click="About_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <TabControl x:Name="MainTabControl" SelectionChanged="MainTabControl_SelectionChanged">
+            <TabItem Header="Protein Groups">
+                <local:MainControl x:Name="MainControlTab"/>
+            </TabItem>
+            <TabItem Header="Peptides vs TIC">
+                <local:PeptideTicControl x:Name="PeptideTicTab"/>
+            </TabItem>
+            <TabItem Header="Protein Matrix">
+                <local:ProteinMatrixControl x:Name="ProteinMatrixTab"/>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

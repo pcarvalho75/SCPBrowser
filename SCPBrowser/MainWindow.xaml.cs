@@ -10,6 +10,7 @@ using System.Windows.Navigation;
 using System.Windows.Shapes;
 using Microsoft.Win32;
 using System.IO;
+using Path = System.IO.Path;
 
 namespace SCPBrowser
 {
@@ -161,9 +162,9 @@ namespace SCPBrowser
 
             var saveDialog = new SaveFileDialog
             {
-                Filter = "Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
+                Filter = "SQLite Database (*.db)|*.db|All files (*.*)|*.*",
                 Title = "Save Compiled Annotations",
-                FileName = "go_annotations_human.parquet"
+                FileName = "go_annotations_human.db"
             };
 
             if (saveDialog.ShowDialog() != true)
@@ -182,18 +183,21 @@ namespace SCPBrowser
                 var goSlimParser = new GoSlimParser();
                 var goSlimDatabase = await goSlimParser.ParseOboFileAsync(oboDialog.FileName);
 
-                // Save to Parquet (now includes GO term metadata)
-                var parquetService = new GoAnnotationParquetService();
-                await parquetService.WriteCompiledAnnotationsAsync(
+                // Save to SQLite
+                var sqliteService = new GoAnnotationSqliteService();
+                await sqliteService.WriteCompiledAnnotationsAsync(
                     goSlimDatabase,
                     compiledDatabase,
                     saveDialog.FileName);
 
                 // Test reading it back
-                var (loadedGoSlim, loadedAnnotations) = await parquetService.ReadCompiledAnnotationsAsync(
+                var (loadedGoSlim, loadedAnnotations) = await sqliteService.ReadCompiledAnnotationsAsync(
                     saveDialog.FileName);
 
                 Mouse.OverrideCursor = null;
+
+                var fileInfo = new FileInfo(saveDialog.FileName);
+                var fileSizeMB = fileInfo.Length / (1024.0 * 1024.0);
 
                 var sampleProteins = loadedAnnotations.ProteinToGoTerms.Take(5);
                 var sampleText = string.Join("\n", sampleProteins.Select(p =>
@@ -201,7 +205,8 @@ namespace SCPBrowser
 
                 MessageBox.Show(
                     $"GO Annotations compiled and saved!\n\n" +
-                    $"File: {System.IO.Path.GetFileName(saveDialog.FileName)}\n\n" +
+                    $"File: {Path.GetFileName(saveDialog.FileName)}\n" +
+                    $"Size: {fileSizeMB:F2} MB\n\n" +
                     $"GO Terms stored: {loadedGoSlim.TotalTerms:N0}\n" +
                     $"Proteins: {loadedAnnotations.TotalProteins:N0}\n" +
                     $"Annotations: {loadedAnnotations.TotalAnnotations:N0}\n" +

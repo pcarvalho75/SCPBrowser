@@ -22,6 +22,8 @@ namespace SCPBrowser
         private Dictionary<string, Color> _cellTypeColorMap;
         private bool _useCellTypeColoring = false;
         private string _selectedRunName;
+        private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
+        private Dictionary<string, Color> _goTermColorMap;
 
         private const double HoverTolerance = 12;
 

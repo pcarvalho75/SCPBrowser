@@ -22,7 +22,7 @@ namespace SCPBrowser
         private GoSlimDatabase _goSlimDatabase;
         private GoAnnotationDatabase _annotationDatabase;
         private GoEnrichmentAnalyzer _analyzer;
-        private readonly GoAnnotationParquetService _parquetService;
+        private readonly GoAnnotationSqliteService _sqliteService;
 
         public bool IsLoaded => _goSlimDatabase != null && _annotationDatabase != null && _analyzer != null;
         public GoSlimDatabase GoSlimDatabase => _goSlimDatabase;
@@ -30,15 +30,15 @@ namespace SCPBrowser
 
         public GoEnrichmentManager()
         {
-            _parquetService = new GoAnnotationParquetService();
+            _sqliteService = new GoAnnotationSqliteService();
         }
 
-        public async Task LoadDatabaseAsync(string compiledParquetPath)
+        public async Task LoadDatabaseAsync(string sqlitePath)
         {
-            if (!File.Exists(compiledParquetPath))
-                throw new FileNotFoundException("Compiled GO annotations Parquet file not found", compiledParquetPath);
+            if (!File.Exists(sqlitePath))
+                throw new FileNotFoundException("Compiled GO annotations SQLite file not found", sqlitePath);
 
-            var (goSlimDb, annotationDb) = await _parquetService.ReadCompiledAnnotationsAsync(compiledParquetPath);
+            var (goSlimDb, annotationDb) = await _sqliteService.ReadCompiledAnnotationsAsync(sqlitePath);
 
             _goSlimDatabase = goSlimDb;
             _annotationDatabase = annotationDb;

@@ -42,7 +42,7 @@ namespace SCPBrowser
 
             var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
             var referenceDataPath = Path.Combine(appDirectory, "ReferenceData");
-            var goAnnotationsPath = Path.Combine(referenceDataPath, "go_annotations_human.parquet");
+            var goAnnotationsPath = Path.Combine(referenceDataPath, "go_annotations_human.db");
 
             if (File.Exists(goAnnotationsPath))
             {

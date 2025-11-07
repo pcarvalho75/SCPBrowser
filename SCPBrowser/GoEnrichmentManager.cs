@@ -22,7 +22,7 @@ namespace SCPBrowser
         private GoSlimDatabase _goSlimDatabase;
         private GoAnnotationDatabase _annotationDatabase;
         private GoEnrichmentAnalyzer _analyzer;
-        private readonly GoAnnotationSqliteService _sqliteService;
+        private readonly ReferenceDataService _referenceService;
 
         public bool IsLoaded => _goSlimDatabase != null && _annotationDatabase != null && _analyzer != null;
         public GoSlimDatabase GoSlimDatabase => _goSlimDatabase;
@@ -30,15 +30,15 @@ namespace SCPBrowser
 
         public GoEnrichmentManager()
         {
-            _sqliteService = new GoAnnotationSqliteService();
+            _referenceService = new ReferenceDataService();
         }
 
-        public async Task LoadDatabaseAsync(string sqlitePath)
+        public async Task LoadDatabaseAsync(string databasePath)
         {
-            if (!File.Exists(sqlitePath))
-                throw new FileNotFoundException("Compiled GO annotations SQLite file not found", sqlitePath);
+            if (!File.Exists(databasePath))
+                throw new FileNotFoundException("Reference database not found", databasePath);
 
-            var (goSlimDb, annotationDb) = await _sqliteService.ReadCompiledAnnotationsAsync(sqlitePath);
+            var (goSlimDb, annotationDb) = await _referenceService.LoadGoAnnotationsAsync(databasePath);
 
             _goSlimDatabase = goSlimDb;
             _annotationDatabase = annotationDb;
@@ -70,15 +70,13 @@ namespace SCPBrowser
             double pValueThreshold,
             int minOverlap)
         {
-            // Extract detected proteins for this run
             var detectedProteinIds = ExtractProteinIdsForRun(proteomicsData, runName);
 
             if (detectedProteinIds.Count == 0)
             {
-                return new RunGoEnrichmentResult(); // Empty result
+                return new RunGoEnrichmentResult();
             }
 
-            // Run enrichment analysis
             var enrichmentResults = _analyzer.AnalyzeEnrichment(
                 detectedProteinIds,
                 pValueThreshold,
@@ -86,10 +84,9 @@ namespace SCPBrowser
 
             if (enrichmentResults.Count == 0)
             {
-                return new RunGoEnrichmentResult(); // No significant enrichment
+                return new RunGoEnrichmentResult();
             }
 
-            // Pick top enriched term (lowest p-value)
             var topTerm = enrichmentResults.First();
 
             return new RunGoEnrichmentResult
@@ -108,17 +105,14 @@ namespace SCPBrowser
         {
             var proteinIds = new HashSet<string>();
 
-            // Iterate through protein quant matrix
             foreach (var proteinGroup in proteomicsData.ProteinQuantMatrix.Keys)
             {
-                // Check if this protein was detected in this run
                 if (proteomicsData.ProteinQuantMatrix[proteinGroup].ContainsKey(runName))
                 {
                     double abundance = proteomicsData.ProteinQuantMatrix[proteinGroup][runName];
 
                     if (abundance > 0)
                     {
-                        // Extract protein IDs from protein group string
                         var extractedIds = ExtractProteinIds(proteinGroup);
                         foreach (var id in extractedIds)
                         {
@@ -135,7 +129,6 @@ namespace SCPBrowser
         {
             var ids = new List<string>();
 
-            // DIA-NN protein groups can be semicolon-separated
             var parts = proteinGroup.Split(';', ',');
 
             foreach (var part in parts)
@@ -144,26 +137,18 @@ namespace SCPBrowser
                 if (string.IsNullOrEmpty(trimmed))
                     continue;
 
-                // Extract UniProt ID from various formats:
-                // - sp|P12345|PROT_HUMAN
-                // - P12345
-                // - P12345_HUMAN
-
                 string proteinId = null;
 
-                // Format: sp|P12345|PROT_HUMAN or tr|A0A0B4J2F2|...
                 if (trimmed.Contains("|"))
                 {
                     var pipeParts = trimmed.Split('|');
                     if (pipeParts.Length >= 2)
                     {
-                        proteinId = pipeParts[1]; // P12345
+                        proteinId = pipeParts[1];
                     }
                 }
-                // Format: P12345_HUMAN or P12345-2 (isoform)
                 else if (trimmed.Contains("_") || trimmed.Contains("-"))
                 {
-                    // Take everything before _ or -
                     int underscorePos = trimmed.IndexOf('_');
                     int dashPos = trimmed.IndexOf('-');
 
@@ -182,7 +167,6 @@ namespace SCPBrowser
                 }
                 else
                 {
-                    // Already clean ID like P12345
                     proteinId = trimmed;
                 }
 
@@ -201,7 +185,6 @@ namespace SCPBrowser
             if (!IsLoaded)
                 return new Dictionary<string, System.Windows.Media.Color>();
 
-            // Collect all unique GO terms that appeared as top terms
             var uniqueGoTerms = enrichmentResults.Values
                 .Where(r => !string.IsNullOrEmpty(r.TopGoTermId))
                 .Select(r => r.TopGoTermId)

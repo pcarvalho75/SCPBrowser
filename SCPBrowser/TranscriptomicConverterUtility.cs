@@ -6,13 +6,13 @@ namespace SCPBrowser
 {
     public class TranscriptomicConverterUtility
     {
-        public static async Task ConvertTsvToParquetAsync(
+        public static async Task ConvertTsvToSqliteAsync(
             string expressionTsvPath,
             string metadataTsvPath,
-            string outputDirectory)
+            string outputDatabasePath)
         {
             var parser = new TranscriptomicTsvParser();
-            var parquetService = new TranscriptomicParquetService();
+            var referenceService = new ReferenceDataService();
 
             Console.WriteLine("Parsing gene expression matrix...");
             var expressionRecords = await parser.ParseGeneExpressionMatrixAsync(expressionTsvPath);
@@ -22,21 +22,20 @@ namespace SCPBrowser
             var metadata = await parser.ParseCellMetadataAsync(metadataTsvPath);
             Console.WriteLine($"Loaded metadata for {metadata.Count:N0} cells");
 
-            Directory.CreateDirectory(outputDirectory);
+            Console.WriteLine("Creating SQLite database...");
+            await referenceService.CreateDatabaseAsync(outputDatabasePath);
 
-            var expressionParquetPath = Path.Combine(outputDirectory, "transcriptomic_expression.parquet");
-            var metadataParquetPath = Path.Combine(outputDirectory, "transcriptomic_metadata.parquet");
-
-            Console.WriteLine("Writing gene expression to Parquet...");
-            await parquetService.WriteGeneExpressionAsync(expressionRecords, expressionParquetPath);
-
-            Console.WriteLine("Writing cell metadata to Parquet...");
-            await parquetService.WriteCellMetadataAsync(metadata, metadataParquetPath);
+            Console.WriteLine("Writing transcriptomic data to database...");
+            await referenceService.WriteTranscriptomicDataAsync(
+                outputDatabasePath,
+                expressionRecords,
+                metadata);
 
             Console.WriteLine($"Conversion complete!");
-            Console.WriteLine($"Output files:");
-            Console.WriteLine($"  {expressionParquetPath}");
-            Console.WriteLine($"  {metadataParquetPath}");
+            Console.WriteLine($"Output database: {outputDatabasePath}");
+
+            var fileInfo = new FileInfo(outputDatabasePath);
+            Console.WriteLine($"Database size: {fileInfo.Length / (1024.0 * 1024.0):F2} MB");
         }
     }
 }

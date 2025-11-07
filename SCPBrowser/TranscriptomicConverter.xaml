@@ -19,7 +19,7 @@
         <TextBlock Grid.Row="0" 
                    TextWrapping="Wrap"
                    Margin="0,0,0,20"
-                   Text="Convert TSV files to Parquet format for cell type prediction reference database."/>
+                   Text="Convert TSV files to SQLite database for cell type prediction reference."/>
 
         <Grid Grid.Row="1" Margin="0,0,0,10">
             <Grid.ColumnDefinitions>
@@ -71,7 +71,7 @@
             </Grid.ColumnDefinitions>
 
             <TextBlock Grid.Column="0" 
-                       Text="Output Directory:" 
+                       Text="Output Database:" 
                        VerticalAlignment="Center"
                        Width="160"/>
             <TextBox Grid.Column="1" 
@@ -89,7 +89,7 @@
                    FontSize="10"
                    Foreground="Gray"
                    TextWrapping="Wrap"
-                   Text="You can type or paste the path directly, or use Browse to select a file in the target folder"/>
+                   Text="Specify the path for the SQLite database file (e.g., reference_data.db)"/>
 
         <StackPanel Grid.Row="6" 
                     Orientation="Horizontal" 

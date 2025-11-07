@@ -28,6 +28,51 @@ namespace SCPBrowser
             _goEnrichmentManager = new GoEnrichmentManager();
         }
 
+        private async System.Threading.Tasks.Task LoadTranscriptomicReferenceAsync()
+        {
+            if (_transcriptomicManager.IsLoaded)
+            {
+                StatusText.Text = "Predicting cell types...";
+                _cellTypePredictions = _transcriptomicManager.PredictCellTypesForAllRuns(_currentData);
+
+                int predictedCount = _cellTypePredictions.Count(kvp => kvp.Value.TopCellType != null);
+                StatusText.Text += $" | Cell type predictions: {predictedCount}/{_currentData.TotalRawFiles}";
+                return;
+            }
+
+            var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            var referenceDataPath = Path.Combine(appDirectory, "ReferenceData");
+            var databasePath = Path.Combine(referenceDataPath, "reference_data.db");
+
+            if (File.Exists(databasePath))
+            {
+                try
+                {
+                    StatusText.Text = "Loading transcriptomic reference database...";
+                    await _transcriptomicManager.LoadDatabaseAsync(databasePath);
+
+                    var db = _transcriptomicManager.Database;
+                    StatusText.Text = $"Reference loaded: {db.TotalGenes:N0} genes, {db.TotalCells:N0} cells, {db.TotalCellTypes} cell types";
+
+                    StatusText.Text = "Predicting cell types...";
+                    _cellTypePredictions = _transcriptomicManager.PredictCellTypesForAllRuns(_currentData);
+
+                    int predictedCount = _cellTypePredictions.Count(kvp => kvp.Value.TopCellType != null);
+                    StatusText.Text += $" | Predictions: {predictedCount}/{_currentData.TotalRawFiles}";
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Could not load transcriptomic reference: {ex.Message}\n\nContinuing without cell type predictions.",
+                        "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    _cellTypePredictions = null;
+                }
+            }
+            else
+            {
+                _cellTypePredictions = null;
+            }
+        }
+
         private async System.Threading.Tasks.Task LoadGoEnrichmentAsync()
         {
             if (_goEnrichmentManager.IsLoaded)
@@ -42,14 +87,14 @@ namespace SCPBrowser
 
             var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
             var referenceDataPath = Path.Combine(appDirectory, "ReferenceData");
-            var goAnnotationsPath = Path.Combine(referenceDataPath, "go_annotations_human.db");
+            var databasePath = Path.Combine(referenceDataPath, "reference_data.db");
 
-            if (File.Exists(goAnnotationsPath))
+            if (File.Exists(databasePath))
             {
                 try
                 {
                     StatusText.Text = "Loading GO enrichment database...";
-                    await _goEnrichmentManager.LoadDatabaseAsync(goAnnotationsPath);
+                    await _goEnrichmentManager.LoadDatabaseAsync(databasePath);
 
                     var db = _goEnrichmentManager.AnnotationDatabase;
                     StatusText.Text = $"GO database loaded: {db.TotalProteins:N0} proteins, {db.GoTermToProteins.Count} GO terms";
@@ -150,52 +195,6 @@ namespace SCPBrowser
             {
                 OpenFileButton.IsEnabled = true;
                 ReloadButton.IsEnabled = !string.IsNullOrEmpty(_currentFilePath);
-            }
-        }
-
-        private async System.Threading.Tasks.Task LoadTranscriptomicReferenceAsync()
-        {
-            if (_transcriptomicManager.IsLoaded)
-            {
-                StatusText.Text = "Predicting cell types...";
-                _cellTypePredictions = _transcriptomicManager.PredictCellTypesForAllRuns(_currentData);
-
-                int predictedCount = _cellTypePredictions.Count(kvp => kvp.Value.TopCellType != null);
-                StatusText.Text += $" | Cell type predictions: {predictedCount}/{_currentData.TotalRawFiles}";
-                return;
-            }
-
-            var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
-            var referenceDataPath = Path.Combine(appDirectory, "ReferenceData");
-            var expressionPath = Path.Combine(referenceDataPath, "transcriptomic_expression.parquet");
-            var metadataPath = Path.Combine(referenceDataPath, "transcriptomic_metadata.parquet");
-
-            if (File.Exists(expressionPath) && File.Exists(metadataPath))
-            {
-                try
-                {
-                    StatusText.Text = "Loading transcriptomic reference database...";
-                    await _transcriptomicManager.LoadDatabaseAsync(expressionPath, metadataPath);
-
-                    var db = _transcriptomicManager.Database;
-                    StatusText.Text = $"Reference loaded: {db.TotalGenes:N0} genes, {db.TotalCells:N0} cells, {db.TotalCellTypes} cell types";
-
-                    StatusText.Text = "Predicting cell types...";
-                    _cellTypePredictions = _transcriptomicManager.PredictCellTypesForAllRuns(_currentData);
-
-                    int predictedCount = _cellTypePredictions.Count(kvp => kvp.Value.TopCellType != null);
-                    StatusText.Text += $" | Predictions: {predictedCount}/{_currentData.TotalRawFiles}";
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Could not load transcriptomic reference: {ex.Message}\n\nContinuing without cell type predictions.",
-                        "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    _cellTypePredictions = null;
-                }
-            }
-            else
-            {
-                _cellTypePredictions = null;
             }
         }
 

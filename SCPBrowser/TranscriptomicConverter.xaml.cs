@@ -8,7 +8,7 @@ namespace SCPBrowser
     {
         public string ExpressionFilePath { get; private set; }
         public string MetadataFilePath { get; private set; }
-        public string OutputDirectory { get; private set; }
+        public string OutputDatabasePath { get; private set; }
 
         public TranscriptomicConverterDialog()
         {
@@ -16,9 +16,9 @@ namespace SCPBrowser
 
             // Default to ReferenceData folder in application directory
             var appDir = AppDomain.CurrentDomain.BaseDirectory;
-            var defaultOutput = Path.Combine(appDir, "ReferenceData");
+            var defaultOutput = Path.Combine(appDir, "ReferenceData", "reference_data.db");
             OutputDirectoryTextBox.Text = defaultOutput;
-            OutputDirectory = defaultOutput;
+            OutputDatabasePath = defaultOutput;
         }
 
         private void BrowseExpression_Click(object sender, RoutedEventArgs e)
@@ -34,12 +34,13 @@ namespace SCPBrowser
                 ExpressionFileTextBox.Text = dialog.FileName;
                 ExpressionFilePath = dialog.FileName;
 
-                // Auto-suggest output directory based on input file location
+                // Auto-suggest output path based on input file location
                 if (string.IsNullOrEmpty(MetadataFilePath))
                 {
                     var inputDir = Path.GetDirectoryName(dialog.FileName);
-                    OutputDirectoryTextBox.Text = inputDir;
-                    OutputDirectory = inputDir;
+                    var suggestedPath = Path.Combine(inputDir, "reference_data.db");
+                    OutputDirectoryTextBox.Text = suggestedPath;
+                    OutputDatabasePath = suggestedPath;
                 }
             }
         }
@@ -61,25 +62,23 @@ namespace SCPBrowser
 
         private void BrowseOutput_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new OpenFileDialog
+            var dialog = new SaveFileDialog
             {
-                Filter = "All files (*.*)|*.*",
-                Title = "Select any file in the output directory (we'll use its folder)",
-                CheckFileExists = false,
-                FileName = "Select Folder"
+                Filter = "SQLite Database (*.db)|*.db|All files (*.*)|*.*",
+                Title = "Save Reference Database As",
+                FileName = "reference_data.db"
             };
 
             if (dialog.ShowDialog() == true)
             {
-                var directory = Path.GetDirectoryName(dialog.FileName);
-                OutputDirectoryTextBox.Text = directory;
-                OutputDirectory = directory;
+                OutputDirectoryTextBox.Text = dialog.FileName;
+                OutputDatabasePath = dialog.FileName;
             }
         }
 
         private void OutputDirectory_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         {
-            OutputDirectory = OutputDirectoryTextBox.Text;
+            OutputDatabasePath = OutputDirectoryTextBox.Text;
         }
 
         private void Convert_Click(object sender, RoutedEventArgs e)
@@ -98,9 +97,9 @@ namespace SCPBrowser
                 return;
             }
 
-            if (string.IsNullOrEmpty(OutputDirectory))
+            if (string.IsNullOrEmpty(OutputDatabasePath))
             {
-                MessageBox.Show("Please select an output directory.", "Validation Error",
+                MessageBox.Show("Please select an output database path.", "Validation Error",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }

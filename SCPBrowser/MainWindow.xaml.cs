@@ -68,20 +68,23 @@ namespace SCPBrowser
                 {
                     Mouse.OverrideCursor = Cursors.Wait;
 
-                    await TranscriptomicConverterUtility.ConvertTsvToParquetAsync(
+                    await TranscriptomicConverterUtility.ConvertTsvToSqliteAsync(
                         dialog.ExpressionFilePath,
                         dialog.MetadataFilePath,
-                        dialog.OutputDirectory);
+                        dialog.OutputDatabasePath);
 
                     Mouse.OverrideCursor = null;
 
+                    var fileInfo = new FileInfo(dialog.OutputDatabasePath);
+                    var fileSizeMB = fileInfo.Length / (1024.0 * 1024.0);
+
                     MessageBox.Show(
                         $"Conversion completed successfully!\n\n" +
-                        $"Files created in:\n{dialog.OutputDirectory}\n\n" +
-                        $"Files:\n" +
-                        $"- transcriptomic_expression.parquet\n" +
-                        $"- transcriptomic_metadata.parquet\n\n" +
-                        $"Copy these files to the 'ReferenceData' folder in your application directory.",
+                        $"Database created:\n{dialog.OutputDatabasePath}\n\n" +
+                        $"Size: {fileSizeMB:F2} MB\n\n" +
+                        $"This database now contains the transcriptomic reference data.\n" +
+                        $"You can now add GO annotations to this same database using\n" +
+                        $"Tools > Compile GO Annotations.",
                         "Conversion Complete",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
@@ -97,48 +100,6 @@ namespace SCPBrowser
                 }
             }
         }
-
-        private async void LoadGoa_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new OpenFileDialog
-            {
-                Filter = "GAF files (*.gaf)|*.gaf|All files (*.*)|*.*",
-                Title = "Select GOA GAF File"
-            };
-
-            if (dialog.ShowDialog() != true)
-                return;
-
-            try
-            {
-                Mouse.OverrideCursor = Cursors.Wait;
-
-                var parser = new GoAnnotationParser();
-                var database = await parser.ParseAndBuildDatabaseAsync(dialog.FileName);
-
-                Mouse.OverrideCursor = null;
-
-                MessageBox.Show(
-                    $"GOA loaded successfully!\n\n" +
-                    $"Total Proteins: {database.TotalProteins:N0}\n" +
-                    $"Total Annotations: {database.TotalAnnotations:N0}\n" +
-                    $"Unique GO Terms: {database.GoTermToProteins.Count:N0}",
-                    "GOA Test",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                Mouse.OverrideCursor = null;
-                MessageBox.Show(
-                    $"Error loading GOA:\n\n{ex.Message}",
-                    "Load Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-            }
-        }
-
-        // Replace these methods in MainWindow.xaml.cs
 
         private async void CompileGoAnnotations_Click(object sender, RoutedEventArgs e)
         {
@@ -163,8 +124,8 @@ namespace SCPBrowser
             var saveDialog = new SaveFileDialog
             {
                 Filter = "SQLite Database (*.db)|*.db|All files (*.*)|*.*",
-                Title = "Save Compiled Annotations",
-                FileName = "go_annotations_human.db"
+                Title = "Select Reference Database (will be created or appended to)",
+                FileName = "reference_data.db"
             };
 
             if (saveDialog.ShowDialog() != true)
@@ -174,24 +135,32 @@ namespace SCPBrowser
             {
                 Mouse.OverrideCursor = Cursors.Wait;
 
+                // Parse GO Slim OBO
+                var goSlimParser = new GoSlimParser();
+                var goSlimDatabase = await goSlimParser.ParseOboFileAsync(oboDialog.FileName);
+
+                // Compile annotations from GAF
                 var compiler = new GoAnnotationCompiler();
                 var compiledDatabase = await compiler.CompileAnnotationsAsync(
                     oboDialog.FileName,
                     gafDialog.FileName);
 
-                // Load GO Slim database for metadata
-                var goSlimParser = new GoSlimParser();
-                var goSlimDatabase = await goSlimParser.ParseOboFileAsync(oboDialog.FileName);
+                // Create or append to database
+                var referenceService = new ReferenceDataService();
 
-                // Save to SQLite
-                var sqliteService = new GoAnnotationSqliteService();
-                await sqliteService.WriteCompiledAnnotationsAsync(
+                if (!File.Exists(saveDialog.FileName))
+                {
+                    await referenceService.CreateDatabaseAsync(saveDialog.FileName);
+                }
+
+                // Write GO annotations
+                await referenceService.WriteGoAnnotationsAsync(
+                    saveDialog.FileName,
                     goSlimDatabase,
-                    compiledDatabase,
-                    saveDialog.FileName);
+                    compiledDatabase);
 
                 // Test reading it back
-                var (loadedGoSlim, loadedAnnotations) = await sqliteService.ReadCompiledAnnotationsAsync(
+                var (loadedGoSlim, loadedAnnotations) = await referenceService.LoadGoAnnotationsAsync(
                     saveDialog.FileName);
 
                 Mouse.OverrideCursor = null;
@@ -211,7 +180,9 @@ namespace SCPBrowser
                     $"Proteins: {loadedAnnotations.TotalProteins:N0}\n" +
                     $"Annotations: {loadedAnnotations.TotalAnnotations:N0}\n" +
                     $"GO Slim terms used: {loadedAnnotations.GoTermToProteins.Count:N0}\n\n" +
-                    $"Sample proteins:\n{sampleText}",
+                    $"Sample proteins:\n{sampleText}\n\n" +
+                    $"Copy this database to the 'ReferenceData' folder\n" +
+                    $"in your application directory.",
                     "Compilation Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -271,38 +242,63 @@ namespace SCPBrowser
             }
         }
 
-        private void About_Click(object sender, RoutedEventArgs e)
+        private async void LoadGoa_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show(
-                "SCP Browser - Single Cell Proteomics Analysis Tool\n\n" +
-                "Version 1.0\n\n" +
-                "Developed at Fiocruz\n" +
-                "Computational Proteomics",
-                "About SCP Browser",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-        }
-
-        private void Exit_Click(object sender, RoutedEventArgs e)
-        {
-            Application.Current.Shutdown();
-        }
-
-        private async void TestEnrichment_Click(object sender, RoutedEventArgs e)
-        {
-            var parquetDialog = new OpenFileDialog
+            var dialog = new OpenFileDialog
             {
-                Filter = "Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
-                Title = "Select Compiled GO Annotations Parquet"
+                Filter = "GAF files (*.gaf)|*.gaf|All files (*.*)|*.*",
+                Title = "Select GOA GAF File"
             };
-            if (parquetDialog.ShowDialog() != true) return;
+
+            if (dialog.ShowDialog() != true)
+                return;
 
             try
             {
                 Mouse.OverrideCursor = Cursors.Wait;
 
-                var parquetService = new GoAnnotationParquetService();
-                var (goSlimDb, annotationDb) = await parquetService.ReadCompiledAnnotationsAsync(parquetDialog.FileName);
+                var parser = new GoAnnotationParser();
+                var database = await parser.ParseAndBuildDatabaseAsync(dialog.FileName);
+
+                Mouse.OverrideCursor = null;
+
+                MessageBox.Show(
+                    $"GOA loaded successfully!\n\n" +
+                    $"Total Proteins: {database.TotalProteins:N0}\n" +
+                    $"Total Annotations: {database.TotalAnnotations:N0}\n" +
+                    $"Unique GO Terms: {database.GoTermToProteins.Count:N0}",
+                    "GOA Test",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                Mouse.OverrideCursor = null;
+                MessageBox.Show(
+                    $"Error loading GOA:\n\n{ex.Message}",
+                    "Load Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private async void TestEnrichment_Click(object sender, RoutedEventArgs e)
+        {
+            var databaseDialog = new OpenFileDialog
+            {
+                Filter = "SQLite Database (*.db)|*.db|All files (*.*)|*.*",
+                Title = "Select Reference Database"
+            };
+
+            if (databaseDialog.ShowDialog() != true)
+                return;
+
+            try
+            {
+                Mouse.OverrideCursor = Cursors.Wait;
+
+                var referenceService = new ReferenceDataService();
+                var (goSlimDb, annotationDb) = await referenceService.LoadGoAnnotationsAsync(databaseDialog.FileName);
 
                 // Test with a small sample of proteins (first 500)
                 var testProteins = annotationDb.ProteinToGoTerms.Keys.Take(500).ToList();
@@ -331,6 +327,23 @@ namespace SCPBrowser
                 MessageBox.Show($"Error:\n\n{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void About_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show(
+                "SCP Browser - Single Cell Proteomics Analysis Tool\n\n" +
+                "Version 1.0\n\n" +
+                "Developed at Fiocruz\n" +
+                "Computational Proteomics",
+                "About SCP Browser",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+
+        private void Exit_Click(object sender, RoutedEventArgs e)
+        {
+            Application.Current.Shutdown();
         }
     }
 }

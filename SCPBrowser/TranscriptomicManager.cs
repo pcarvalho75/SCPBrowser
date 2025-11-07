@@ -10,25 +10,22 @@ namespace SCPBrowser
     {
         private TranscriptomicDatabase _database;
         private CellTypePredictor _predictor;
-        private readonly TranscriptomicParquetService _parquetService;
+        private readonly ReferenceDataService _referenceService;
 
         public bool IsLoaded => _database != null && _predictor != null;
         public TranscriptomicDatabase Database => _database;
 
         public TranscriptomicManager()
         {
-            _parquetService = new TranscriptomicParquetService();
+            _referenceService = new ReferenceDataService();
         }
 
-        public async Task LoadDatabaseAsync(string expressionParquetPath, string metadataParquetPath)
+        public async Task LoadDatabaseAsync(string databasePath)
         {
-            if (!File.Exists(expressionParquetPath))
-                throw new FileNotFoundException("Expression parquet file not found", expressionParquetPath);
+            if (!File.Exists(databasePath))
+                throw new FileNotFoundException("Reference database not found", databasePath);
 
-            if (!File.Exists(metadataParquetPath))
-                throw new FileNotFoundException("Metadata parquet file not found", metadataParquetPath);
-
-            _database = await _parquetService.LoadDatabaseAsync(expressionParquetPath, metadataParquetPath);
+            _database = await _referenceService.LoadTranscriptomicDataAsync(databasePath);
             _predictor = new CellTypePredictor(_database);
         }
 

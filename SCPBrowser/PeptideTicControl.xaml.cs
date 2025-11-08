@@ -173,6 +173,12 @@ namespace SCPBrowser
         private void ScatterPlot_PointClicked(object sender, PointInteractionEventArgs e)
         {
             RunDetailPanel.ShowRunDetails(e.DataPoint, _goEnrichmentResults);
+
+            // Also update GO enrichment tab for the clicked point
+            if (e.DataPoint != null)
+            {
+                GoEnrichmentTab.UpdateGoEnrichment(new List<DataPoint> { e.DataPoint }, _goEnrichmentResults);
+            }
         }
 
         private void SelectedPointsGridPanel_GridSelectionChanged(object sender, SelectedPointData selectedData)

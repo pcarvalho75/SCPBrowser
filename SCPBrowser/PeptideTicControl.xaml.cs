@@ -24,6 +24,7 @@ namespace SCPBrowser
         private string _selectedRunName;
         private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
         private Dictionary<string, Color> _goTermColorMap;
+        private bool _isProcessingSelection = false;
 
 
         private List<DataPoint> _currentSelectedPoints = new List<DataPoint>();
@@ -304,6 +305,8 @@ namespace SCPBrowser
 
         private void UpdateSelectionVisuals()
         {
+            _isProcessingSelection = true;
+
             var selectedPoints = new List<DataPoint>();
 
             foreach (var point in _dataPoints)
@@ -326,6 +329,8 @@ namespace SCPBrowser
             }
 
             UpdateSelectedPointsGrid(selectedPoints);
+
+            _isProcessingSelection = false;
         }
 
         private void UpdateSelectedPointsGrid(List<DataPoint> selectedPoints)
@@ -706,6 +711,8 @@ namespace SCPBrowser
 
         private void PlotCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
         {
+            if (_isRefreshing || _isProcessingSelection) return;
+
             if (_currentData != null)
             {
                 RefreshChart();

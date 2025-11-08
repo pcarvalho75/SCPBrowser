@@ -98,6 +98,10 @@ namespace SCPBrowser
 
             try
             {
+                // Store the current selection state before clearing
+                bool hadSelection = _selectionManager.PolygonPointsData.Count > 0;
+                var savedDataCoordinates = _selectionManager.PolygonPointsData.ToList();
+
                 PlotCanvas.Children.Clear();
                 _dataPoints.Clear();
                 TooltipBorder.Visibility = Visibility.Collapsed;
@@ -115,6 +119,13 @@ namespace SCPBrowser
                 }
 
                 DrawChart();
+
+                // Restore selection if we had one
+                if (hadSelection && savedDataCoordinates.Count > 0)
+                {
+                    _selectionManager.SetPolygonPointsData(savedDataCoordinates);
+                    RedrawSelectionFromDataCoordinates();
+                }
             }
             finally
             {
@@ -335,6 +346,8 @@ namespace SCPBrowser
 
         private void UpdateSelectedPointsGrid(List<DataPoint> selectedPoints)
         {
+            _isProcessingSelection = true;
+
             _currentSelectedPoints = selectedPoints;
             _currentDetailIndex = 0;
 
@@ -354,6 +367,9 @@ namespace SCPBrowser
                 SelectionCountText.Text = $"({selectedPoints.Count} selected)";
                 SelectionStatusText.Text = $"{selectedPoints.Count} point(s) selected";
                 ClearSelectionButton.IsEnabled = true;
+
+                // Auto-expand the expander when selection is made
+                SelectedPointsExpander.IsExpanded = true;
 
                 if (selectedPoints.Count == 1)
                 {
@@ -382,6 +398,8 @@ namespace SCPBrowser
                 NavigationPanel.Visibility = Visibility.Collapsed;
                 ClearDetailsPanel();
             }
+
+            _isProcessingSelection = false;
         }
 
         private void DisplaySelectionSummary(List<DataPoint> selectedPoints)

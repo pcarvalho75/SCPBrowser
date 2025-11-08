@@ -178,12 +178,6 @@ namespace SCPBrowser
                 return;
 
             _polygonPointsData.AddRange(points);
-            _selectionPolygon.Points.Clear();
-
-            foreach (var p in points)
-                _selectionPolygon.Points.Add(p);
-
-            _selectionPolygon.Visibility = Visibility.Visible;
         }
 
         public void SetPolygonPointsScreen(List<Point> points)

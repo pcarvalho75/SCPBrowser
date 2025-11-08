@@ -199,8 +199,9 @@
 
         <!-- Selected points grid at bottom -->
         <Expander Grid.Row="4"
-                  IsExpanded="True"
-                  Margin="0,5,0,0">
+          x:Name="SelectedPointsExpander"
+          IsExpanded="False"
+          Margin="0,5,0,0">
             <Expander.Header>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="Selected Points" 

@@ -10,8 +10,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*" MinHeight="300"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="5"/>
             <RowDefinition Height="*" MinHeight="150"/>
         </Grid.RowDefinitions>
 
@@ -84,12 +83,12 @@
             <local:RunDetailControl x:Name="RunDetailPanel" Grid.Column="2"/>
         </Grid>
 
-        <GridSplitter Grid.Row="3" 
+        <GridSplitter Grid.Row="2" 
                       Height="5" 
                       HorizontalAlignment="Stretch"
-                      Background="#e2e8f0"
-                      Margin="0,5"/>
+                      VerticalAlignment="Stretch"
+                      Background="#e2e8f0"/>
 
-        <local:SelectedPointsGridControl x:Name="SelectedPointsGridPanel" Grid.Row="4"/>
+        <local:SelectedPointsGridControl x:Name="SelectedPointsGridPanel" Grid.Row="3"/>
     </Grid>
 </UserControl>

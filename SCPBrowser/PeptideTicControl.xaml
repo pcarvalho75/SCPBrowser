@@ -109,37 +109,83 @@
                           Background="#e2e8f0"/>
 
             <!-- Details panel on the right -->
+            <!-- Details panel on the right -->
             <GroupBox Header="Run Details" 
-                      Grid.Column="2"
-                      Padding="10">
+          Grid.Column="2"
+          Padding="10">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
+                        <!-- Summary section for multiple selections -->
+                        <Border x:Name="SummarySection"
+                    BorderBrush="#e2e8f0" 
+                    BorderThickness="1" 
+                    CornerRadius="3" 
+                    Padding="10" 
+                    Margin="0,0,0,10" 
+                    Background="#f8fafc"
+                    Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="Selection Summary" 
+                               FontWeight="SemiBold" 
+                               FontSize="12"
+                               Margin="0,0,0,8"/>
+                                <TextBlock x:Name="SummaryText" 
+                               TextWrapping="Wrap" 
+                               FontSize="11"
+                               Foreground="#334155"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Navigation buttons for multiple selections -->
+                        <StackPanel x:Name="NavigationPanel"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        Margin="0,0,0,10"
+                        Visibility="Collapsed">
+                            <Button x:Name="PrevButton"
+                        Content="◀ Previous"
+                        Click="PrevButton_Click"
+                        Padding="8,4"
+                        Margin="0,0,5,0"/>
+                            <TextBlock x:Name="NavigationText"
+                           Text="Run 1 of 5"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Margin="10,0"/>
+                            <Button x:Name="NextButton"
+                        Content="Next ▶"
+                        Click="NextButton_Click"
+                        Padding="8,4"
+                        Margin="5,0,0,0"/>
+                        </StackPanel>
+
                         <!-- Image display -->
                         <Border BorderBrush="LightGray" 
-                                BorderThickness="1" 
-                                CornerRadius="3" 
-                                Padding="5" 
-                                Margin="0,0,0,10" 
-                                Background="#FFF9F9F9">
+                    BorderThickness="1" 
+                    CornerRadius="3" 
+                    Padding="5" 
+                    Margin="0,0,0,10" 
+                    Background="#FFF9F9F9">
                             <Image x:Name="RunImage" 
-                                   Stretch="Uniform" 
-                                   MaxHeight="300"
-                                   MinHeight="150"/>
+                       Stretch="Uniform" 
+                       MaxHeight="300"
+                       MinHeight="150"/>
                         </Border>
 
                         <!-- Details text -->
                         <TextBlock x:Name="DetailsText" 
-                                   TextWrapping="Wrap" 
-                                   FontSize="11"
-                                   Foreground="#334155"/>
+                       TextWrapping="Wrap" 
+                       FontSize="11"
+                       Foreground="#334155"/>
 
                         <Button x:Name="ShowGoEnrichmentButton"
-        Content="Show GO Enrichment Report"
-        Click="ShowGoEnrichmentButton_Click"
-        Padding="10,5"
-        Margin="0,10,0,0"
-        HorizontalAlignment="Stretch"
-        Visibility="Collapsed"/>
+                    Content="Show GO Enrichment Report"
+                    Click="ShowGoEnrichmentButton_Click"
+                    Padding="10,5"
+                    Margin="0,10,0,0"
+                    HorizontalAlignment="Stretch"
+                    IsEnabled="False"
+                    ToolTip="Select a run with GO enrichment data to view the report"/>
                     </StackPanel>
                 </ScrollViewer>
             </GroupBox>

@@ -25,6 +25,10 @@ namespace SCPBrowser
         private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
         private Dictionary<string, Color> _goTermColorMap;
 
+
+        private List<DataPoint> _currentSelectedPoints = new List<DataPoint>();
+        private int _currentDetailIndex = 0;
+
         private const double HoverTolerance = 12;
 
         public PeptideTicControl()
@@ -326,6 +330,9 @@ namespace SCPBrowser
 
         private void UpdateSelectedPointsGrid(List<DataPoint> selectedPoints)
         {
+            _currentSelectedPoints = selectedPoints;
+            _currentDetailIndex = 0;
+
             if (selectedPoints.Count > 0)
             {
                 var gridData = selectedPoints.Select(p => new SelectedPointData
@@ -343,9 +350,21 @@ namespace SCPBrowser
                 SelectionStatusText.Text = $"{selectedPoints.Count} point(s) selected";
                 ClearSelectionButton.IsEnabled = true;
 
-                if (SelectedPointsGrid.SelectedItem == null && selectedPoints.Any())
+                if (selectedPoints.Count == 1)
                 {
-                    DisplayRunDetails(selectedPoints.First());
+                    // Single selection - show details directly
+                    SummarySection.Visibility = Visibility.Collapsed;
+                    NavigationPanel.Visibility = Visibility.Collapsed;
+                    DisplayRunDetails(selectedPoints[0]);
+                }
+                else
+                {
+                    // Multiple selections - show summary and navigation
+                    DisplaySelectionSummary(selectedPoints);
+                    SummarySection.Visibility = Visibility.Visible;
+                    NavigationPanel.Visibility = Visibility.Visible;
+                    UpdateNavigationDisplay();
+                    DisplayRunDetails(selectedPoints[0]);
                 }
             }
             else
@@ -354,6 +373,75 @@ namespace SCPBrowser
                 SelectionCountText.Text = "";
                 SelectionStatusText.Text = "No points selected";
                 ClearSelectionButton.IsEnabled = false;
+                SummarySection.Visibility = Visibility.Collapsed;
+                NavigationPanel.Visibility = Visibility.Collapsed;
+                ClearDetailsPanel();
+            }
+        }
+
+        private void DisplaySelectionSummary(List<DataPoint> selectedPoints)
+        {
+            int totalRuns = selectedPoints.Count;
+            int avgPeptides = (int)selectedPoints.Average(p => p.PeptideCount);
+            int avgProteins = (int)selectedPoints.Average(p => p.ProteinCount);
+            double avgTic = selectedPoints.Average(p => p.TicValue);
+            double avgTrypsinRatio = selectedPoints.Average(p => p.TrypsinRatio);
+
+            string summaryText = $"Runs: {totalRuns}\n" +
+                                $"Avg Peptides: {avgPeptides:N0}\n" +
+                                $"Avg Proteins: {avgProteins:N0}\n" +
+                                $"Avg TIC: {avgTic:E2}\n" +
+                                $"Avg Target Ratio: {avgTrypsinRatio * 100:F2}%";
+
+            // Add cell type distribution if available
+            if (_cellTypePredictions != null)
+            {
+                var cellTypeCounts = selectedPoints
+                    .Where(p => !string.IsNullOrEmpty(p.PredictedCellType))
+                    .GroupBy(p => p.PredictedCellType)
+                    .OrderByDescending(g => g.Count())
+                    .ToList();
+
+                if (cellTypeCounts.Any())
+                {
+                    summaryText += "\n\nCell Types:";
+                    foreach (var group in cellTypeCounts)
+                    {
+                        summaryText += $"\n  {group.Key}: {group.Count()}";
+                    }
+                }
+            }
+
+            SummaryText.Text = summaryText;
+        }
+
+        private void UpdateNavigationDisplay()
+        {
+            if (_currentSelectedPoints.Count == 0)
+                return;
+
+            NavigationText.Text = $"Run {_currentDetailIndex + 1} of {_currentSelectedPoints.Count}";
+            PrevButton.IsEnabled = _currentDetailIndex > 0;
+            NextButton.IsEnabled = _currentDetailIndex < _currentSelectedPoints.Count - 1;
+        }
+
+        private void PrevButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentDetailIndex > 0)
+            {
+                _currentDetailIndex--;
+                DisplayRunDetails(_currentSelectedPoints[_currentDetailIndex]);
+                UpdateNavigationDisplay();
+            }
+        }
+
+        private void NextButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentDetailIndex < _currentSelectedPoints.Count - 1)
+            {
+                _currentDetailIndex++;
+                DisplayRunDetails(_currentSelectedPoints[_currentDetailIndex]);
+                UpdateNavigationDisplay();
             }
         }
 
@@ -403,18 +491,21 @@ namespace SCPBrowser
 
             RunImage.Source = null;
 
-            // Show GO enrichment button if we have results for this run
+            // Enable GO enrichment button if we have results for this run
             if (_goEnrichmentResults != null &&
                 _goEnrichmentResults.ContainsKey(dataPoint.RunName) &&
                 _goEnrichmentResults[dataPoint.RunName].AllSignificantTerms != null &&
                 _goEnrichmentResults[dataPoint.RunName].AllSignificantTerms.Count > 0)
             {
                 _selectedRunName = dataPoint.RunName;
-                ShowGoEnrichmentButton.Visibility = Visibility.Visible;
+                ShowGoEnrichmentButton.IsEnabled = true;
+                ShowGoEnrichmentButton.ToolTip = "Click to view GO enrichment report for this run";
             }
             else
             {
-                ShowGoEnrichmentButton.Visibility = Visibility.Collapsed;
+                _selectedRunName = null;
+                ShowGoEnrichmentButton.IsEnabled = false;
+                ShowGoEnrichmentButton.ToolTip = "No GO enrichment data available for this run";
             }
         }
 
@@ -422,7 +513,9 @@ namespace SCPBrowser
         {
             RunImage.Source = null;
             DetailsText.Text = "Select a run to view details";
-            ShowGoEnrichmentButton.Visibility = Visibility.Collapsed;
+            _selectedRunName = null;
+            ShowGoEnrichmentButton.IsEnabled = false;
+            ShowGoEnrichmentButton.ToolTip = "Select a run with GO enrichment data to view the report";
         }
 
         private void ShowGoEnrichmentButton_Click(object sender, RoutedEventArgs e)

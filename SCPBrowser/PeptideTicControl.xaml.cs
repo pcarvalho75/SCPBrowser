@@ -15,20 +15,17 @@ namespace SCPBrowser
         private List<DataPoint> _dataPoints;
         private PlotRenderer _plotRenderer;
         private SelectionManager _selectionManager;
-        private string _imageBaseDirectory;
         private bool _isRefreshing = false;
-        private bool _isInitialized = false;  // ADD THIS
+        private bool _isInitialized = false;
         private Dictionary<string, CellTypePredictionResult> _cellTypePredictions;
         private Dictionary<string, Color> _cellTypeColorMap;
         private bool _useCellTypeColoring = false;
-        private string _selectedRunName;
         private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
         private Dictionary<string, Color> _goTermColorMap;
         private bool _isProcessingSelection = false;
 
 
         private List<DataPoint> _currentSelectedPoints = new List<DataPoint>();
-        private int _currentDetailIndex = 0;
 
         private const double HoverTolerance = 12;
 
@@ -42,7 +39,7 @@ namespace SCPBrowser
 
             PlotCanvas.SizeChanged += PlotCanvas_SizeChanged;
 
-            _isInitialized = true;  // ADD THIS
+            _isInitialized = true;
         }
 
         public void UpdateChart(ProteomicsData data)
@@ -53,7 +50,8 @@ namespace SCPBrowser
 
         public void SetImageBaseDirectory(string directory)
         {
-            _imageBaseDirectory = directory;
+            // Pass the directory to the new details control
+            RunDetailPanel.SetImageBaseDirectory(directory);
         }
 
         public void SetCellTypePredictions(Dictionary<string, CellTypePredictionResult> predictions, Dictionary<string, Color> colorMap)
@@ -78,7 +76,7 @@ namespace SCPBrowser
 
         private void ColorMode_Changed(object sender, RoutedEventArgs e)
         {
-            if (!_isInitialized || ColorByCellTypeRadio == null)  // ADD THIS CHECK
+            if (!_isInitialized || ColorByCellTypeRadio == null)
                 return;
 
             _useCellTypeColoring = ColorByCellTypeRadio.IsChecked == true;
@@ -114,7 +112,7 @@ namespace SCPBrowser
                 {
                     SelectedPointsGrid.ItemsSource = null;
                     ClearSelectionButton.IsEnabled = false;
-                    ClearDetailsPanel();
+                    RunDetailPanel.ClearDetails();
                     return;
                 }
 
@@ -160,6 +158,10 @@ namespace SCPBrowser
 
             if (_useCellTypeColoring && _cellTypePredictions != null)
             {
+                _dataPoints = DrawDataPointsWithCellTypes(PlotCanvas, rawFiles, peptideCounts, ticValues,
+                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight);
+                DrawCellTypeLegend(PlotCanvas, canvasWidth, canvasHeight);
+
                 int predictedCount = _dataPoints.Count(p => !string.IsNullOrEmpty(p.PredictedCellType));
                 PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({rawFiles.Count} files, {predictedCount} with cell type predictions)";
             }
@@ -168,6 +170,7 @@ namespace SCPBrowser
                 _dataPoints = _plotRenderer.DrawDataPoints(PlotCanvas, rawFiles, peptideCounts, ticValues,
                     proteinCounts, trypsinRatios, canvasWidth, canvasHeight);
                 _plotRenderer.DrawColorLegend(PlotCanvas, canvasWidth, canvasHeight, maxRatio);
+                PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({rawFiles.Count} files)";
             }
 
             if (_selectionManager.PolygonPointsData.Count > 0)
@@ -177,12 +180,6 @@ namespace SCPBrowser
             else
             {
                 UpdateSelectedPointsGrid(new List<DataPoint>());
-            }
-
-            PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({rawFiles.Count} files)";
-            if (_useCellTypeColoring && _cellTypePredictions != null)
-            {
-                int predictedCount = _dataPoints.Count(p => !string.IsNullOrEmpty(p.PredictedCellType));
             }
         }
 
@@ -349,7 +346,6 @@ namespace SCPBrowser
             _isProcessingSelection = true;
 
             _currentSelectedPoints = selectedPoints;
-            _currentDetailIndex = 0;
 
             if (selectedPoints.Count > 0)
             {
@@ -374,18 +370,12 @@ namespace SCPBrowser
                 if (selectedPoints.Count == 1)
                 {
                     // Single selection - show details directly
-                    SummarySection.Visibility = Visibility.Collapsed;
-                    NavigationPanel.Visibility = Visibility.Collapsed;
-                    DisplayRunDetails(selectedPoints[0]);
+                    RunDetailPanel.ShowRunDetails(selectedPoints[0], _goEnrichmentResults);
                 }
                 else
                 {
                     // Multiple selections - show summary and navigation
-                    DisplaySelectionSummary(selectedPoints);
-                    SummarySection.Visibility = Visibility.Visible;
-                    NavigationPanel.Visibility = Visibility.Visible;
-                    UpdateNavigationDisplay();
-                    DisplayRunDetails(selectedPoints[0]);
+                    RunDetailPanel.ShowSelectionSummary(selectedPoints, _goEnrichmentResults);
                 }
             }
             else
@@ -394,165 +384,10 @@ namespace SCPBrowser
                 SelectionCountText.Text = "";
                 SelectionStatusText.Text = "No points selected";
                 ClearSelectionButton.IsEnabled = false;
-                SummarySection.Visibility = Visibility.Collapsed;
-                NavigationPanel.Visibility = Visibility.Collapsed;
-                ClearDetailsPanel();
+                RunDetailPanel.ClearDetails();
             }
 
             _isProcessingSelection = false;
-        }
-
-        private void DisplaySelectionSummary(List<DataPoint> selectedPoints)
-        {
-            int totalRuns = selectedPoints.Count;
-            int avgPeptides = (int)selectedPoints.Average(p => p.PeptideCount);
-            int avgProteins = (int)selectedPoints.Average(p => p.ProteinCount);
-            double avgTic = selectedPoints.Average(p => p.TicValue);
-            double avgTrypsinRatio = selectedPoints.Average(p => p.TrypsinRatio);
-
-            string summaryText = $"Runs: {totalRuns}\n" +
-                                $"Avg Peptides: {avgPeptides:N0}\n" +
-                                $"Avg Proteins: {avgProteins:N0}\n" +
-                                $"Avg TIC: {avgTic:E2}\n" +
-                                $"Avg Target Ratio: {avgTrypsinRatio * 100:F2}%";
-
-            // Add cell type distribution if available
-            if (_cellTypePredictions != null)
-            {
-                var cellTypeCounts = selectedPoints
-                    .Where(p => !string.IsNullOrEmpty(p.PredictedCellType))
-                    .GroupBy(p => p.PredictedCellType)
-                    .OrderByDescending(g => g.Count())
-                    .ToList();
-
-                if (cellTypeCounts.Any())
-                {
-                    summaryText += "\n\nCell Types:";
-                    foreach (var group in cellTypeCounts)
-                    {
-                        summaryText += $"\n  {group.Key}: {group.Count()}";
-                    }
-                }
-            }
-
-            SummaryText.Text = summaryText;
-        }
-
-        private void UpdateNavigationDisplay()
-        {
-            if (_currentSelectedPoints.Count == 0)
-                return;
-
-            NavigationText.Text = $"Run {_currentDetailIndex + 1} of {_currentSelectedPoints.Count}";
-            PrevButton.IsEnabled = _currentDetailIndex > 0;
-            NextButton.IsEnabled = _currentDetailIndex < _currentSelectedPoints.Count - 1;
-        }
-
-        private void PrevButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_currentDetailIndex > 0)
-            {
-                _currentDetailIndex--;
-                DisplayRunDetails(_currentSelectedPoints[_currentDetailIndex]);
-                UpdateNavigationDisplay();
-            }
-        }
-
-        private void NextButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_currentDetailIndex < _currentSelectedPoints.Count - 1)
-            {
-                _currentDetailIndex++;
-                DisplayRunDetails(_currentSelectedPoints[_currentDetailIndex]);
-                UpdateNavigationDisplay();
-            }
-        }
-
-        private void DisplayRunDetails(DataPoint dataPoint)
-        {
-            if (dataPoint == null)
-            {
-                ClearDetailsPanel();
-                return;
-            }
-
-            string detailsText = $"Run: {dataPoint.RunName}\n\n" +
-                                $"Peptides: {dataPoint.PeptideCount:N0}\n" +
-                                $"Protein Groups: {dataPoint.ProteinCount:N0}\n" +
-                                $"Total Ion Current: {dataPoint.TicValue:E2}\n" +
-                                $"Trypsin Ratio: {dataPoint.TrypsinRatio * 100:F2}%";
-
-            if (!string.IsNullOrEmpty(dataPoint.PredictedCellType))
-            {
-                detailsText += $"\n\nPredicted Cell Type: {dataPoint.PredictedCellType}";
-
-                if (dataPoint.PredictionScore != null)
-                {
-                    detailsText += $"\n\nPrediction Details:";
-                    detailsText += $"\n  Composite Score: {dataPoint.PredictionScore.CompositeScore:F3}";
-                    detailsText += $"\n  Spearman Corr: {dataPoint.PredictionScore.SpearmanCorrelation:F3}";
-                    detailsText += $"\n  Specificity Score: {dataPoint.PredictionScore.SpecificityScore:F3}";
-                    detailsText += $"\n  P-value: {dataPoint.PredictionScore.HypergeometricPValue:E2}";
-                }
-            }
-
-            DetailsText.Text = detailsText;
-
-            if (!string.IsNullOrEmpty(_imageBaseDirectory))
-            {
-                string imagePath = ImageLoader.GetImagePathForRun(_imageBaseDirectory, dataPoint.RunName);
-                if (!string.IsNullOrEmpty(imagePath))
-                {
-                    var bitmap = ImageLoader.LoadImage(imagePath);
-                    if (bitmap != null)
-                    {
-                        RunImage.Source = bitmap;
-                        return;
-                    }
-                }
-            }
-
-            RunImage.Source = null;
-
-            // Enable GO enrichment button if we have results for this run
-            if (_goEnrichmentResults != null &&
-                _goEnrichmentResults.ContainsKey(dataPoint.RunName) &&
-                _goEnrichmentResults[dataPoint.RunName].AllSignificantTerms != null &&
-                _goEnrichmentResults[dataPoint.RunName].AllSignificantTerms.Count > 0)
-            {
-                _selectedRunName = dataPoint.RunName;
-                ShowGoEnrichmentButton.IsEnabled = true;
-                ShowGoEnrichmentButton.ToolTip = "Click to view GO enrichment report for this run";
-            }
-            else
-            {
-                _selectedRunName = null;
-                ShowGoEnrichmentButton.IsEnabled = false;
-                ShowGoEnrichmentButton.ToolTip = "No GO enrichment data available for this run";
-            }
-        }
-
-        private void ClearDetailsPanel()
-        {
-            RunImage.Source = null;
-            DetailsText.Text = "Select a run to view details";
-            _selectedRunName = null;
-            ShowGoEnrichmentButton.IsEnabled = false;
-            ShowGoEnrichmentButton.ToolTip = "Select a run with GO enrichment data to view the report";
-        }
-
-        private void ShowGoEnrichmentButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(_selectedRunName) || _goEnrichmentResults == null)
-                return;
-
-            if (!_goEnrichmentResults.ContainsKey(_selectedRunName))
-                return;
-
-            var enrichmentResult = _goEnrichmentResults[_selectedRunName];
-            var window = new GoEnrichmentReportWindow(_selectedRunName, enrichmentResult);
-            window.Owner = Window.GetWindow(this);
-            window.ShowDialog();
         }
 
         private void PlotCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -650,7 +485,8 @@ namespace SCPBrowser
 
                 if (distance <= HoverTolerance)
                 {
-                    DisplayRunDetails(point);
+                    // Right-click now selects a single point and shows details
+                    RunDetailPanel.ShowRunDetails(point, _goEnrichmentResults);
                     e.Handled = true;
                     return;
                 }
@@ -760,7 +596,7 @@ namespace SCPBrowser
             SelectionCountText.Text = "";
             SelectionStatusText.Text = "Click a point or drag to select multiple points. Right-click a point to view details.";
             ClearSelectionButton.IsEnabled = false;
-            ClearDetailsPanel();
+            RunDetailPanel.ClearDetails();
         }
 
         private void SelectedPointsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -770,7 +606,8 @@ namespace SCPBrowser
                 var dataPoint = _dataPoints.FirstOrDefault(p => p.RunName == selectedData.RunName);
                 if (dataPoint != null)
                 {
-                    DisplayRunDetails(dataPoint);
+                    // When clicking grid, show details for that *single* point
+                    RunDetailPanel.ShowRunDetails(dataPoint, _goEnrichmentResults);
                 }
             }
         }

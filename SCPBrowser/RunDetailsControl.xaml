@@ -1,0 +1,81 @@
+﻿<UserControl x:Class="SCPBrowser.RunDetailControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="300">
+    <GroupBox Header="Run Details" Padding="10">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <Border x:Name="SummarySection"
+                    BorderBrush="#e2e8f0" 
+                    BorderThickness="1" 
+                    CornerRadius="3" 
+                    Padding="10" 
+                    Margin="0,0,0,10" 
+                    Background="#f8fafc"
+                    Visibility="Collapsed">
+                    <StackPanel>
+                        <TextBlock Text="Selection Summary" 
+                               FontWeight="SemiBold" 
+                               FontSize="12"
+                               Margin="0,0,0,8"/>
+                        <TextBlock x:Name="SummaryText" 
+                               TextWrapping="Wrap" 
+                               FontSize="11"
+                               Foreground="#334155"/>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel x:Name="NavigationPanel"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        Margin="0,0,0,10"
+                        Visibility="Collapsed">
+                    <Button x:Name="PrevButton"
+                        Content="◀ Previous"
+                        Click="PrevButton_Click"
+                        Padding="8,4"
+                        Margin="0,0,5,0"/>
+                    <TextBlock x:Name="NavigationText"
+                           Text="Run 1 of 5"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Margin="10,0"/>
+                    <Button x:Name="NextButton"
+                        Content="Next ▶"
+                        Click="NextButton_Click"
+                        Padding="8,4"
+                        Margin="5,0,0,0"/>
+                </StackPanel>
+
+                <Border BorderBrush="LightGray" 
+                    BorderThickness="1" 
+                    CornerRadius="3" 
+                    Padding="5" 
+                    Margin="0,0,0,10" 
+                    Background="#FFF9F9F9">
+                    <Image x:Name="RunImage" 
+                       Stretch="Uniform" 
+                       MaxHeight="300"
+                       MinHeight="150"/>
+                </Border>
+
+                <TextBlock x:Name="DetailsText" 
+                       TextWrapping="Wrap" 
+                       FontSize="11"
+                       Foreground="#334155"/>
+
+                <Button x:Name="ShowGoEnrichmentButton"
+                    Content="Show GO Enrichment Report"
+                    Click="ShowGoEnrichmentButton_Click"
+                    Padding="10,5"
+                    Margin="0,10,0,0"
+                    HorizontalAlignment="Stretch"
+                    IsEnabled="False"
+                    ToolTip="Select a run with GO enrichment data to view the report"/>
+            </StackPanel>
+        </ScrollViewer>
+    </GroupBox>
+</UserControl>

@@ -28,14 +28,13 @@
                        Margin="0,0,5,0"
                        FontWeight="SemiBold"/>
 
-
             <RadioButton x:Name="ColorByTrypsinRadio"
-             Content="Target Protein Ratio"
-             IsChecked="True"
-             GroupName="ColorMode"
-             Margin="0,0,15,0"
-             VerticalAlignment="Center"
-             Checked="ColorMode_Changed"/>
+                         Content="Target Protein Ratio"
+                         IsChecked="True"
+                         GroupName="ColorMode"
+                         Margin="0,0,15,0"
+                         VerticalAlignment="Center"
+                         Checked="ColorMode_Changed"/>
 
             <RadioButton x:Name="ColorByCellTypeRadio"
                          Content="Cell Type"
@@ -46,12 +45,12 @@
                          IsEnabled="False"/>
 
             <RadioButton x:Name="ColorByGoTermRadio"
-             Content="GO Term"
-             GroupName="ColorMode"
-             Margin="0,0,20,0"
-             VerticalAlignment="Center"
-             Checked="ColorMode_Changed"
-             IsEnabled="False"/>
+                         Content="GO Term"
+                         GroupName="ColorMode"
+                         Margin="0,0,20,0"
+                         VerticalAlignment="Center"
+                         Checked="ColorMode_Changed"
+                         IsEnabled="False"/>
 
             <Button x:Name="ClearSelectionButton"
                     Content="Clear Selection"
@@ -70,34 +69,10 @@
             <GroupBox Grid.Column="0">
                 <GroupBox.Header>
                     <TextBlock x:Name="PlotGroupBoxHeader" 
-                   Text="Peptides vs Total Ion Current per Raw File"
-                   FontWeight="SemiBold"/>
+                               Text="Peptides vs Total Ion Current per Raw File"
+                               FontWeight="SemiBold"/>
                 </GroupBox.Header>
-                <Grid x:Name="PlotContainer">
-                    <Canvas x:Name="PlotCanvas" 
-                Background="White"
-                ClipToBounds="True"
-                MouseMove="PlotCanvas_MouseMove"
-                MouseLeave="PlotCanvas_MouseLeave"
-                MouseLeftButtonDown="PlotCanvas_MouseLeftButtonDown"
-                MouseLeftButtonUp="PlotCanvas_MouseLeftButtonUp"
-                MouseRightButtonDown="PlotCanvas_MouseRightButtonDown"/>
-
-                    <Border x:Name="TooltipBorder"
-                Background="White"
-                BorderBrush="Black"
-                BorderThickness="1"
-                CornerRadius="3"
-                Padding="8"
-                Visibility="Collapsed"
-                HorizontalAlignment="Left"
-                VerticalAlignment="Top"
-                IsHitTestVisible="False">
-                        <TextBlock x:Name="TooltipText"
-                       FontSize="11"
-                       FontFamily="Segoe UI"/>
-                    </Border>
-                </Grid>
+                <local:ScatterPlotControl x:Name="ScatterPlot"/>
             </GroupBox>
 
             <GridSplitter Grid.Column="1" 
@@ -106,8 +81,7 @@
                           VerticalAlignment="Stretch"
                           Background="#e2e8f0"/>
 
-            <local:RunDetailControl x:Name="RunDetailPanel" Grid.Column="2" />
-
+            <local:RunDetailControl x:Name="RunDetailPanel" Grid.Column="2"/>
         </Grid>
 
         <GridSplitter Grid.Row="3" 
@@ -116,7 +90,6 @@
                       Background="#e2e8f0"
                       Margin="0,5"/>
 
-        <local:SelectedPointsGridControl x:Name="SelectedPointsGridPanel" Grid.Row="4" />
-
+        <local:SelectedPointsGridControl x:Name="SelectedPointsGridPanel" Grid.Row="4"/>
     </Grid>
 </UserControl>

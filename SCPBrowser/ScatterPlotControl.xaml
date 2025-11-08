@@ -1,0 +1,33 @@
+﻿<UserControl x:Class="SCPBrowser.ScatterPlotControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="800">
+    <Grid>
+        <Canvas x:Name="PlotCanvas" 
+                Background="White"
+                ClipToBounds="True"
+                MouseMove="PlotCanvas_MouseMove"
+                MouseLeave="PlotCanvas_MouseLeave"
+                MouseLeftButtonDown="PlotCanvas_MouseLeftButtonDown"
+                MouseLeftButtonUp="PlotCanvas_MouseLeftButtonUp"
+                MouseRightButtonDown="PlotCanvas_MouseRightButtonDown"/>
+
+        <Border x:Name="TooltipBorder"
+                Background="White"
+                BorderBrush="Black"
+                BorderThickness="1"
+                CornerRadius="3"
+                Padding="8"
+                Visibility="Collapsed"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                IsHitTestVisible="False">
+            <TextBlock x:Name="TooltipText"
+                       FontSize="11"
+                       FontFamily="Segoe UI"/>
+        </Border>
+    </Grid>
+</UserControl>

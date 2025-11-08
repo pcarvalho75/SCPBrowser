@@ -39,6 +39,9 @@ namespace SCPBrowser
 
             PlotCanvas.SizeChanged += PlotCanvas_SizeChanged;
 
+            // Wire up the event from the new control
+            SelectedPointsGridPanel.GridSelectionChanged += SelectedPointsGridPanel_GridSelectionChanged;
+
             _isInitialized = true;
         }
 
@@ -70,8 +73,6 @@ namespace SCPBrowser
         {
             _goEnrichmentResults = results;
             _goTermColorMap = colorMap;
-            // Don't enable the radio button - we're not using it for coloring
-            // ColorByGoTermRadio.IsEnabled = results != null && results.Count > 0;
         }
 
         private void ColorMode_Changed(object sender, RoutedEventArgs e)
@@ -110,7 +111,7 @@ namespace SCPBrowser
 
                 if (_currentData == null || _currentData.PeptideCountPerFile.Count == 0)
                 {
-                    SelectedPointsGrid.ItemsSource = null;
+                    SelectedPointsGridPanel.ClearGrid();
                     ClearSelectionButton.IsEnabled = false;
                     RunDetailPanel.ClearDetails();
                     return;
@@ -359,13 +360,8 @@ namespace SCPBrowser
                     CellType = p.PredictedCellType ?? "Unknown"
                 }).ToList();
 
-                SelectedPointsGrid.ItemsSource = gridData;
-                SelectionCountText.Text = $"({selectedPoints.Count} selected)";
-                SelectionStatusText.Text = $"{selectedPoints.Count} point(s) selected";
+                SelectedPointsGridPanel.UpdateGrid(gridData);
                 ClearSelectionButton.IsEnabled = true;
-
-                // Auto-expand the expander when selection is made
-                SelectedPointsExpander.IsExpanded = true;
 
                 if (selectedPoints.Count == 1)
                 {
@@ -380,9 +376,7 @@ namespace SCPBrowser
             }
             else
             {
-                SelectedPointsGrid.ItemsSource = null;
-                SelectionCountText.Text = "";
-                SelectionStatusText.Text = "No points selected";
+                SelectedPointsGridPanel.ClearGrid();
                 ClearSelectionButton.IsEnabled = false;
                 RunDetailPanel.ClearDetails();
             }
@@ -592,23 +586,21 @@ namespace SCPBrowser
                 point.Visual.StrokeThickness = 1;
             }
 
-            SelectedPointsGrid.ItemsSource = null;
-            SelectionCountText.Text = "";
-            SelectionStatusText.Text = "Click a point or drag to select multiple points. Right-click a point to view details.";
+            SelectedPointsGridPanel.ClearGrid();
             ClearSelectionButton.IsEnabled = false;
             RunDetailPanel.ClearDetails();
         }
 
-        private void SelectedPointsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void SelectedPointsGridPanel_GridSelectionChanged(object sender, SelectedPointData selectedData)
         {
-            if (SelectedPointsGrid.SelectedItem is SelectedPointData selectedData)
+            if (selectedData == null)
+                return;
+
+            var dataPoint = _dataPoints.FirstOrDefault(p => p.RunName == selectedData.RunName);
+            if (dataPoint != null)
             {
-                var dataPoint = _dataPoints.FirstOrDefault(p => p.RunName == selectedData.RunName);
-                if (dataPoint != null)
-                {
-                    // When clicking grid, show details for that *single* point
-                    RunDetailPanel.ShowRunDetails(dataPoint, _goEnrichmentResults);
-                }
+                // When clicking grid, show details for that *single* point
+                RunDetailPanel.ShowRunDetails(dataPoint, _goEnrichmentResults);
             }
         }
     }

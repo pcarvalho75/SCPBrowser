@@ -116,70 +116,7 @@
                       Background="#e2e8f0"
                       Margin="0,5"/>
 
-        <Expander Grid.Row="4"
-          x:Name="SelectedPointsExpander"
-          IsExpanded="False"
-          Margin="0,5,0,0">
-            <Expander.Header>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Selected Points" 
-                               FontWeight="SemiBold"
-                               FontSize="12"
-                               Margin="0,0,10,0"/>
-                    <TextBlock x:Name="SelectionCountText" 
-                               Text=""
-                               FontSize="11"
-                               Foreground="#64748b"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
-            </Expander.Header>
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+        <local:SelectedPointsGridControl x:Name="SelectedPointsGridPanel" Grid.Row="4" />
 
-                <DataGrid x:Name="SelectedPointsGrid"
-                      Grid.Row="0"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="True"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False"
-                          CanUserReorderColumns="True"
-                          CanUserResizeColumns="True"
-                          CanUserSortColumns="True"
-                          GridLinesVisibility="All"
-                          HeadersVisibility="All"
-                          SelectionMode="Single"
-                          SelectionChanged="SelectedPointsGrid_SelectionChanged"
-                          AlternatingRowBackground="#f9fafb"
-                          RowBackground="White">
-                    <DataGrid.ColumnHeaderStyle>
-                        <Style TargetType="DataGridColumnHeader">
-                            <Setter Property="Background" Value="#e2e8f0"/>
-                            <Setter Property="FontWeight" Value="SemiBold"/>
-                            <Setter Property="Padding" Value="8,5"/>
-                            <Setter Property="BorderBrush" Value="#cbd5e1"/>
-                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
-                        </Style>
-                    </DataGrid.ColumnHeaderStyle>
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Run Name" Binding="{Binding RunName}" Width="*"/>
-                        <DataGridTextColumn Header="Peptides" Binding="{Binding PeptideCount, StringFormat=N0}" Width="100"/>
-                        <DataGridTextColumn Header="TIC" Binding="{Binding TicValue, StringFormat=E2}" Width="120"/>
-                        <DataGridTextColumn Header="Proteins" Binding="{Binding ProteinCount, StringFormat=N0}" Width="100"/>
-                        <DataGridTextColumn Header="Target Protein Ratio" Binding="{Binding TrypsinRatioPercent}" Width="140"/>
-                        <DataGridTextColumn Header="Cell Type" Binding="{Binding CellType}" Width="150"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-
-                <TextBlock x:Name="SelectionStatusText" 
-                           Grid.Row="1"
-                           Margin="0,5,0,0"
-                           Text="Click a point or drag to select multiple points. Right-click a point to view details."
-                           FontStyle="Italic"
-                           Foreground="#64748b"/>
-            </Grid>
-        </Expander>
     </Grid>
 </UserControl>

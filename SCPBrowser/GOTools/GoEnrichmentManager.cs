@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace SCPBrowser
+namespace SCPBrowser.GOTools
 {
     public class RunGoEnrichmentResult
     {
@@ -211,7 +211,7 @@ namespace SCPBrowser
         private System.Windows.Media.Color HsvToRgb(double h, double s, double v)
         {
             double c = v * s;
-            double x = c * (1 - Math.Abs((h / 60.0) % 2 - 1));
+            double x = c * (1 - Math.Abs(h / 60.0 % 2 - 1));
             double m = v - c;
 
             double r, g, b;

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace SCPBrowser
+namespace SCPBrowser.GOTools
 {
     public class GoAnnotationCompiler
     {

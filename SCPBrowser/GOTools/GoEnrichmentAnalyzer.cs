@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace SCPBrowser
+namespace SCPBrowser.GOTools
 {
     public class GoEnrichmentAnalyzer
     {
@@ -100,7 +100,7 @@ namespace SCPBrowser
             // P(X = k) = C(K, k) * C(N-K, n-k) / C(N, n)
             // where C(a, b) is binomial coefficient "a choose b"
 
-            if (k > K || k > n || (n - k) > (N - K))
+            if (k > K || k > n || n - k > N - K)
                 return 0.0;
 
             try

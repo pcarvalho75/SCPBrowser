@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 
-namespace SCPBrowser
+namespace SCPBrowser.GOTools
 {
     public class GoTerm
     {

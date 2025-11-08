@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace SCPBrowser
+namespace SCPBrowser.GOTools
 {
     public class ProteinGoAnnotation
     {

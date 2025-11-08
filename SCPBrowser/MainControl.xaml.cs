@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using ScottPlot;
+using SCPBrowser.GOTools;
 
 
 namespace SCPBrowser

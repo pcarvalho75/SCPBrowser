@@ -11,6 +11,7 @@ using System.Windows.Shapes;
 using Microsoft.Win32;
 using System.IO;
 using Path = System.IO.Path;
+using SCPBrowser.GOTools;
 
 namespace SCPBrowser
 {

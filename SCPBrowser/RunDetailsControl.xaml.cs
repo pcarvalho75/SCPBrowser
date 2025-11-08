@@ -77,8 +77,6 @@ namespace SCPBrowser
             RunImage.Source = null;
             DetailsText.Text = "Select a run to view details";
             _selectedRunName = null;
-            ShowGoEnrichmentButton.IsEnabled = false;
-            ShowGoEnrichmentButton.ToolTip = "Select a run with GO enrichment data to view the report";
         }
 
         private void DisplaySelectionSummary(List<DataPoint> selectedPoints)
@@ -206,29 +204,12 @@ namespace SCPBrowser
                 _goEnrichmentResults[dataPoint.RunName].AllSignificantTerms.Count > 0)
             {
                 _selectedRunName = dataPoint.RunName;
-                ShowGoEnrichmentButton.IsEnabled = true;
-                ShowGoEnrichmentButton.ToolTip = "Click to view GO enrichment report for this run";
             }
             else
             {
                 _selectedRunName = null;
-                ShowGoEnrichmentButton.IsEnabled = false;
-                ShowGoEnrichmentButton.ToolTip = "No GO enrichment data available for this run";
             }
         }
 
-        private void ShowGoEnrichmentButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(_selectedRunName) || _goEnrichmentResults == null)
-                return;
-
-            if (!_goEnrichmentResults.ContainsKey(_selectedRunName))
-                return;
-
-            var enrichmentResult = _goEnrichmentResults[_selectedRunName];
-            var window = new GoEnrichmentReportWindow(_selectedRunName, enrichmentResult);
-            window.Owner = Window.GetWindow(this);
-            window.ShowDialog();
-        }
     }
 }

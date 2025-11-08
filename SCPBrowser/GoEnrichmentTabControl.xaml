@@ -4,9 +4,11 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
-             d:DesignHeight="250" d:DesignWidth="900">
+             d:DesignHeight="250" d:DesignWidth="900" Background="WhiteSmoke">
     <Grid Margin="10">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
@@ -24,13 +26,67 @@
                            Text="Select points to view GO enrichment analysis"
                            TextWrapping="Wrap"
                            FontSize="11"
-                           Foreground="#334155"/>
+                           Foreground="#334155"
+                           FontWeight="SemiBold"/>
             </StackPanel>
+        </Border>
+
+        <!-- Namespace Filter -->
+        <StackPanel Grid.Row="1" 
+                    Orientation="Horizontal" 
+                    Margin="0,0,0,10">
+            <TextBlock Text="Filter by GO Namespace:" 
+                       VerticalAlignment="Center"
+                       Margin="0,0,10,0"
+                       FontWeight="SemiBold"/>
+
+            <RadioButton x:Name="AllNamespacesRadio"
+                         Content="All"
+                         IsChecked="True"
+                         GroupName="Namespace"
+                         Margin="0,0,15,0"
+                         VerticalAlignment="Center"
+                         Checked="NamespaceFilter_Changed"/>
+
+            <RadioButton x:Name="BiologicalProcessRadio"
+                         Content="Biological Process"
+                         GroupName="Namespace"
+                         Margin="0,0,15,0"
+                         VerticalAlignment="Center"
+                         Checked="NamespaceFilter_Changed"/>
+
+            <RadioButton x:Name="MolecularFunctionRadio"
+                         Content="Molecular Function"
+                         GroupName="Namespace"
+                         Margin="0,0,15,0"
+                         VerticalAlignment="Center"
+                         Checked="NamespaceFilter_Changed"/>
+
+            <RadioButton x:Name="CellularComponentRadio"
+                         Content="Cellular Component"
+                         GroupName="Namespace"
+                         Margin="0,0,15,0"
+                         VerticalAlignment="Center"
+                         Checked="NamespaceFilter_Changed"/>
+        </StackPanel>
+
+        <!-- Statistics Bar -->
+        <Border Grid.Row="2"
+                BorderBrush="#e2e8f0" 
+                BorderThickness="1" 
+                CornerRadius="3" 
+                Padding="8" 
+                Margin="0,0,0,10" 
+                Background="#fefce8">
+            <TextBlock x:Name="StatisticsText"
+                       Text="0 GO terms displayed"
+                       FontSize="10"
+                       Foreground="#64748b"/>
         </Border>
 
         <!-- GO Terms Grid -->
         <DataGrid x:Name="GoTermsGrid"
-                  Grid.Row="1"
+                  Grid.Row="3"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
                   CanUserAddRows="False"
@@ -40,7 +96,7 @@
                   CanUserSortColumns="True"
                   GridLinesVisibility="All"
                   HeadersVisibility="All"
-                  SelectionMode="Single"
+                  SelectionMode="Extended"
                   AlternatingRowBackground="#f9fafb"
                   RowBackground="White">
             <DataGrid.ColumnHeaderStyle>
@@ -54,8 +110,8 @@
             </DataGrid.ColumnHeaderStyle>
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Run Name" Binding="{Binding RunName}" Width="*"/>
-                <DataGridTextColumn Header="Top GO Term" Binding="{Binding TopGoTermName}" Width="2*"/>
-                <DataGridTextColumn Header="GO ID" Binding="{Binding TopGoTermId}" Width="100"/>
+                <DataGridTextColumn Header="GO Term" Binding="{Binding GoTermName}" Width="2*"/>
+                <DataGridTextColumn Header="GO ID" Binding="{Binding GoTermId}" Width="100"/>
                 <DataGridTextColumn Header="Namespace" Binding="{Binding Namespace}" Width="150"/>
                 <DataGridTextColumn Header="P-Value" Binding="{Binding PValue, StringFormat=E2}" Width="100"/>
                 <DataGridTextColumn Header="Fold Enrichment" Binding="{Binding FoldEnrichment, StringFormat=F2}" Width="120"/>

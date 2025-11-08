@@ -55,6 +55,13 @@ namespace SCPBrowser
         {
             _goEnrichmentResults = results;
             _goTermColorMap = colorMap;
+            ColorByGoTermRadio.IsEnabled = results != null && results.Count > 0;
+
+            // Update GO tab if we have selected points
+            if (_currentSelectedPoints.Count > 0)
+            {
+                GoEnrichmentTab.UpdateGoEnrichment(_currentSelectedPoints, _goEnrichmentResults);
+            }
         }
 
         private void ColorMode_Changed(object sender, RoutedEventArgs e)
@@ -73,6 +80,7 @@ namespace SCPBrowser
             if (_currentData == null || _currentData.PeptideCountPerFile.Count == 0)
             {
                 SelectedPointsGridPanel.ClearGrid();
+                GoEnrichmentTab.ClearData();
                 ClearSelectionButton.IsEnabled = false;
                 RunDetailPanel.ClearDetails();
                 return;
@@ -118,8 +126,10 @@ namespace SCPBrowser
         {
             ScatterPlot.ClearSelection();
             SelectedPointsGridPanel.ClearGrid();
+            GoEnrichmentTab.ClearData();
             ClearSelectionButton.IsEnabled = false;
             RunDetailPanel.ClearDetails();
+            _currentSelectedPoints.Clear();
         }
 
         private void ScatterPlot_SelectionChanged(object sender, PlotSelectionChangedEventArgs e)
@@ -139,6 +149,7 @@ namespace SCPBrowser
                 }).ToList();
 
                 SelectedPointsGridPanel.UpdateGrid(gridData);
+                GoEnrichmentTab.UpdateGoEnrichment(e.SelectedPoints, _goEnrichmentResults);
                 ClearSelectionButton.IsEnabled = true;
 
                 if (e.SelectedPoints.Count == 1)
@@ -153,6 +164,7 @@ namespace SCPBrowser
             else
             {
                 SelectedPointsGridPanel.ClearGrid();
+                GoEnrichmentTab.ClearData();
                 ClearSelectionButton.IsEnabled = false;
                 RunDetailPanel.ClearDetails();
             }

@@ -23,15 +23,11 @@ namespace SCPBrowser
 
             if (gridData.Count > 0)
             {
-                SelectionCountText.Text = $"({gridData.Count} selected)";
-                SelectionStatusText.Text = $"{gridData.Count} point(s) selected";
-                SelectedPointsExpander.IsExpanded = true;
+                SelectionStatusText.Text = $"{gridData.Count} point(s) selected. Click a row to view details in the right panel.";
             }
             else
             {
-                SelectionCountText.Text = "";
                 SelectionStatusText.Text = "Click a point or drag to select multiple points. Right-click a point to view details.";
-                // We don't collapse the expander automatically, let the user do it
             }
         }
 
@@ -41,7 +37,6 @@ namespace SCPBrowser
         public void ClearGrid()
         {
             SelectedPointsGrid.ItemsSource = null;
-            SelectionCountText.Text = "";
             SelectionStatusText.Text = "Click a point or drag to select multiple points. Right-click a point to view details.";
         }
 

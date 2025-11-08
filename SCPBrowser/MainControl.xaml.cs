@@ -11,6 +11,8 @@ namespace SCPBrowser
 {
     public partial class MainControl : UserControl
     {
+        public event EventHandler DataLoaded;
+
         private readonly ParquetDataService _dataService;
         private readonly TranscriptomicManager _transcriptomicManager;
         private ProteomicsData _currentData;
@@ -118,12 +120,12 @@ namespace SCPBrowser
             }
         }
 
-        private async void OpenFileButton_Click(object sender, RoutedEventArgs e)
+        public async void OpenDiannFile()
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
-                Title = "Select DIA-NN Parquet File"
+                Filter = "DIA-NN Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
+                Title = "Open DIA-NN Parquet File"
             };
 
             if (dialog.ShowDialog() != true)
@@ -147,7 +149,6 @@ namespace SCPBrowser
             try
             {
                 StatusText.Text = "Loading data...";
-                OpenFileButton.IsEnabled = false;
                 ReloadButton.IsEnabled = false;
 
                 var targetIdsText = TargetProteinIdsTextBox.Text.Trim();
@@ -177,6 +178,9 @@ namespace SCPBrowser
 
                 StatusPanel.Visibility = Visibility.Visible;
 
+                // Raise event to hide the logo overlay
+                DataLoaded?.Invoke(this, EventArgs.Empty);
+
                 await LoadTranscriptomicReferenceAsync();
                 await LoadGoEnrichmentAsync();
 
@@ -193,7 +197,6 @@ namespace SCPBrowser
             }
             finally
             {
-                OpenFileButton.IsEnabled = true;
                 ReloadButton.IsEnabled = !string.IsNullOrEmpty(_currentFilePath);
             }
         }

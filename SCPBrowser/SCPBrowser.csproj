@@ -9,7 +9,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="images\logo.png" />
     <None Remove="SupportingFiles\goslim_generic.obo" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="images\logo.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

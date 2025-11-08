@@ -21,6 +21,11 @@ namespace SCPBrowser
             InitializeComponent();
         }
 
+        private void MainControlTab_DataLoaded(object sender, EventArgs e)
+        {
+            LogoOverlay.Visibility = Visibility.Collapsed;
+        }
+
         private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             var data = MainControlTab.GetCurrentData();
@@ -327,6 +332,11 @@ namespace SCPBrowser
                 MessageBox.Show($"Error:\n\n{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void OpenDiannFile_Click(object sender, RoutedEventArgs e)
+        {
+            MainControlTab.OpenDiannFile();
         }
 
         private void About_Click(object sender, RoutedEventArgs e)

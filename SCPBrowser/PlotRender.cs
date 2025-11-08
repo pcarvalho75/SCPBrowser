@@ -294,11 +294,12 @@ namespace SCPBrowser
 
             var titleText = new TextBlock
             {
-                Text = "Trypsin Ratio",
+                Text = "Target Protein Ratio",
                 FontSize = 11,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(Colors.Black)
             };
+
             titleText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             Canvas.SetLeft(titleText, legendX - 5);
             Canvas.SetTop(titleText, legendY - 20);

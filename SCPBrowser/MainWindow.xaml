@@ -17,10 +17,7 @@
                 </MenuItem>
                 <MenuItem Header="_Tools">
                     <MenuItem Header="_Convert Transcriptomic TSV to Parquet..." Click="ConvertTranscriptomic_Click"/>
-                    <MenuItem Header="_Load GO Slim (Test)..." Click="LoadGoSlim_Click"/>
-                    <MenuItem Header="Load GOA" Click="LoadGoa_Click"/>
-                    <MenuItem Header="Compile GO Annotations" Click="CompileGoAnnotations_Click"/>
-                    <MenuItem Header="Test Enrichment" Click="TestEnrichment_Click"/>
+                    <MenuItem Header="_Compile GO Annotations..." Click="CompileGoAnnotations_Click"/>
                 </MenuItem>
                 <MenuItem Header="_Help">
                     <MenuItem Header="_About" Click="About_Click"/>

@@ -203,137 +203,6 @@ namespace SCPBrowser
             }
         }
 
-        private async void LoadGoSlim_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new OpenFileDialog
-            {
-                Filter = "OBO files (*.obo)|*.obo|All files (*.*)|*.*",
-                Title = "Select GO Slim OBO File"
-            };
-
-            if (dialog.ShowDialog() != true)
-                return;
-
-            try
-            {
-                Mouse.OverrideCursor = Cursors.Wait;
-
-                var parser = new GoSlimParser();
-                var database = await parser.ParseOboFileAsync(dialog.FileName);
-
-                Mouse.OverrideCursor = null;
-
-                MessageBox.Show(
-                    $"GO Slim loaded successfully!\n\n" +
-                    $"Total Terms: {database.TotalTerms:N0}\n" +
-                    $"Biological Process: {database.BiologicalProcessCount:N0}\n" +
-                    $"Molecular Function: {database.MolecularFunctionCount:N0}\n" +
-                    $"Cellular Component: {database.CellularComponentCount:N0}\n" +
-                    $"Annotatable Terms: {database.AnnotatableTerms:N0}\n\n" +
-                    $"Sample terms:\n" +
-                    string.Join("\n", database.Terms.Values.Take(5).Select(t => $"  {t.Id} - {t.Name}")),
-                    "GO Slim Test",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                Mouse.OverrideCursor = null;
-                MessageBox.Show(
-                    $"Error loading GO Slim:\n\n{ex.Message}",
-                    "Load Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-            }
-        }
-
-        private async void LoadGoa_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new OpenFileDialog
-            {
-                Filter = "GAF files (*.gaf)|*.gaf|All files (*.*)|*.*",
-                Title = "Select GOA GAF File"
-            };
-
-            if (dialog.ShowDialog() != true)
-                return;
-
-            try
-            {
-                Mouse.OverrideCursor = Cursors.Wait;
-
-                var parser = new GoAnnotationParser();
-                var database = await parser.ParseAndBuildDatabaseAsync(dialog.FileName);
-
-                Mouse.OverrideCursor = null;
-
-                MessageBox.Show(
-                    $"GOA loaded successfully!\n\n" +
-                    $"Total Proteins: {database.TotalProteins:N0}\n" +
-                    $"Total Annotations: {database.TotalAnnotations:N0}\n" +
-                    $"Unique GO Terms: {database.GoTermToProteins.Count:N0}",
-                    "GOA Test",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                Mouse.OverrideCursor = null;
-                MessageBox.Show(
-                    $"Error loading GOA:\n\n{ex.Message}",
-                    "Load Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-            }
-        }
-
-        private async void TestEnrichment_Click(object sender, RoutedEventArgs e)
-        {
-            var databaseDialog = new OpenFileDialog
-            {
-                Filter = "SQLite Database (*.db)|*.db|All files (*.*)|*.*",
-                Title = "Select Reference Database"
-            };
-
-            if (databaseDialog.ShowDialog() != true)
-                return;
-
-            try
-            {
-                Mouse.OverrideCursor = Cursors.Wait;
-
-                var referenceService = new ReferenceDataService();
-                var (goSlimDb, annotationDb) = await referenceService.LoadGoAnnotationsAsync(databaseDialog.FileName);
-
-                // Test with a small sample of proteins (first 500)
-                var testProteins = annotationDb.ProteinToGoTerms.Keys.Take(500).ToList();
-
-                var analyzer = new GoEnrichmentAnalyzer(goSlimDb, annotationDb);
-                var enrichmentResults = analyzer.AnalyzeEnrichment(testProteins, pValueThreshold: 0.05);
-
-                Mouse.OverrideCursor = null;
-
-                var topResults = enrichmentResults.Take(10);
-                var resultsText = string.Join("\n", topResults.Select(r =>
-                    $"  {r.GoTermName}: p={r.PValue:E2}, {r.Overlap}/{r.ProteinsInSample} proteins"));
-
-                MessageBox.Show(
-                    $"Enrichment Analysis Complete!\n\n" +
-                    $"Sample size: {testProteins.Count} proteins\n" +
-                    $"Significant GO terms: {enrichmentResults.Count}\n\n" +
-                    $"Top 10 enriched terms:\n{resultsText}",
-                    "Enrichment Test",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                Mouse.OverrideCursor = null;
-                MessageBox.Show($"Error:\n\n{ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
         private void OpenDiannFile_Click(object sender, RoutedEventArgs e)
         {
             MainControlTab.OpenDiannFile();
@@ -344,7 +213,7 @@ namespace SCPBrowser
             MessageBox.Show(
                 "SCP Browser - Single Cell Proteomics Analysis Tool\n\n" +
                 "Version 1.0\n\n" +
-                "Developed at Fiocruz\n" +
+                "Developed at Fiocruz Paraná and ISSCOR / UCSD\n" +
                 "Computational Proteomics",
                 "About SCP Browser",
                 MessageBoxButton.OK,

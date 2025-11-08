@@ -103,7 +103,6 @@ namespace SCPBrowser
 
                 if (_currentData == null || _currentData.PeptideCountPerFile.Count == 0)
                 {
-                    StatusText.Text = "No data to display";
                     SelectedPointsGrid.ItemsSource = null;
                     ClearSelectionButton.IsEnabled = false;
                     ClearDetailsPanel();
@@ -132,8 +131,8 @@ namespace SCPBrowser
                 _currentData.TotalIonCurrentPerFile[rf] : 0).ToList();
             var proteinCounts = rawFiles.Select(rf => _currentData.ProteinCountPerFile.ContainsKey(rf) ?
                 _currentData.ProteinCountPerFile[rf] : 0).ToList();
-            var trypsinRatios = rawFiles.Select(rf => _currentData.TrypsinRatioPerFile.ContainsKey(rf) ?
-                _currentData.TrypsinRatioPerFile[rf] : 0).ToList();
+            var trypsinRatios = rawFiles.Select(rf => _currentData.TargetProteinRatioPerFile.ContainsKey(rf) ?
+                _currentData.TargetProteinRatioPerFile[rf] : 0).ToList();
 
             bool useLogLog = LogLogCheckBox.IsChecked == true;
 
@@ -145,9 +144,8 @@ namespace SCPBrowser
 
             if (_useCellTypeColoring && _cellTypePredictions != null)
             {
-                _dataPoints = DrawDataPointsWithCellTypes(PlotCanvas, rawFiles, peptideCounts, ticValues,
-                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight);
-                DrawCellTypeLegend(PlotCanvas, canvasWidth, canvasHeight);
+                int predictedCount = _dataPoints.Count(p => !string.IsNullOrEmpty(p.PredictedCellType));
+                PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({rawFiles.Count} files, {predictedCount} with cell type predictions)";
             }
             else
             {
@@ -165,11 +163,10 @@ namespace SCPBrowser
                 UpdateSelectedPointsGrid(new List<DataPoint>());
             }
 
-            StatusText.Text = $"Displaying {rawFiles.Count} raw files";
+            PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({rawFiles.Count} files)";
             if (_useCellTypeColoring && _cellTypePredictions != null)
             {
                 int predictedCount = _dataPoints.Count(p => !string.IsNullOrEmpty(p.PredictedCellType));
-                StatusText.Text += $" | {predictedCount} with cell type predictions";
             }
         }
 

@@ -68,7 +68,7 @@ namespace SCPBrowser
         public Dictionary<string, int> ProteinCountPerFile { get; set; } = new();
         public Dictionary<string, int> PeptideCountPerFile { get; set; } = new();
         public Dictionary<string, double> TotalIonCurrentPerFile { get; set; } = new();
-        public Dictionary<string, double> TrypsinRatioPerFile { get; set; } = new();
+        public Dictionary<string, double> TargetProteinRatioPerFile { get; set; } = new();
         public Dictionary<string, Dictionary<string, double>> ProteinQuantMatrix { get; set; } = new();
         public List<string> RawFileNames { get; set; } = new();
     }
@@ -275,7 +275,7 @@ namespace SCPBrowser
             {
                 double totalTic = ticByFile[rawFile];
                 double targetTic = targetProteinTicByFile[rawFile];
-                data.TrypsinRatioPerFile[rawFile] = totalTic > 0 ? (targetTic / totalTic) : 0;
+                data.TargetProteinRatioPerFile[rawFile] = totalTic > 0 ? (targetTic / totalTic) : 0;
             }
 
             return data;

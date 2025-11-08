@@ -8,7 +8,7 @@ using System.Windows.Shapes;
 namespace SCPBrowser
 {
     /// <summary>
-    /// Manages polygon selection and gating operations for scatter plot
+    /// Manages polygon selection and gating operations for scatter plot.
     /// </summary>
     public class SelectionManager
     {
@@ -71,7 +71,6 @@ namespace SCPBrowser
             _drawingPolyline.Visibility = Visibility.Visible;
 
             _selectionPolygon.Visibility = Visibility.Collapsed;
-
             _startPointIndicator.Visibility = Visibility.Visible;
         }
 
@@ -96,14 +95,9 @@ namespace SCPBrowser
                 Math.Pow(currentPoint.Y - _polygonPointsScreen[0].Y, 2)
             );
 
-            if (distanceToStart < CloseThreshold)
-            {
-                _startPointIndicator.Fill = new SolidColorBrush(Color.FromRgb(34, 197, 94));
-            }
-            else
-            {
-                _startPointIndicator.Fill = new SolidColorBrush(Color.FromRgb(220, 38, 38));
-            }
+            _startPointIndicator.Fill = distanceToStart < CloseThreshold
+                ? new SolidColorBrush(Color.FromRgb(34, 197, 94))
+                : new SolidColorBrush(Color.FromRgb(220, 38, 38));
         }
 
         public void FinishDrawing()
@@ -124,9 +118,8 @@ namespace SCPBrowser
 
             _selectionPolygon.Points.Clear();
             foreach (var point in simplifiedPoints)
-            {
                 _selectionPolygon.Points.Add(point);
-            }
+
             _selectionPolygon.Visibility = Visibility.Visible;
         }
 
@@ -149,6 +142,9 @@ namespace SCPBrowser
         public void StoreDataCoordinates(List<Point> dataPoints)
         {
             _polygonPointsData.Clear();
+            if (dataPoints == null || dataPoints.Count == 0)
+                return;
+
             _polygonPointsData.AddRange(dataPoints);
         }
 
@@ -175,6 +171,36 @@ namespace SCPBrowser
             return IsPointInPolygon(point, _polygonPointsScreen);
         }
 
+        public void SetPolygonPointsData(List<Point> points)
+        {
+            _polygonPointsData.Clear();
+            if (points == null || points.Count == 0)
+                return;
+
+            _polygonPointsData.AddRange(points);
+            _selectionPolygon.Points.Clear();
+
+            foreach (var p in points)
+                _selectionPolygon.Points.Add(p);
+
+            _selectionPolygon.Visibility = Visibility.Visible;
+        }
+
+        public void SetPolygonPointsScreen(List<Point> points)
+        {
+            _polygonPointsScreen.Clear();
+            if (points == null || points.Count == 0)
+                return;
+
+            _polygonPointsScreen.AddRange(points);
+            _selectionPolygon.Points.Clear();
+
+            foreach (var p in points)
+                _selectionPolygon.Points.Add(p);
+
+            _selectionPolygon.Visibility = Visibility.Visible;
+        }
+
         private List<Point> SimplifyPolygon(List<Point> points, double tolerance = 3.0)
         {
             if (points.Count < 3)
@@ -190,9 +216,7 @@ namespace SCPBrowser
                 );
 
                 if (distance >= tolerance)
-                {
                     simplified.Add(points[i]);
-                }
             }
 
             simplified.Add(points.Last());

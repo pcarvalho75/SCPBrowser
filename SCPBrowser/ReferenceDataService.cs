@@ -28,62 +28,17 @@ namespace SCPBrowser
             }
         }
 
-        private async Task CreateSchemaAsync(SqliteConnection connection)
-        {
-            using (var command = connection.CreateCommand())
-            {
-                command.CommandText = @"
-                    -- Transcriptomic gene expression data
-                    CREATE TABLE IF NOT EXISTS gene_expression (
-                        gene_name TEXT NOT NULL,
-                        cell_id TEXT NOT NULL,
-                        count INTEGER NOT NULL,
-                        PRIMARY KEY (gene_name, cell_id)
-                    );
 
-                    -- Cell metadata
-                    CREATE TABLE IF NOT EXISTS cell_metadata (
-                        cell_id TEXT PRIMARY KEY,
-                        age TEXT,
-                        sex TEXT,
-                        batch TEXT,
-                        cell_type TEXT,
-                        genes_detected INTEGER,
-                        total_reads INTEGER,
-                        mapped_reads INTEGER,
-                        mapping_rate REAL
-                    );
 
-                    -- GO terms (GO Slim)
-                    CREATE TABLE IF NOT EXISTS go_terms (
-                        go_id TEXT PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        namespace TEXT NOT NULL
-                    );
-
-                    -- Protein to GO term annotations
-                    CREATE TABLE IF NOT EXISTS protein_go_annotations (
-                        protein_id TEXT NOT NULL,
-                        go_term_id TEXT NOT NULL,
-                        PRIMARY KEY (protein_id, go_term_id)
-                    );
-
-                    -- Indexes for fast queries
-                    CREATE INDEX IF NOT EXISTS idx_gene_expr_gene ON gene_expression(gene_name);
-                    CREATE INDEX IF NOT EXISTS idx_gene_expr_cell ON gene_expression(cell_id);
-                    CREATE INDEX IF NOT EXISTS idx_cell_type ON cell_metadata(cell_type);
-                    CREATE INDEX IF NOT EXISTS idx_protein_go ON protein_go_annotations(protein_id);
-                    CREATE INDEX IF NOT EXISTS idx_go_protein ON protein_go_annotations(go_term_id);
-                ";
-
-                await command.ExecuteNonQueryAsync();
-            }
-        }
 
         // ==================== TRANSCRIPTOMIC DATA ====================
 
         /// <summary>
         /// Clears all transcriptomic data (gene expression and cell metadata) from the database
+        /// </summary>
+        /// <summary>
+        /// Clears all transcriptomic data (gene expression, cell metadata, and lookup tables) from the database
+        /// REPLACE the existing ClearTranscriptomicDataAsync method in ReferenceDataService.cs with this version
         /// </summary>
         public async Task ClearTranscriptomicDataAsync(string databasePath)
         {
@@ -99,9 +54,11 @@ namespace SCPBrowser
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        DELETE FROM gene_expression;
-                        DELETE FROM cell_metadata;
-                    ";
+                DELETE FROM gene_expression;
+                DELETE FROM cell_metadata;
+                DELETE FROM genes;
+                DELETE FROM cells;
+            ";
                     await command.ExecuteNonQueryAsync();
                 }
 
@@ -136,11 +93,82 @@ namespace SCPBrowser
             }
         }
 
+        // ====================================================================
+        // REPLACE THESE METHODS IN ReferenceDataService.cs
+        // Add IProgressReporter progress = null parameter to support progress updates
+        // ====================================================================
+
+        private async Task CreateSchemaAsync(SqliteConnection connection)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = @"
+            -- Gene lookup table (converts gene names to integer IDs)
+            CREATE TABLE IF NOT EXISTS genes (
+                gene_id INTEGER PRIMARY KEY,
+                gene_name TEXT UNIQUE NOT NULL
+            );
+
+            -- Cell lookup table (converts cell IDs to integer IDs)
+            CREATE TABLE IF NOT EXISTS cells (
+                cell_id INTEGER PRIMARY KEY,
+                cell_name TEXT UNIQUE NOT NULL
+            );
+
+            -- Sparse gene expression matrix using integer foreign keys
+            CREATE TABLE IF NOT EXISTS gene_expression (
+                gene_id INTEGER NOT NULL,
+                cell_id INTEGER NOT NULL,
+                count INTEGER NOT NULL,
+                PRIMARY KEY (gene_id, cell_id),
+                FOREIGN KEY (gene_id) REFERENCES genes(gene_id),
+                FOREIGN KEY (cell_id) REFERENCES cells(cell_id)
+            ) WITHOUT ROWID;
+
+            -- Cell metadata (still uses text cell_name as primary key for backwards compatibility)
+            CREATE TABLE IF NOT EXISTS cell_metadata (
+                cell_name TEXT PRIMARY KEY,
+                age TEXT,
+                sex TEXT,
+                batch TEXT,
+                cell_type TEXT,
+                genes_detected INTEGER,
+                total_reads INTEGER,
+                mapped_reads INTEGER,
+                mapping_rate REAL
+            );
+
+            -- GO terms (GO Slim)
+            CREATE TABLE IF NOT EXISTS go_terms (
+                go_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                namespace TEXT NOT NULL
+            );
+
+            -- Protein to GO term annotations
+            CREATE TABLE IF NOT EXISTS protein_go_annotations (
+                protein_id TEXT NOT NULL,
+                go_term_id TEXT NOT NULL,
+                PRIMARY KEY (protein_id, go_term_id)
+            );
+
+            -- Indexes for fast queries
+            CREATE INDEX IF NOT EXISTS idx_gene_expr_gene ON gene_expression(gene_id);
+            CREATE INDEX IF NOT EXISTS idx_gene_expr_cell ON gene_expression(cell_id);
+            CREATE INDEX IF NOT EXISTS idx_cell_type ON cell_metadata(cell_type);
+            CREATE INDEX IF NOT EXISTS idx_protein_go ON protein_go_annotations(protein_id);
+            CREATE INDEX IF NOT EXISTS idx_go_protein ON protein_go_annotations(go_term_id);
+        ";
+
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
         public async Task WriteTranscriptomicDataAsync(
             string databasePath,
-            List<GeneExpressionRecord> expressionRecords,
-            List<CellMetadata> metadata,
-            bool clearExistingData = true)
+            ParsedTranscriptomicData parsedData,
+            bool clearExistingData = true,
+            IProgressReporter progress = null)
         {
             var connectionString = $"Data Source={databasePath}";
 
@@ -149,55 +177,178 @@ namespace SCPBrowser
                 await connection.OpenAsync();
 
                 // Ensure tables exist
+                progress?.ReportMessage("Creating database schema...");
                 await CreateSchemaAsync(connection);
 
                 // Clear existing data if requested
                 if (clearExistingData)
                 {
+                    progress?.ReportMessage("Clearing existing transcriptomic data...");
                     using (var command = connection.CreateCommand())
                     {
                         command.CommandText = @"
-                            DELETE FROM gene_expression;
-                            DELETE FROM cell_metadata;
-                        ";
+                    DELETE FROM gene_expression;
+                    DELETE FROM cell_metadata;
+                    DELETE FROM genes;
+                    DELETE FROM cells;
+                ";
                         await command.ExecuteNonQueryAsync();
                     }
-                    Console.WriteLine("Cleared existing transcriptomic data from database.");
+                    progress?.ReportProgress("Database cleared");
                 }
 
                 // Performance optimizations for bulk insert
+                progress?.ReportMessage("Optimizing database for bulk insert...");
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        PRAGMA synchronous = OFF;
-                        PRAGMA journal_mode = MEMORY;
-                        PRAGMA temp_store = MEMORY;
-                    ";
+                PRAGMA synchronous = OFF;
+                PRAGMA journal_mode = MEMORY;
+                PRAGMA temp_store = MEMORY;
+            ";
                     await command.ExecuteNonQueryAsync();
                 }
 
-                // Insert gene expression
-                await InsertGeneExpressionAsync(connection, expressionRecords);
+                // Insert lookup tables first
+                await InsertGeneLookupAsync(connection, parsedData.GeneLookup, progress);
+                await InsertCellLookupAsync(connection, parsedData.CellLookup, progress);
+
+                // Insert gene expression data
+                await InsertGeneExpressionAsync(connection, parsedData.ExpressionRecords, progress);
 
                 // Insert cell metadata
-                await InsertCellMetadataAsync(connection, metadata);
+                await InsertCellMetadataAsync(connection, parsedData.Metadata, progress);
 
                 // Restore normal settings
+                progress?.ReportMessage("Finalizing database...");
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        PRAGMA synchronous = FULL;
-                    ";
+                PRAGMA synchronous = FULL;
+            ";
                     await command.ExecuteNonQueryAsync();
                 }
+                progress?.ReportProgress("Database write complete");
             }
         }
 
-        private async Task InsertGeneExpressionAsync(SqliteConnection connection, List<GeneExpressionRecord> records)
+        private async Task InsertGeneLookupAsync(SqliteConnection connection, GeneLookup geneLookup, IProgressReporter progress = null)
         {
-            const int batchSize = 5000;
+            const int batchSize = 1000;
+            var allGenes = geneLookup.GetAllGenes();
 
-            Console.WriteLine($"Inserting {records.Count:N0} gene expression records in batches of {batchSize:N0}...");
+            progress?.ReportMessage($"Inserting {allGenes.Count:N0} genes into lookup table...");
+
+            var geneList = new List<(int id, string name)>();
+            foreach (var kvp in allGenes)
+            {
+                geneList.Add((kvp.Key, kvp.Value));
+            }
+
+            for (int i = 0; i < geneList.Count; i += batchSize)
+            {
+                var batch = geneList.Skip(i).Take(batchSize).ToList();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    using (var command = connection.CreateCommand())
+                    {
+                        var valuesClauses = new List<string>();
+                        var parameters = new List<SqliteParameter>();
+
+                        for (int j = 0; j < batch.Count; j++)
+                        {
+                            var gene = batch[j];
+                            var paramPrefix = $"@g{j}_";
+
+                            valuesClauses.Add($"({paramPrefix}id, {paramPrefix}name)");
+
+                            parameters.Add(new SqliteParameter($"{paramPrefix}id", gene.id));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}name", gene.name));
+                        }
+
+                        command.CommandText = $@"
+                    INSERT OR REPLACE INTO genes (gene_id, gene_name)
+                    VALUES {string.Join(", ", valuesClauses)}
+                ";
+
+                        command.Parameters.AddRange(parameters.ToArray());
+                        await command.ExecuteNonQueryAsync();
+                    }
+
+                    await transaction.CommitAsync();
+                }
+
+                if ((i + batchSize) % 5000 == 0 || i + batchSize >= geneList.Count)
+                {
+                    progress?.ReportProgress($"Gene lookup: {Math.Min(i + batchSize, geneList.Count):N0} / {geneList.Count:N0}");
+                }
+            }
+
+            progress?.ReportProgress("Gene lookup table complete");
+        }
+
+        private async Task InsertCellLookupAsync(SqliteConnection connection, CellLookup cellLookup, IProgressReporter progress = null)
+        {
+            const int batchSize = 1000;
+            var allCells = cellLookup.GetAllCells();
+
+            progress?.ReportMessage($"Inserting {allCells.Count:N0} cells into lookup table...");
+
+            var cellList = new List<(int id, string name)>();
+            foreach (var kvp in allCells)
+            {
+                cellList.Add((kvp.Key, kvp.Value));
+            }
+
+            for (int i = 0; i < cellList.Count; i += batchSize)
+            {
+                var batch = cellList.Skip(i).Take(batchSize).ToList();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    using (var command = connection.CreateCommand())
+                    {
+                        var valuesClauses = new List<string>();
+                        var parameters = new List<SqliteParameter>();
+
+                        for (int j = 0; j < batch.Count; j++)
+                        {
+                            var cell = batch[j];
+                            var paramPrefix = $"@c{j}_";
+
+                            valuesClauses.Add($"({paramPrefix}id, {paramPrefix}name)");
+
+                            parameters.Add(new SqliteParameter($"{paramPrefix}id", cell.id));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}name", cell.name));
+                        }
+
+                        command.CommandText = $@"
+                    INSERT OR REPLACE INTO cells (cell_id, cell_name)
+                    VALUES {string.Join(", ", valuesClauses)}
+                ";
+
+                        command.Parameters.AddRange(parameters.ToArray());
+                        await command.ExecuteNonQueryAsync();
+                    }
+
+                    await transaction.CommitAsync();
+                }
+
+                if ((i + batchSize) % 5000 == 0 || i + batchSize >= cellList.Count)
+                {
+                    progress?.ReportProgress($"Cell lookup: {Math.Min(i + batchSize, cellList.Count):N0} / {cellList.Count:N0}");
+                }
+            }
+
+            progress?.ReportProgress("Cell lookup table complete");
+        }
+
+        private async Task InsertGeneExpressionAsync(SqliteConnection connection, List<GeneExpressionRecord> records, IProgressReporter progress = null)
+        {
+            const int batchSize = 10000; // Larger batch size since we're using integers now
+
+            progress?.ReportMessage($"Inserting {records.Count:N0} gene expression records...");
 
             for (int i = 0; i < records.Count; i += batchSize)
             {
@@ -215,18 +366,17 @@ namespace SCPBrowser
                             var record = batch[j];
                             var paramPrefix = $"@p{j}_";
 
-                            valuesClauses.Add($"({paramPrefix}gene_name, {paramPrefix}cell_id, {paramPrefix}count)");
+                            valuesClauses.Add($"({paramPrefix}gene_id, {paramPrefix}cell_id, {paramPrefix}count)");
 
-                            parameters.Add(new SqliteParameter($"{paramPrefix}gene_name", record.GeneName));
-                            parameters.Add(new SqliteParameter($"{paramPrefix}cell_id", record.CellID));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}gene_id", record.GeneId));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}cell_id", record.CellId));
                             parameters.Add(new SqliteParameter($"{paramPrefix}count", record.Count));
                         }
 
-                        // Use INSERT OR IGNORE to skip duplicates (safety net)
                         command.CommandText = $@"
-                            INSERT OR IGNORE INTO gene_expression (gene_name, cell_id, count)
-                            VALUES {string.Join(", ", valuesClauses)}
-                        ";
+                    INSERT OR IGNORE INTO gene_expression (gene_id, cell_id, count)
+                    VALUES {string.Join(", ", valuesClauses)}
+                ";
 
                         command.Parameters.AddRange(parameters.ToArray());
                         await command.ExecuteNonQueryAsync();
@@ -237,18 +387,20 @@ namespace SCPBrowser
 
                 if ((i + batchSize) % 50000 == 0 || i + batchSize >= records.Count)
                 {
-                    Console.WriteLine($"  Progress: {Math.Min(i + batchSize, records.Count):N0} / {records.Count:N0} records inserted");
+                    var current = Math.Min(i + batchSize, records.Count);
+                    var percentage = (current * 100.0 / records.Count);
+                    progress?.ReportProgress($"Expression data: {current:N0} / {records.Count:N0} ({percentage:F1}%)");
                 }
             }
 
-            Console.WriteLine("Gene expression data insertion complete.");
+            progress?.ReportProgress("Gene expression data complete");
         }
 
-        private async Task InsertCellMetadataAsync(SqliteConnection connection, List<CellMetadata> metadata)
+        private async Task InsertCellMetadataAsync(SqliteConnection connection, List<CellMetadata> metadata, IProgressReporter progress = null)
         {
-            const int batchSize = 1000;
+            const int batchSize = 500;
 
-            Console.WriteLine($"Inserting {metadata.Count:N0} cell metadata records...");
+            progress?.ReportMessage($"Inserting {metadata.Count:N0} cell metadata records...");
 
             for (int i = 0; i < metadata.Count; i += batchSize)
             {
@@ -264,17 +416,21 @@ namespace SCPBrowser
                         for (int j = 0; j < batch.Count; j++)
                         {
                             var cell = batch[j];
-                            var paramPrefix = $"@p{j}_";
+                            var paramPrefix = $"@m{j}_";
 
-                            valuesClauses.Add($"({paramPrefix}cell_id, {paramPrefix}age, {paramPrefix}sex, " +
+                            valuesClauses.Add($"({paramPrefix}cell_name, {paramPrefix}age, {paramPrefix}sex, " +
                                             $"{paramPrefix}batch, {paramPrefix}cell_type, {paramPrefix}genes_detected, " +
                                             $"{paramPrefix}total_reads, {paramPrefix}mapped_reads, {paramPrefix}mapping_rate)");
 
-                            parameters.Add(new SqliteParameter($"{paramPrefix}cell_id", cell.CellID));
-                            parameters.Add(new SqliteParameter($"{paramPrefix}age", (object)cell.Age ?? DBNull.Value));
-                            parameters.Add(new SqliteParameter($"{paramPrefix}sex", (object)cell.Sex ?? DBNull.Value));
-                            parameters.Add(new SqliteParameter($"{paramPrefix}batch", (object)cell.Batch ?? DBNull.Value));
-                            parameters.Add(new SqliteParameter($"{paramPrefix}cell_type", (object)cell.CellType ?? DBNull.Value));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}cell_name", cell.CellID));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}age",
+                                string.IsNullOrEmpty(cell.Age) ? (object)DBNull.Value : cell.Age));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}sex",
+                                string.IsNullOrEmpty(cell.Sex) ? (object)DBNull.Value : cell.Sex));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}batch",
+                                string.IsNullOrEmpty(cell.Batch) ? (object)DBNull.Value : cell.Batch));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}cell_type",
+                                string.IsNullOrEmpty(cell.CellType) ? (object)DBNull.Value : cell.CellType));
                             parameters.Add(new SqliteParameter($"{paramPrefix}genes_detected",
                                 cell.GenesDetected.HasValue ? (object)cell.GenesDetected.Value : DBNull.Value));
                             parameters.Add(new SqliteParameter($"{paramPrefix}total_reads",
@@ -285,12 +441,11 @@ namespace SCPBrowser
                                 cell.MappingRate.HasValue ? (object)cell.MappingRate.Value : DBNull.Value));
                         }
 
-                        // Use INSERT OR REPLACE to update existing records (safety net)
                         command.CommandText = $@"
-                            INSERT OR REPLACE INTO cell_metadata 
-                            (cell_id, age, sex, batch, cell_type, genes_detected, total_reads, mapped_reads, mapping_rate)
-                            VALUES {string.Join(", ", valuesClauses)}
-                        ";
+                    INSERT OR REPLACE INTO cell_metadata 
+                    (cell_name, age, sex, batch, cell_type, genes_detected, total_reads, mapped_reads, mapping_rate)
+                    VALUES {string.Join(", ", valuesClauses)}
+                ";
 
                         command.Parameters.AddRange(parameters.ToArray());
                         await command.ExecuteNonQueryAsync();
@@ -298,12 +453,17 @@ namespace SCPBrowser
 
                     await transaction.CommitAsync();
                 }
+
+                if ((i + batchSize) % 2500 == 0 || i + batchSize >= metadata.Count)
+                {
+                    progress?.ReportProgress($"Cell metadata: {Math.Min(i + batchSize, metadata.Count):N0} / {metadata.Count:N0}");
+                }
             }
 
-            Console.WriteLine("Cell metadata insertion complete.");
+            progress?.ReportProgress("Cell metadata complete");
         }
 
-        public async Task<TranscriptomicDatabase> LoadTranscriptomicDataAsync(string databasePath)
+        public async Task<TranscriptomicDatabase> LoadTranscriptomicDataAsync(string databasePath, IProgressReporter progress = null)
         {
             if (!File.Exists(databasePath))
                 throw new FileNotFoundException("Reference database not found", databasePath);
@@ -315,23 +475,56 @@ namespace SCPBrowser
             {
                 await connection.OpenAsync();
 
+                // Load gene lookup table
+                progress?.ReportMessage("Loading gene lookup table...");
+                var geneLookup = new Dictionary<int, string>();
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "SELECT gene_id, gene_name FROM genes";
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            geneLookup[reader.GetInt32(0)] = reader.GetString(1);
+                        }
+                    }
+                }
+                progress?.ReportProgress($"Loaded {geneLookup.Count:N0} genes");
+
+                // Load cell lookup table
+                progress?.ReportMessage("Loading cell lookup table...");
+                var cellLookup = new Dictionary<int, string>();
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "SELECT cell_id, cell_name FROM cells";
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            cellLookup[reader.GetInt32(0)] = reader.GetString(1);
+                        }
+                    }
+                }
+                progress?.ReportProgress($"Loaded {cellLookup.Count:N0} cells");
+
                 // Load cell metadata
+                progress?.ReportMessage("Loading cell metadata...");
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        SELECT cell_id, age, sex, batch, cell_type, genes_detected, 
-                               total_reads, mapped_reads, mapping_rate
-                        FROM cell_metadata
-                    ";
+                SELECT cell_name, age, sex, batch, cell_type, genes_detected, 
+                       total_reads, mapped_reads, mapping_rate
+                FROM cell_metadata
+            ";
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
                         while (await reader.ReadAsync())
                         {
-                            var cellId = reader.GetString(0);
+                            var cellName = reader.GetString(0);
                             var metadata = new CellMetadata
                             {
-                                CellID = cellId,
+                                CellID = cellName,
                                 Age = reader.IsDBNull(1) ? null : reader.GetString(1),
                                 Sex = reader.IsDBNull(2) ? null : reader.GetString(2),
                                 Batch = reader.IsDBNull(3) ? null : reader.GetString(3),
@@ -342,48 +535,69 @@ namespace SCPBrowser
                                 MappingRate = reader.IsDBNull(8) ? null : reader.GetDouble(8)
                             };
 
-                            database.CellMetadata[cellId] = metadata;
+                            database.CellMetadata[cellName] = metadata;
 
                             if (!string.IsNullOrEmpty(metadata.CellType))
                             {
                                 if (!database.CellTypeIndex.ContainsKey(metadata.CellType))
                                     database.CellTypeIndex[metadata.CellType] = new List<string>();
-                                database.CellTypeIndex[metadata.CellType].Add(cellId);
+                                database.CellTypeIndex[metadata.CellType].Add(cellName);
                             }
                         }
                     }
                 }
+                progress?.ReportProgress($"Loaded {database.CellMetadata.Count:N0} cell metadata records");
 
-                // Load gene expression
+                // Load gene expression using integer IDs, convert back to names
+                progress?.ReportMessage("Loading gene expression data...");
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        SELECT gene_name, cell_id, count
-                        FROM gene_expression
-                        ORDER BY gene_name
-                    ";
+                SELECT gene_id, cell_id, count
+                FROM gene_expression
+                ORDER BY gene_id
+            ";
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
+                        int recordCount = 0;
                         while (await reader.ReadAsync())
                         {
-                            var geneName = reader.GetString(0);
-                            var cellId = reader.GetString(1);
+                            var geneId = reader.GetInt32(0);
+                            var cellId = reader.GetInt32(1);
                             var count = reader.GetInt32(2);
 
-                            if (!database.GeneExpression.ContainsKey(geneName))
-                                database.GeneExpression[geneName] = new List<(string cellId, int count)>();
+                            // Convert IDs back to names
+                            if (geneLookup.TryGetValue(geneId, out string geneName) &&
+                                cellLookup.TryGetValue(cellId, out string cellName))
+                            {
+                                if (!database.GeneExpression.ContainsKey(geneName))
+                                    database.GeneExpression[geneName] = new List<(string cellId, int count)>();
 
-                            database.GeneExpression[geneName].Add((cellId, count));
+                                database.GeneExpression[geneName].Add((cellName, count));
+                                recordCount++;
+
+                                if (recordCount % 100000 == 0)
+                                {
+                                    progress?.ReportProgress($"Loaded {recordCount:N0} expression records...");
+                                }
+                            }
                         }
+                        progress?.ReportProgress($"Loaded {recordCount:N0} total expression records");
                     }
                 }
             }
 
+            progress?.ReportMessage("Database loaded successfully");
             return database;
         }
 
-        // ==================== GO ANNOTATIONS ====================
+
+
+
+
+
+
 
         public async Task WriteGoAnnotationsAsync(
             string databasePath,

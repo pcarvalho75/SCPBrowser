@@ -9,33 +9,41 @@ namespace SCPBrowser
         public static async Task ConvertTsvToSqliteAsync(
             string expressionTsvPath,
             string metadataTsvPath,
-            string outputDatabasePath)
+            string outputDatabasePath,
+            IProgressReporter progress = null)
         {
             var parser = new TranscriptomicTsvParser();
             var referenceService = new ReferenceDataService();
 
-            Console.WriteLine("Parsing gene expression matrix...");
-            var expressionRecords = await parser.ParseGeneExpressionMatrixAsync(expressionTsvPath);
-            Console.WriteLine($"Loaded {expressionRecords.Count:N0} non-zero expression values");
+            progress?.ReportMessage("Starting transcriptomic data conversion...");
 
-            Console.WriteLine("Parsing cell metadata...");
-            var metadata = await parser.ParseCellMetadataAsync(metadataTsvPath);
-            Console.WriteLine($"Loaded metadata for {metadata.Count:N0} cells");
+            var parsedData = await parser.ParseTranscriptomicDataAsync(
+                expressionTsvPath,
+                metadataTsvPath,
+                progress);
 
-            Console.WriteLine("Creating SQLite database...");
+            progress?.ReportMessage("Creating SQLite database...");
             await referenceService.CreateDatabaseAsync(outputDatabasePath);
 
-            Console.WriteLine("Writing transcriptomic data to database...");
+            progress?.ReportMessage("Writing data to database...");
             await referenceService.WriteTranscriptomicDataAsync(
                 outputDatabasePath,
-                expressionRecords,
-                metadata);
-
-            Console.WriteLine($"Conversion complete!");
-            Console.WriteLine($"Output database: {outputDatabasePath}");
+                parsedData,
+                clearExistingData: true,
+                progress: progress);
 
             var fileInfo = new FileInfo(outputDatabasePath);
-            Console.WriteLine($"Database size: {fileInfo.Length / (1024.0 * 1024.0):F2} MB");
+            var fileSizeMB = fileInfo.Length / (1024.0 * 1024.0);
+
+            progress?.ReportMessage("Conversion complete!");
+            progress?.ReportProgress($"Database size: {fileSizeMB:F2} MB");
+
+            // Calculate compression ratio
+            var avgRecordSizeOld = 60.0; // Estimated old size with TEXT
+            var estimatedOldSize = parsedData.ExpressionRecords.Count * avgRecordSizeOld;
+            var compressionRatio = estimatedOldSize / fileInfo.Length;
+
+            progress?.ReportProgress($"Compression ratio: ~{compressionRatio:F1}x smaller than text-based storage");
         }
     }
 }

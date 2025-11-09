@@ -65,21 +65,27 @@ namespace SCPBrowser
             }
         }
 
-        private async void ConvertTranscriptomic_Click(object sender, RoutedEventArgs e)
+        private async void ConvertTranscriptomicData_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new TranscriptomicConverterDialog();
             if (dialog.ShowDialog() == true)
             {
+                // Create UI progress reporter
+                var progressReporter = new UIProgressReporter(LoadingOverlay);
+
                 try
                 {
-                    Mouse.OverrideCursor = Cursors.Wait;
+                    LoadingOverlay.SetMessage("Converting Transcriptomic Data");
+                    LoadingOverlay.SetProgress("Initializing...");
+                    LoadingOverlay.Show();
 
                     await TranscriptomicConverterUtility.ConvertTsvToSqliteAsync(
                         dialog.ExpressionFilePath,
                         dialog.MetadataFilePath,
-                        dialog.OutputDatabasePath);
+                        dialog.OutputDatabasePath,
+                        progressReporter);
 
-                    Mouse.OverrideCursor = null;
+                    LoadingOverlay.Hide();
 
                     var fileInfo = new FileInfo(dialog.OutputDatabasePath);
                     var fileSizeMB = fileInfo.Length / (1024.0 * 1024.0);
@@ -97,13 +103,44 @@ namespace SCPBrowser
                 }
                 catch (Exception ex)
                 {
-                    Mouse.OverrideCursor = null;
+                    LoadingOverlay.Hide();
                     MessageBox.Show(
                         $"Error during conversion:\n\n{ex.Message}",
                         "Conversion Error",
                         MessageBoxButton.OK,
                         MessageBoxImage.Error);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Progress reporter that updates the LoadingOverlay UI
+        /// </summary>
+        private class UIProgressReporter : IProgressReporter
+        {
+            private readonly LoadingOverlay _loadingOverlay;
+
+            public UIProgressReporter(LoadingOverlay loadingOverlay)
+            {
+                _loadingOverlay = loadingOverlay;
+            }
+
+            public void ReportMessage(string message)
+            {
+                // Dispatch to UI thread
+                _loadingOverlay.Dispatcher.Invoke(() =>
+                {
+                    _loadingOverlay.SetMessage(message);
+                });
+            }
+
+            public void ReportProgress(string progressDetail)
+            {
+                // Dispatch to UI thread
+                _loadingOverlay.Dispatcher.Invoke(() =>
+                {
+                    _loadingOverlay.SetProgress(progressDetail);
+                });
             }
         }
 

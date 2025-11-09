@@ -96,6 +96,7 @@ namespace SCPBrowser
 
         public void ClearSelection()
         {
+            Console.WriteLine("Selection cleared");
             _selectionManager.ClearSelection();
 
             foreach (var point in _dataPoints)

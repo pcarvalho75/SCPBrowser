@@ -76,6 +76,7 @@ namespace SCPBrowser
 
         public void ClearData()
         {
+            Console.WriteLine("GO Enrichment Data Cleared");
             _currentSelectedPoints = null;
             _currentGoEnrichmentResults = null;
             _allGoTerms = null;

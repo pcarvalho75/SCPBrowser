@@ -38,6 +38,7 @@ namespace SCPBrowser
         private SelectionManager _selectionManager;
         private bool _isRefreshing = false;
         private const double HoverTolerance = 12;
+        private bool _suppressSelectionEvents = false;
 
         public event EventHandler<PlotSelectionChangedEventArgs> SelectionChanged;
         public event EventHandler<PointInteractionEventArgs> PointHovered;
@@ -56,8 +57,22 @@ namespace SCPBrowser
 
         public void UpdatePlot(ProteomicsData data, ScatterPlotOptions options)
         {
-            if (_isRefreshing) return;
+            var stackTrace = new System.Diagnostics.StackTrace(true);
+            Console.WriteLine("UpdatePlot called from:");
+            for (int i = 1; i < Math.Min(5, stackTrace.FrameCount); i++)
+            {
+                var frame = stackTrace.GetFrame(i);
+                Console.WriteLine($"  [{i}] {frame.GetMethod().DeclaringType?.Name}.{frame.GetMethod().Name}");
+            }
+
+            if (_isRefreshing)
+            {
+                Console.WriteLine("  -> Already refreshing, exiting");
+                return;
+            }
+
             _isRefreshing = true;
+            _suppressSelectionEvents = true;
 
             try
             {
@@ -90,6 +105,7 @@ namespace SCPBrowser
             }
             finally
             {
+                _suppressSelectionEvents = false;
                 _isRefreshing = false;
             }
         }
@@ -291,8 +307,19 @@ namespace SCPBrowser
 
         private void RedrawSelectionFromDataCoordinates()
         {
+            var stackTrace = new System.Diagnostics.StackTrace();
+            var callingMethod = stackTrace.GetFrame(1)?.GetMethod()?.Name;
+
+            Console.WriteLine($"RedrawSelectionFromDataCoordinates called by {callingMethod}:");
+            Console.WriteLine($"  -> PolygonPointsData.Count = {_selectionManager.PolygonPointsData.Count}");
+            Console.WriteLine($"  -> _dataPoints.Count = {_dataPoints.Count}");
+            Console.WriteLine($"  -> Canvas size = {PlotCanvas.ActualWidth}x{PlotCanvas.ActualHeight}");
+
             if (_selectionManager.PolygonPointsData.Count < 3)
+            {
+                Console.WriteLine($"  -> Skipped: Less than 3 polygon points");
                 return;
+            }
 
             double canvasWidth = PlotCanvas.ActualWidth;
             double canvasHeight = PlotCanvas.ActualHeight;
@@ -300,11 +327,18 @@ namespace SCPBrowser
             _selectionManager.RedrawSelectionFromDataCoordinates(
                 dataPoint => _plotRenderer.DataToScreen(dataPoint.X, dataPoint.Y, canvasWidth, canvasHeight));
 
+            Console.WriteLine($"  -> After redraw, PolygonPointsScreen.Count = {_selectionManager.PolygonPointsScreen.Count}");
             UpdateSelectionVisuals();
         }
 
         private void UpdateSelectionVisuals()
         {
+            var stackTrace = new System.Diagnostics.StackTrace();
+            var callingMethod = stackTrace.GetFrame(1)?.GetMethod()?.Name;
+            Console.WriteLine($"UpdateSelectionVisuals called by {callingMethod}:");
+            Console.WriteLine($"  -> _dataPoints.Count = {_dataPoints.Count}");
+            Console.WriteLine($"  -> PolygonPointsScreen.Count = {_selectionManager.PolygonPointsScreen.Count}");
+
             var selectedPoints = new List<DataPoint>();
 
             foreach (var point in _dataPoints)
@@ -326,7 +360,18 @@ namespace SCPBrowser
                 }
             }
 
-            SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = selectedPoints });
+            Console.WriteLine($"  -> Found {selectedPoints.Count} points in selection");
+
+            // Only fire SelectionChanged event if not suppressed
+            if (!_suppressSelectionEvents)
+            {
+                Console.WriteLine($"  -> Firing SelectionChanged event");
+                SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = selectedPoints });
+            }
+            else
+            {
+                Console.WriteLine($"  -> SelectionChanged event suppressed");
+            }
         }
 
         private void PlotCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -504,9 +549,45 @@ namespace SCPBrowser
 
         private void PlotCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            if (_currentData != null && !_isRefreshing)
+            Console.WriteLine($"PlotCanvas_SizeChanged fired: {e.PreviousSize.Width}x{e.PreviousSize.Height} -> {e.NewSize.Width}x{e.NewSize.Height}");
+
+            if (_currentData == null)
             {
+                Console.WriteLine("  -> Skipped: No data loaded");
+                return;
+            }
+
+            if (_isRefreshing)
+            {
+                Console.WriteLine("  -> Skipped: Already refreshing");
+                return;
+            }
+
+            // Determine if this is an initialization resize (from 0x0)
+            bool isInitialization = (e.PreviousSize.Width == 0 || e.PreviousSize.Height == 0);
+
+            // Check if size actually changed meaningfully
+            double widthChange = Math.Abs(e.NewSize.Width - e.PreviousSize.Width);
+            double heightChange = Math.Abs(e.NewSize.Height - e.PreviousSize.Height);
+
+            bool shouldRefresh = isInitialization || (widthChange > 2.0 || heightChange > 2.0);
+
+            if (shouldRefresh)
+            {
+                if (isInitialization)
+                {
+                    Console.WriteLine($"  -> Initial canvas sizing (0x0 -> real size)");
+                }
+                else
+                {
+                    Console.WriteLine($"  -> Canvas resize accepted: {widthChange:F2}px width change, {heightChange:F2}px height change");
+                }
+
                 UpdatePlot(_currentData, _currentOptions);
+            }
+            else
+            {
+                Console.WriteLine($"  -> Skipped: Change too small ({widthChange:F2}px x {heightChange:F2}px)");
             }
         }
     }

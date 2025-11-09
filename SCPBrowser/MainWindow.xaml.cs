@@ -20,6 +20,8 @@ namespace SCPBrowser
         public MainWindow()
         {
             InitializeComponent();
+            Console.Clear();
+
         }
 
         private void MainControlTab_DataLoaded(object sender, EventArgs e)
@@ -29,6 +31,15 @@ namespace SCPBrowser
 
         private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            // Only handle if the event is from MainTabControl itself, not from child TabControls
+            if (e.Source != MainTabControl)
+            {
+                Console.WriteLine($"MainTabControl_SelectionChanged: Ignoring event from {e.Source?.GetType().Name}");
+                return;
+            }
+
+            Console.WriteLine("MainTabControl_SelectionChanged: Processing main tab change");
+
             var data = MainControlTab.GetCurrentData();
             var imageDirectory = MainControlTab.GetCurrentFileDirectory();
             var cellTypePredictions = MainControlTab.GetCellTypePredictions();

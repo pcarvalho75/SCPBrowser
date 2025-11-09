@@ -49,5 +49,10 @@
                    MaxWidth="600"
                    MaxHeight="600"/>
         </Border>
+
+        <!-- Loading overlay - shown during operations -->
+        <local:LoadingOverlay x:Name="LoadingOverlay"
+                              Visibility="Collapsed"
+                              Panel.ZIndex="2000"/>
     </Grid>
 </Window>

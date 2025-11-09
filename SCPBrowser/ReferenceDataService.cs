@@ -34,7 +34,7 @@ namespace SCPBrowser
             {
                 command.CommandText = @"
                     -- Transcriptomic gene expression data
-                    CREATE TABLE gene_expression (
+                    CREATE TABLE IF NOT EXISTS gene_expression (
                         gene_name TEXT NOT NULL,
                         cell_id TEXT NOT NULL,
                         count INTEGER NOT NULL,
@@ -42,7 +42,7 @@ namespace SCPBrowser
                     );
 
                     -- Cell metadata
-                    CREATE TABLE cell_metadata (
+                    CREATE TABLE IF NOT EXISTS cell_metadata (
                         cell_id TEXT PRIMARY KEY,
                         age TEXT,
                         sex TEXT,
@@ -55,25 +55,25 @@ namespace SCPBrowser
                     );
 
                     -- GO terms (GO Slim)
-                    CREATE TABLE go_terms (
+                    CREATE TABLE IF NOT EXISTS go_terms (
                         go_id TEXT PRIMARY KEY,
                         name TEXT NOT NULL,
                         namespace TEXT NOT NULL
                     );
 
                     -- Protein to GO term annotations
-                    CREATE TABLE protein_go_annotations (
+                    CREATE TABLE IF NOT EXISTS protein_go_annotations (
                         protein_id TEXT NOT NULL,
                         go_term_id TEXT NOT NULL,
                         PRIMARY KEY (protein_id, go_term_id)
                     );
 
                     -- Indexes for fast queries
-                    CREATE INDEX idx_gene_expr_gene ON gene_expression(gene_name);
-                    CREATE INDEX idx_gene_expr_cell ON gene_expression(cell_id);
-                    CREATE INDEX idx_cell_type ON cell_metadata(cell_type);
-                    CREATE INDEX idx_protein_go ON protein_go_annotations(protein_id);
-                    CREATE INDEX idx_go_protein ON protein_go_annotations(go_term_id);
+                    CREATE INDEX IF NOT EXISTS idx_gene_expr_gene ON gene_expression(gene_name);
+                    CREATE INDEX IF NOT EXISTS idx_gene_expr_cell ON gene_expression(cell_id);
+                    CREATE INDEX IF NOT EXISTS idx_cell_type ON cell_metadata(cell_type);
+                    CREATE INDEX IF NOT EXISTS idx_protein_go ON protein_go_annotations(protein_id);
+                    CREATE INDEX IF NOT EXISTS idx_go_protein ON protein_go_annotations(go_term_id);
                 ";
 
                 await command.ExecuteNonQueryAsync();
@@ -82,10 +82,65 @@ namespace SCPBrowser
 
         // ==================== TRANSCRIPTOMIC DATA ====================
 
+        /// <summary>
+        /// Clears all transcriptomic data (gene expression and cell metadata) from the database
+        /// </summary>
+        public async Task ClearTranscriptomicDataAsync(string databasePath)
+        {
+            if (!File.Exists(databasePath))
+                return;
+
+            var connectionString = $"Data Source={databasePath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                        DELETE FROM gene_expression;
+                        DELETE FROM cell_metadata;
+                    ";
+                    await command.ExecuteNonQueryAsync();
+                }
+
+                Console.WriteLine("Cleared existing transcriptomic data from database.");
+            }
+        }
+
+        /// <summary>
+        /// Clears all GO annotation data from the database
+        /// </summary>
+        public async Task ClearGoAnnotationsAsync(string databasePath)
+        {
+            if (!File.Exists(databasePath))
+                return;
+
+            var connectionString = $"Data Source={databasePath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                        DELETE FROM protein_go_annotations;
+                        DELETE FROM go_terms;
+                    ";
+                    await command.ExecuteNonQueryAsync();
+                }
+
+                Console.WriteLine("Cleared existing GO annotation data from database.");
+            }
+        }
+
         public async Task WriteTranscriptomicDataAsync(
             string databasePath,
             List<GeneExpressionRecord> expressionRecords,
-            List<CellMetadata> metadata)
+            List<CellMetadata> metadata,
+            bool clearExistingData = true)
         {
             var connectionString = $"Data Source={databasePath}";
 
@@ -93,83 +148,159 @@ namespace SCPBrowser
             {
                 await connection.OpenAsync();
 
+                // Ensure tables exist
+                await CreateSchemaAsync(connection);
+
+                // Clear existing data if requested
+                if (clearExistingData)
+                {
+                    using (var command = connection.CreateCommand())
+                    {
+                        command.CommandText = @"
+                            DELETE FROM gene_expression;
+                            DELETE FROM cell_metadata;
+                        ";
+                        await command.ExecuteNonQueryAsync();
+                    }
+                    Console.WriteLine("Cleared existing transcriptomic data from database.");
+                }
+
+                // Performance optimizations for bulk insert
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                        PRAGMA synchronous = OFF;
+                        PRAGMA journal_mode = MEMORY;
+                        PRAGMA temp_store = MEMORY;
+                    ";
+                    await command.ExecuteNonQueryAsync();
+                }
+
                 // Insert gene expression
                 await InsertGeneExpressionAsync(connection, expressionRecords);
 
                 // Insert cell metadata
                 await InsertCellMetadataAsync(connection, metadata);
+
+                // Restore normal settings
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                        PRAGMA synchronous = FULL;
+                    ";
+                    await command.ExecuteNonQueryAsync();
+                }
             }
         }
 
         private async Task InsertGeneExpressionAsync(SqliteConnection connection, List<GeneExpressionRecord> records)
         {
-            using (var transaction = connection.BeginTransaction())
+            const int batchSize = 5000;
+
+            Console.WriteLine($"Inserting {records.Count:N0} gene expression records in batches of {batchSize:N0}...");
+
+            for (int i = 0; i < records.Count; i += batchSize)
             {
-                using (var command = connection.CreateCommand())
+                var batch = records.Skip(i).Take(batchSize).ToList();
+
+                using (var transaction = connection.BeginTransaction())
                 {
-                    command.CommandText = @"
-                        INSERT INTO gene_expression (gene_name, cell_id, count)
-                        VALUES ($gene_name, $cell_id, $count)
-                    ";
-
-                    var paramGeneName = command.Parameters.Add("$gene_name", SqliteType.Text);
-                    var paramCellId = command.Parameters.Add("$cell_id", SqliteType.Text);
-                    var paramCount = command.Parameters.Add("$count", SqliteType.Integer);
-
-                    foreach (var record in records)
+                    using (var command = connection.CreateCommand())
                     {
-                        paramGeneName.Value = record.GeneName;
-                        paramCellId.Value = record.CellID;
-                        paramCount.Value = record.Count;
+                        var valuesClauses = new List<string>();
+                        var parameters = new List<SqliteParameter>();
 
+                        for (int j = 0; j < batch.Count; j++)
+                        {
+                            var record = batch[j];
+                            var paramPrefix = $"@p{j}_";
+
+                            valuesClauses.Add($"({paramPrefix}gene_name, {paramPrefix}cell_id, {paramPrefix}count)");
+
+                            parameters.Add(new SqliteParameter($"{paramPrefix}gene_name", record.GeneName));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}cell_id", record.CellID));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}count", record.Count));
+                        }
+
+                        // Use INSERT OR IGNORE to skip duplicates (safety net)
+                        command.CommandText = $@"
+                            INSERT OR IGNORE INTO gene_expression (gene_name, cell_id, count)
+                            VALUES {string.Join(", ", valuesClauses)}
+                        ";
+
+                        command.Parameters.AddRange(parameters.ToArray());
                         await command.ExecuteNonQueryAsync();
                     }
+
+                    await transaction.CommitAsync();
                 }
 
-                await transaction.CommitAsync();
+                if ((i + batchSize) % 50000 == 0 || i + batchSize >= records.Count)
+                {
+                    Console.WriteLine($"  Progress: {Math.Min(i + batchSize, records.Count):N0} / {records.Count:N0} records inserted");
+                }
             }
+
+            Console.WriteLine("Gene expression data insertion complete.");
         }
 
         private async Task InsertCellMetadataAsync(SqliteConnection connection, List<CellMetadata> metadata)
         {
-            using (var transaction = connection.BeginTransaction())
+            const int batchSize = 1000;
+
+            Console.WriteLine($"Inserting {metadata.Count:N0} cell metadata records...");
+
+            for (int i = 0; i < metadata.Count; i += batchSize)
             {
-                using (var command = connection.CreateCommand())
+                var batch = metadata.Skip(i).Take(batchSize).ToList();
+
+                using (var transaction = connection.BeginTransaction())
                 {
-                    command.CommandText = @"
-                        INSERT INTO cell_metadata 
-                        (cell_id, age, sex, batch, cell_type, genes_detected, total_reads, mapped_reads, mapping_rate)
-                        VALUES ($cell_id, $age, $sex, $batch, $cell_type, $genes_detected, $total_reads, $mapped_reads, $mapping_rate)
-                    ";
-
-                    var paramCellId = command.Parameters.Add("$cell_id", SqliteType.Text);
-                    var paramAge = command.Parameters.Add("$age", SqliteType.Text);
-                    var paramSex = command.Parameters.Add("$sex", SqliteType.Text);
-                    var paramBatch = command.Parameters.Add("$batch", SqliteType.Text);
-                    var paramCellType = command.Parameters.Add("$cell_type", SqliteType.Text);
-                    var paramGenesDetected = command.Parameters.Add("$genes_detected", SqliteType.Integer);
-                    var paramTotalReads = command.Parameters.Add("$total_reads", SqliteType.Integer);
-                    var paramMappedReads = command.Parameters.Add("$mapped_reads", SqliteType.Integer);
-                    var paramMappingRate = command.Parameters.Add("$mapping_rate", SqliteType.Real);
-
-                    foreach (var cell in metadata)
+                    using (var command = connection.CreateCommand())
                     {
-                        paramCellId.Value = cell.CellID;
-                        paramAge.Value = (object)cell.Age ?? DBNull.Value;
-                        paramSex.Value = (object)cell.Sex ?? DBNull.Value;
-                        paramBatch.Value = (object)cell.Batch ?? DBNull.Value;
-                        paramCellType.Value = (object)cell.CellType ?? DBNull.Value;
-                        paramGenesDetected.Value = cell.GenesDetected.HasValue ? (object)cell.GenesDetected.Value : DBNull.Value;
-                        paramTotalReads.Value = cell.TotalReads.HasValue ? (object)cell.TotalReads.Value : DBNull.Value;
-                        paramMappedReads.Value = cell.MappedReads.HasValue ? (object)cell.MappedReads.Value : DBNull.Value;
-                        paramMappingRate.Value = cell.MappingRate.HasValue ? (object)cell.MappingRate.Value : DBNull.Value;
+                        var valuesClauses = new List<string>();
+                        var parameters = new List<SqliteParameter>();
 
+                        for (int j = 0; j < batch.Count; j++)
+                        {
+                            var cell = batch[j];
+                            var paramPrefix = $"@p{j}_";
+
+                            valuesClauses.Add($"({paramPrefix}cell_id, {paramPrefix}age, {paramPrefix}sex, " +
+                                            $"{paramPrefix}batch, {paramPrefix}cell_type, {paramPrefix}genes_detected, " +
+                                            $"{paramPrefix}total_reads, {paramPrefix}mapped_reads, {paramPrefix}mapping_rate)");
+
+                            parameters.Add(new SqliteParameter($"{paramPrefix}cell_id", cell.CellID));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}age", (object)cell.Age ?? DBNull.Value));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}sex", (object)cell.Sex ?? DBNull.Value));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}batch", (object)cell.Batch ?? DBNull.Value));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}cell_type", (object)cell.CellType ?? DBNull.Value));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}genes_detected",
+                                cell.GenesDetected.HasValue ? (object)cell.GenesDetected.Value : DBNull.Value));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}total_reads",
+                                cell.TotalReads.HasValue ? (object)cell.TotalReads.Value : DBNull.Value));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}mapped_reads",
+                                cell.MappedReads.HasValue ? (object)cell.MappedReads.Value : DBNull.Value));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}mapping_rate",
+                                cell.MappingRate.HasValue ? (object)cell.MappingRate.Value : DBNull.Value));
+                        }
+
+                        // Use INSERT OR REPLACE to update existing records (safety net)
+                        command.CommandText = $@"
+                            INSERT OR REPLACE INTO cell_metadata 
+                            (cell_id, age, sex, batch, cell_type, genes_detected, total_reads, mapped_reads, mapping_rate)
+                            VALUES {string.Join(", ", valuesClauses)}
+                        ";
+
+                        command.Parameters.AddRange(parameters.ToArray());
                         await command.ExecuteNonQueryAsync();
                     }
-                }
 
-                await transaction.CommitAsync();
+                    await transaction.CommitAsync();
+                }
             }
+
+            Console.WriteLine("Cell metadata insertion complete.");
         }
 
         public async Task<TranscriptomicDatabase> LoadTranscriptomicDataAsync(string databasePath)
@@ -257,7 +388,8 @@ namespace SCPBrowser
         public async Task WriteGoAnnotationsAsync(
             string databasePath,
             GoSlimDatabase goSlimDatabase,
-            GoAnnotationDatabase annotationDatabase)
+            GoAnnotationDatabase annotationDatabase,
+            bool clearExistingData = true)
         {
             var connectionString = $"Data Source={databasePath}";
 
@@ -265,73 +397,157 @@ namespace SCPBrowser
             {
                 await connection.OpenAsync();
 
+                // Ensure tables exist
+                await CreateSchemaAsync(connection);
+
+                // Clear existing GO data if requested
+                if (clearExistingData)
+                {
+                    using (var command = connection.CreateCommand())
+                    {
+                        command.CommandText = @"
+                            DELETE FROM protein_go_annotations;
+                            DELETE FROM go_terms;
+                        ";
+                        await command.ExecuteNonQueryAsync();
+                    }
+                    Console.WriteLine("Cleared existing GO annotation data from database.");
+                }
+
+                // Performance optimizations for bulk insert
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                        PRAGMA synchronous = OFF;
+                        PRAGMA journal_mode = MEMORY;
+                        PRAGMA temp_store = MEMORY;
+                    ";
+                    await command.ExecuteNonQueryAsync();
+                }
+
                 // Insert GO terms
                 await InsertGoTermsAsync(connection, goSlimDatabase);
 
                 // Insert protein annotations
                 await InsertProteinAnnotationsAsync(connection, annotationDatabase);
+
+                // Restore normal settings
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                        PRAGMA synchronous = FULL;
+                    ";
+                    await command.ExecuteNonQueryAsync();
+                }
             }
         }
 
         private async Task InsertGoTermsAsync(SqliteConnection connection, GoSlimDatabase goSlimDatabase)
         {
-            using (var transaction = connection.BeginTransaction())
+            const int batchSize = 500;
+            var terms = goSlimDatabase.Terms.Values.ToList();
+
+            Console.WriteLine($"Inserting {terms.Count:N0} GO terms...");
+
+            for (int i = 0; i < terms.Count; i += batchSize)
             {
-                using (var command = connection.CreateCommand())
+                var batch = terms.Skip(i).Take(batchSize).ToList();
+
+                using (var transaction = connection.BeginTransaction())
                 {
-                    command.CommandText = @"
-                        INSERT INTO go_terms (go_id, name, namespace)
-                        VALUES ($go_id, $name, $namespace)
-                    ";
-
-                    var paramGoId = command.Parameters.Add("$go_id", SqliteType.Text);
-                    var paramName = command.Parameters.Add("$name", SqliteType.Text);
-                    var paramNamespace = command.Parameters.Add("$namespace", SqliteType.Text);
-
-                    foreach (var term in goSlimDatabase.Terms.Values)
+                    using (var command = connection.CreateCommand())
                     {
-                        paramGoId.Value = term.Id;
-                        paramName.Value = term.Name ?? string.Empty;
-                        paramNamespace.Value = term.Namespace ?? string.Empty;
+                        var valuesClauses = new List<string>();
+                        var parameters = new List<SqliteParameter>();
 
+                        for (int j = 0; j < batch.Count; j++)
+                        {
+                            var term = batch[j];
+                            var paramPrefix = $"@p{j}_";
+
+                            valuesClauses.Add($"({paramPrefix}go_id, {paramPrefix}name, {paramPrefix}namespace)");
+
+                            parameters.Add(new SqliteParameter($"{paramPrefix}go_id", term.Id));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}name", term.Name ?? string.Empty));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}namespace", term.Namespace ?? string.Empty));
+                        }
+
+                        // Use INSERT OR IGNORE to skip duplicates (safety net)
+                        command.CommandText = $@"
+                            INSERT OR IGNORE INTO go_terms (go_id, name, namespace)
+                            VALUES {string.Join(", ", valuesClauses)}
+                        ";
+
+                        command.Parameters.AddRange(parameters.ToArray());
                         await command.ExecuteNonQueryAsync();
                     }
-                }
 
-                await transaction.CommitAsync();
+                    await transaction.CommitAsync();
+                }
             }
+
+            Console.WriteLine("GO terms insertion complete.");
         }
 
         private async Task InsertProteinAnnotationsAsync(SqliteConnection connection, GoAnnotationDatabase annotationDatabase)
         {
-            using (var transaction = connection.BeginTransaction())
+            const int batchSize = 5000;
+
+            // Flatten the protein-to-GO annotations into a list
+            var annotations = new List<(string proteinId, string goTermId)>();
+            foreach (var proteinEntry in annotationDatabase.ProteinToGoTerms)
             {
-                using (var command = connection.CreateCommand())
+                var proteinId = proteinEntry.Key;
+                foreach (var goTermId in proteinEntry.Value)
                 {
-                    command.CommandText = @"
-                        INSERT INTO protein_go_annotations (protein_id, go_term_id)
-                        VALUES ($protein_id, $go_term_id)
-                    ";
+                    annotations.Add((proteinId, goTermId));
+                }
+            }
 
-                    var paramProteinId = command.Parameters.Add("$protein_id", SqliteType.Text);
-                    var paramGoTermId = command.Parameters.Add("$go_term_id", SqliteType.Text);
+            Console.WriteLine($"Inserting {annotations.Count:N0} protein-GO annotations...");
 
-                    foreach (var proteinEntry in annotationDatabase.ProteinToGoTerms)
+            for (int i = 0; i < annotations.Count; i += batchSize)
+            {
+                var batch = annotations.Skip(i).Take(batchSize).ToList();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    using (var command = connection.CreateCommand())
                     {
-                        var proteinId = proteinEntry.Key;
+                        var valuesClauses = new List<string>();
+                        var parameters = new List<SqliteParameter>();
 
-                        foreach (var goTermId in proteinEntry.Value)
+                        for (int j = 0; j < batch.Count; j++)
                         {
-                            paramProteinId.Value = proteinId;
-                            paramGoTermId.Value = goTermId;
+                            var (proteinId, goTermId) = batch[j];
+                            var paramPrefix = $"@p{j}_";
 
-                            await command.ExecuteNonQueryAsync();
+                            valuesClauses.Add($"({paramPrefix}protein_id, {paramPrefix}go_term_id)");
+
+                            parameters.Add(new SqliteParameter($"{paramPrefix}protein_id", proteinId));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}go_term_id", goTermId));
                         }
+
+                        // Use INSERT OR IGNORE to skip duplicates (safety net)
+                        command.CommandText = $@"
+                            INSERT OR IGNORE INTO protein_go_annotations (protein_id, go_term_id)
+                            VALUES {string.Join(", ", valuesClauses)}
+                        ";
+
+                        command.Parameters.AddRange(parameters.ToArray());
+                        await command.ExecuteNonQueryAsync();
                     }
+
+                    await transaction.CommitAsync();
                 }
 
-                await transaction.CommitAsync();
+                if ((i + batchSize) % 50000 == 0 || i + batchSize >= annotations.Count)
+                {
+                    Console.WriteLine($"  Progress: {Math.Min(i + batchSize, annotations.Count):N0} / {annotations.Count:N0} annotations inserted");
+                }
             }
+
+            Console.WriteLine("Protein-GO annotations insertion complete.");
         }
 
         public async Task<(GoSlimDatabase goSlimDatabase, GoAnnotationDatabase annotationDatabase)> LoadGoAnnotationsAsync(string databasePath)

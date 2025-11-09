@@ -1,0 +1,86 @@
+﻿<UserControl x:Class="SCPBrowser.LoadingOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="900"
+             Background="#CC000000">
+
+    <Grid>
+        <StackPanel HorizontalAlignment="Center" 
+                    VerticalAlignment="Center"
+                    Width="400">
+
+            <!-- Animated Logo -->
+            <Viewbox Width="200" Height="200" Margin="0,0,0,30">
+                <Grid>
+                    <!-- Outer rotating ring -->
+                    <Ellipse x:Name="OuterRing"
+                             Width="180" 
+                             Height="180"
+                             Stroke="#2563eb"
+                             StrokeThickness="4"
+                             StrokeDashArray="20 10"
+                             RenderTransformOrigin="0.5,0.5">
+                        <Ellipse.RenderTransform>
+                            <RotateTransform x:Name="OuterRotation" Angle="0"/>
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+
+                    <!-- Inner rotating ring (opposite direction) -->
+                    <Ellipse x:Name="InnerRing"
+                             Width="140" 
+                             Height="140"
+                             Stroke="#10b981"
+                             StrokeThickness="3"
+                             StrokeDashArray="15 8"
+                             RenderTransformOrigin="0.5,0.5">
+                        <Ellipse.RenderTransform>
+                            <RotateTransform x:Name="InnerRotation" Angle="0"/>
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+
+                    <!-- Pulsing logo -->
+                    <Image x:Name="LogoImage"
+                           Source="/Images/logo.png"
+                           Width="120"
+                           Height="120"
+                           RenderTransformOrigin="0.5,0.5">
+                        <Image.RenderTransform>
+                            <ScaleTransform x:Name="LogoScale" ScaleX="1" ScaleY="1"/>
+                        </Image.RenderTransform>
+                    </Image>
+                </Grid>
+            </Viewbox>
+
+            <!-- Main Message -->
+            <TextBlock x:Name="MainMessage"
+                       Text="Loading..."
+                       FontSize="24"
+                       FontWeight="SemiBold"
+                       Foreground="White"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       Margin="0,0,0,15"/>
+
+            <!-- Secondary Progress Message -->
+            <TextBlock x:Name="ProgressMessage"
+                       Text=""
+                       FontSize="14"
+                       Foreground="#94a3b8"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,20"/>
+
+            <!-- Animated dots -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center">
+                <Ellipse x:Name="Dot1" Width="8" Height="8" Fill="#2563eb" Margin="0,0,8,0"/>
+                <Ellipse x:Name="Dot2" Width="8" Height="8" Fill="#2563eb" Margin="0,0,8,0"/>
+                <Ellipse x:Name="Dot3" Width="8" Height="8" Fill="#2563eb"/>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</UserControl>

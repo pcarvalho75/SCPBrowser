@@ -7,7 +7,6 @@ using Microsoft.Win32;
 using ScottPlot;
 using SCPBrowser.GOTools;
 
-
 namespace SCPBrowser
 {
     public partial class MainControl : UserControl
@@ -149,6 +148,15 @@ namespace SCPBrowser
         {
             try
             {
+                // Get reference to the loading overlay from MainWindow
+                var mainWindow = Window.GetWindow(this) as MainWindow;
+                if (mainWindow != null)
+                {
+                    mainWindow.LoadingOverlay.SetMessage("Loading Parquet File...");
+                    mainWindow.LoadingOverlay.SetProgress("Reading data structure...");
+                    mainWindow.LoadingOverlay.Show();
+                }
+
                 StatusText.Text = "Loading data...";
                 ReloadButton.IsEnabled = false;
 
@@ -169,6 +177,11 @@ namespace SCPBrowser
                     TargetProteinIdentifiers = targetIds
                 };
 
+                if (mainWindow != null)
+                {
+                    mainWindow.LoadingOverlay.SetProgress("Parsing proteomics data...");
+                }
+
                 _currentData = await _dataService.LoadParquetFileAsync(_currentFilePath, mapping);
 
                 TotalRunsText.Text = _currentData.TotalRawFiles.ToString();
@@ -182,6 +195,11 @@ namespace SCPBrowser
                 // Raise event to hide the logo overlay
                 DataLoaded?.Invoke(this, EventArgs.Empty);
 
+                if (mainWindow != null)
+                {
+                    mainWindow.LoadingOverlay.SetProgress("Loading reference databases...");
+                }
+
                 await LoadTranscriptomicReferenceAsync();
                 await LoadGoEnrichmentAsync();
 
@@ -189,9 +207,20 @@ namespace SCPBrowser
                     ? $" (tracking {targetIds.Count} target protein(s))"
                     : "";
                 StatusText.Text = $"Loaded successfully: {_currentData.TotalRawFiles} runs{targetInfo}";
+
+                if (mainWindow != null)
+                {
+                    mainWindow.LoadingOverlay.Hide();
+                }
             }
             catch (Exception ex)
             {
+                var mainWindow = Window.GetWindow(this) as MainWindow;
+                if (mainWindow != null)
+                {
+                    mainWindow.LoadingOverlay.Hide();
+                }
+
                 MessageBox.Show($"Error reading file: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusText.Text = "Error loading file";

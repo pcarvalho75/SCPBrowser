@@ -12,38 +12,42 @@ namespace SCPBrowser
             string outputDatabasePath,
             IProgressReporter progress = null)
         {
-            var parser = new TranscriptomicTsvParser();
-            var referenceService = new ReferenceDataService();
+            // Run the heavy work on a background thread to keep UI responsive
+            await Task.Run(async () =>
+            {
+                var parser = new TranscriptomicTsvParser();
+                var referenceService = new ReferenceDataService();
 
-            progress?.ReportMessage("Starting transcriptomic data conversion...");
+                progress?.ReportMessage("Starting transcriptomic data conversion...");
 
-            var parsedData = await parser.ParseTranscriptomicDataAsync(
-                expressionTsvPath,
-                metadataTsvPath,
-                progress);
+                var parsedData = await parser.ParseTranscriptomicDataAsync(
+                    expressionTsvPath,
+                    metadataTsvPath,
+                    progress);
 
-            progress?.ReportMessage("Creating SQLite database...");
-            await referenceService.CreateDatabaseAsync(outputDatabasePath);
+                progress?.ReportMessage("Creating SQLite database...");
+                await referenceService.CreateDatabaseAsync(outputDatabasePath);
 
-            progress?.ReportMessage("Writing data to database...");
-            await referenceService.WriteTranscriptomicDataAsync(
-                outputDatabasePath,
-                parsedData,
-                clearExistingData: true,
-                progress: progress);
+                progress?.ReportMessage("Writing data to database...");
+                await referenceService.WriteTranscriptomicDataAsync(
+                    outputDatabasePath,
+                    parsedData,
+                    clearExistingData: true,
+                    progress: progress);
 
-            var fileInfo = new FileInfo(outputDatabasePath);
-            var fileSizeMB = fileInfo.Length / (1024.0 * 1024.0);
+                var fileInfo = new FileInfo(outputDatabasePath);
+                var fileSizeMB = fileInfo.Length / (1024.0 * 1024.0);
 
-            progress?.ReportMessage("Conversion complete!");
-            progress?.ReportProgress($"Database size: {fileSizeMB:F2} MB");
+                progress?.ReportMessage("Conversion complete!");
+                progress?.ReportProgress($"Database size: {fileSizeMB:F2} MB");
 
-            // Calculate compression ratio
-            var avgRecordSizeOld = 60.0; // Estimated old size with TEXT
-            var estimatedOldSize = parsedData.ExpressionRecords.Count * avgRecordSizeOld;
-            var compressionRatio = estimatedOldSize / fileInfo.Length;
+                // Calculate compression ratio
+                var avgRecordSizeOld = 60.0; // Estimated old size with TEXT
+                var estimatedOldSize = parsedData.ExpressionRecords.Count * avgRecordSizeOld;
+                var compressionRatio = estimatedOldSize / fileInfo.Length;
 
-            progress?.ReportProgress($"Compression ratio: ~{compressionRatio:F1}x smaller than text-based storage");
+                progress?.ReportProgress($"Compression ratio: ~{compressionRatio:F1}x smaller than text-based storage");
+            });
         }
     }
 }

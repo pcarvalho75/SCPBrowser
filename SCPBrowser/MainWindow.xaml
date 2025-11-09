@@ -16,7 +16,7 @@
                     <MenuItem Header="E_xit" Click="Exit_Click"/>
                 </MenuItem>
                 <MenuItem Header="_Tools">
-                    <MenuItem Header="_Convert Transcriptomic TSV to Parquet..." Click="ConvertTranscriptomic_Click"/>
+                    <MenuItem Header="_Convert Transcriptomic TSV to SQLite..." Click="ConvertTranscriptomicData_Click"/>
                     <MenuItem Header="_Compile GO Annotations..." Click="CompileGoAnnotations_Click"/>
                 </MenuItem>
                 <MenuItem Header="_Help">

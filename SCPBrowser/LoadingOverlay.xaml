@@ -10,7 +10,7 @@
     <Grid>
         <StackPanel HorizontalAlignment="Center" 
                     VerticalAlignment="Center"
-                    Width="400">
+                    Width="600">
 
             <!-- Animated Logo -->
             <Viewbox Width="200" Height="200" Margin="0,0,0,30">
@@ -57,11 +57,13 @@
             <!-- Main Message -->
             <TextBlock x:Name="MainMessage"
                        Text="Loading..."
-                       FontSize="24"
+                       FontSize="22"
                        FontWeight="SemiBold"
                        Foreground="White"
                        HorizontalAlignment="Center"
                        TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       MaxWidth="550"
                        Margin="0,0,0,15"/>
 
             <!-- Secondary Progress Message -->
@@ -72,6 +74,7 @@
                        HorizontalAlignment="Center"
                        TextAlignment="Center"
                        TextWrapping="Wrap"
+                       MaxWidth="550"
                        Margin="0,0,0,20"/>
 
             <!-- Animated dots -->

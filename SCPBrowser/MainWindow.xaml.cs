@@ -113,9 +113,6 @@ namespace SCPBrowser
             }
         }
 
-        /// <summary>
-        /// Progress reporter that updates the LoadingOverlay UI
-        /// </summary>
         private class UIProgressReporter : IProgressReporter
         {
             private readonly LoadingOverlay _loadingOverlay;
@@ -127,20 +124,24 @@ namespace SCPBrowser
 
             public void ReportMessage(string message)
             {
-                // Dispatch to UI thread
-                _loadingOverlay.Dispatcher.Invoke(() =>
+                // Use InvokeAsync for better UI responsiveness
+                _loadingOverlay.Dispatcher.InvokeAsync(async () =>
                 {
                     _loadingOverlay.SetMessage(message);
-                });
+                    // Small delay to ensure UI updates are rendered
+                    await Task.Delay(10);
+                }, System.Windows.Threading.DispatcherPriority.Render);
             }
 
             public void ReportProgress(string progressDetail)
             {
-                // Dispatch to UI thread
-                _loadingOverlay.Dispatcher.Invoke(() =>
+                // Use InvokeAsync for better UI responsiveness
+                _loadingOverlay.Dispatcher.InvokeAsync(async () =>
                 {
                     _loadingOverlay.SetProgress(progressDetail);
-                });
+                    // Small delay to ensure UI updates are rendered
+                    await Task.Delay(10);
+                }, System.Windows.Threading.DispatcherPriority.Render);
             }
         }
 

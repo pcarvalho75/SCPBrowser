@@ -5,7 +5,6 @@
              StartupUri="MainWindow.xaml">
     <Application.Resources>
 
-        <!-- Color Palette -->
         <SolidColorBrush x:Key="PrimaryBrush" Color="#2563eb"/>
         <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#1d4ed8"/>
         <SolidColorBrush x:Key="PrimaryDarkBrush" Color="#1e40af"/>
@@ -18,12 +17,11 @@
         <SolidColorBrush x:Key="SuccessBrush" Color="#10b981"/>
         <SolidColorBrush x:Key="WarningBrush" Color="#f59e0b"/>
 
-        <!-- Modern Button Style -->
         <Style x:Key="ModernButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="Padding" Value="16,5"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="Medium"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -34,7 +32,7 @@
                                 CornerRadius="6"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" 
-                                            VerticalAlignment="Center"/>
+                                              VerticalAlignment="Center"/>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
@@ -52,13 +50,12 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Secondary Button Style -->
         <Style x:Key="SecondaryButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="Padding" Value="16,5"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
@@ -70,7 +67,7 @@
                                 CornerRadius="6"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" 
-                                            VerticalAlignment="Center"/>
+                                              VerticalAlignment="Center"/>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
@@ -86,13 +83,12 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Modern TextBox Style -->
         <Style x:Key="ModernTextBox" TargetType="TextBox">
             <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Padding" Value="10,5"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -102,7 +98,7 @@
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="6">
                             <ScrollViewer x:Name="PART_ContentHost" 
-                                        Margin="{TemplateBinding Padding}"/>
+                                          Margin="{TemplateBinding Padding}"/>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
@@ -117,7 +113,6 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Modern GroupBox Style -->
         <Style x:Key="ModernGroupBox" TargetType="GroupBox">
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
@@ -133,9 +128,9 @@
                                     CornerRadius="8">
                                 <Border.Effect>
                                     <DropShadowEffect ShadowDepth="2" 
-                                                    BlurRadius="8" 
-                                                    Opacity="0.1" 
-                                                    Color="#000000"/>
+                                                      BlurRadius="8" 
+                                                      Opacity="0.1" 
+                                                      Color="#000000"/>
                                 </Border.Effect>
                             </Border>
                             <Grid Margin="{TemplateBinding Padding}">
@@ -144,8 +139,8 @@
                                     <RowDefinition Height="*"/>
                                 </Grid.RowDefinitions>
                                 <ContentPresenter Grid.Row="0"
-                                                ContentSource="Header"
-                                                Margin="0,0,0,10"/>
+                                                  ContentSource="Header"
+                                                  Margin="0,0,0,10"/>
                                 <ContentPresenter Grid.Row="1"/>
                             </Grid>
                         </Grid>
@@ -154,7 +149,6 @@
             </Setter>
         </Style>
 
-        <!-- Header Text Style -->
         <Style x:Key="HeaderText" TargetType="TextBlock">
             <Setter Property="FontSize" Value="24"/>
             <Setter Property="FontWeight" Value="Bold"/>
@@ -162,7 +156,6 @@
             <Setter Property="Margin" Value="0,0,0,20"/>
         </Style>
 
-        <!-- Subheader Text Style -->
         <Style x:Key="SubheaderText" TargetType="TextBlock">
             <Setter Property="FontSize" Value="18"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -170,7 +163,6 @@
             <Setter Property="Margin" Value="0,0,0,10"/>
         </Style>
 
-        <!-- Label Text Style -->
         <Style x:Key="LabelText" TargetType="TextBlock">
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="Medium"/>
@@ -178,14 +170,12 @@
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
-        <!-- Help Text Style -->
         <Style x:Key="HelpText" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
             <Setter Property="FontStyle" Value="Italic"/>
         </Style>
 
-        <!-- Modern UpDown Controls -->
         <Style TargetType="xctk:DoubleUpDown">
             <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
@@ -202,10 +192,8 @@
             <Setter Property="FontSize" Value="14"/>
         </Style>
 
-        <!-- Default Button Style (applies everywhere unless overridden) -->
         <Style TargetType="Button" BasedOn="{StaticResource ModernButton}"/>
 
-        <!-- Default TextBox Style -->
         <Style TargetType="TextBox" BasedOn="{StaticResource ModernTextBox}"/>
 
     </Application.Resources>

@@ -30,10 +30,8 @@ namespace SCPBrowser
             {
                 PlateName = PlateNameTextBox.Text.Trim(),
                 RunDate = RunDatePicker.SelectedDate?.ToString("yyyy-MM-dd") ?? "",
-                BiologicalCondition = BiologicalConditionTextBox.Text.Trim(),
                 InstrumentName = InstrumentNameTextBox.Text.Trim(),
                 OperatorName = OperatorNameTextBox.Text.Trim(),
-                BatchNumber = BatchNumberTextBox.Text.Trim(),
                 Description = DescriptionTextBox.Text.Trim()
             };
 

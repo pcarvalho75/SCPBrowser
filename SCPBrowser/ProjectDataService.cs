@@ -53,83 +53,84 @@ namespace SCPBrowser
         /// <summary>
         /// Creates the project database schema
         /// </summary>
+        /// <summary>
+        /// Creates the project database schema
+        /// </summary>
         private async Task CreateProjectSchemaAsync(SqliteConnection connection)
         {
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = @"
-                    -- Project metadata
-                    CREATE TABLE IF NOT EXISTS project_info (
-                        project_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        project_name TEXT NOT NULL,
-                        created_date TEXT NOT NULL,
-                        last_modified TEXT NOT NULL,
-                        description TEXT
-                    );
+            -- Project metadata
+            CREATE TABLE IF NOT EXISTS project_info (
+                project_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_name TEXT NOT NULL,
+                created_date TEXT NOT NULL,
+                last_modified TEXT NOT NULL,
+                description TEXT
+            );
 
-                    -- Plates (experiments/batches)
-                    CREATE TABLE IF NOT EXISTS plates (
-                        plate_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        project_id INTEGER NOT NULL,
-                        plate_name TEXT NOT NULL,
-                        run_date TEXT,
-                        biological_condition TEXT,
-                        description TEXT,
-                        instrument_name TEXT,
-                        operator_name TEXT,
-                        batch_number TEXT,
-                        FOREIGN KEY (project_id) REFERENCES project_info(project_id)
-                    );
+            -- Plates (technical metadata only - NO biological condition or batch)
+            CREATE TABLE IF NOT EXISTS plates (
+                plate_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                plate_name TEXT NOT NULL,
+                run_date TEXT,
+                instrument_name TEXT,
+                operator_name TEXT,
+                description TEXT,
+                FOREIGN KEY (project_id) REFERENCES project_info(project_id)
+            );
 
-                    -- Parquet file imports
-                    CREATE TABLE IF NOT EXISTS parquet_imports (
-                        import_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        plate_id INTEGER NOT NULL,
-                        file_name TEXT NOT NULL,
-                        file_hash TEXT NOT NULL,
-                        import_timestamp TEXT NOT NULL,
-                        row_count INTEGER NOT NULL,
-                        protein_count INTEGER NOT NULL,
-                        cell_count INTEGER NOT NULL,
-                        column_mapping TEXT NOT NULL,
-                        FOREIGN KEY (plate_id) REFERENCES plates(plate_id),
-                        UNIQUE(file_name)
-                    );
+            -- Parquet file imports
+            CREATE TABLE IF NOT EXISTS parquet_imports (
+                import_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plate_id INTEGER NOT NULL,
+                file_name TEXT NOT NULL,
+                file_hash TEXT NOT NULL,
+                import_timestamp TEXT NOT NULL,
+                row_count INTEGER NOT NULL,
+                protein_count INTEGER NOT NULL,
+                cell_count INTEGER NOT NULL,
+                column_mapping TEXT NOT NULL,
+                FOREIGN KEY (plate_id) REFERENCES plates(plate_id),
+                UNIQUE(file_name)
+            );
 
-                    -- Raw files from parquet
-                    CREATE TABLE IF NOT EXISTS raw_files (
-                        raw_file_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        import_id INTEGER NOT NULL,
-                        raw_file_name TEXT NOT NULL,
-                        biological_condition TEXT,
-                        plate_id INTEGER,
-                        protein_count INTEGER,
-                        peptide_count INTEGER,
-                        total_ion_current REAL,
-                        FOREIGN KEY (import_id) REFERENCES parquet_imports(import_id),
-                        FOREIGN KEY (plate_id) REFERENCES plates(plate_id)
-                    );
+            -- Raw files (biological condition stored HERE at raw file level)
+            CREATE TABLE IF NOT EXISTS raw_files (
+                raw_file_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                import_id INTEGER NOT NULL,
+                raw_file_name TEXT NOT NULL,
+                biological_condition TEXT,
+                plate_id INTEGER,
+                protein_count INTEGER,
+                peptide_count INTEGER,
+                total_ion_current REAL,
+                FOREIGN KEY (import_id) REFERENCES parquet_imports(import_id),
+                FOREIGN KEY (plate_id) REFERENCES plates(plate_id)
+            );
 
-                    -- Protein quantification summary
-                    CREATE TABLE IF NOT EXISTS protein_quant_summary (
-                        protein_id TEXT NOT NULL,
-                        raw_file_id INTEGER NOT NULL,
-                        median_intensity REAL,
-                        mean_intensity REAL,
-                        detection_count INTEGER,
-                        PRIMARY KEY (protein_id, raw_file_id),
-                        FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
-                    );
+            -- Protein quantification summary
+            CREATE TABLE IF NOT EXISTS protein_quant_summary (
+                protein_id TEXT NOT NULL,
+                raw_file_id INTEGER NOT NULL,
+                median_intensity REAL,
+                mean_intensity REAL,
+                detection_count INTEGER,
+                PRIMARY KEY (protein_id, raw_file_id),
+                FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
+            );
 
-                    -- Indices
-                    CREATE INDEX IF NOT EXISTS idx_parquet_imports_plate ON parquet_imports(plate_id);
-                    CREATE INDEX IF NOT EXISTS idx_parquet_imports_filename ON parquet_imports(file_name);
-                    CREATE INDEX IF NOT EXISTS idx_raw_files_import ON raw_files(import_id);
-                    CREATE INDEX IF NOT EXISTS idx_raw_files_plate ON raw_files(plate_id);
-                    CREATE INDEX IF NOT EXISTS idx_raw_files_condition ON raw_files(biological_condition);
-                    CREATE INDEX IF NOT EXISTS idx_protein_quant_protein ON protein_quant_summary(protein_id);
-                    CREATE INDEX IF NOT EXISTS idx_protein_quant_rawfile ON protein_quant_summary(raw_file_id);
-                ";
+            -- Indices
+            CREATE INDEX IF NOT EXISTS idx_parquet_imports_plate ON parquet_imports(plate_id);
+            CREATE INDEX IF NOT EXISTS idx_parquet_imports_filename ON parquet_imports(file_name);
+            CREATE INDEX IF NOT EXISTS idx_raw_files_import ON raw_files(import_id);
+            CREATE INDEX IF NOT EXISTS idx_raw_files_plate ON raw_files(plate_id);
+            CREATE INDEX IF NOT EXISTS idx_raw_files_condition ON raw_files(biological_condition);
+            CREATE INDEX IF NOT EXISTS idx_protein_quant_protein ON protein_quant_summary(protein_id);
+            CREATE INDEX IF NOT EXISTS idx_protein_quant_rawfile ON protein_quant_summary(raw_file_id);
+        ";
                 await command.ExecuteNonQueryAsync();
             }
         }
@@ -191,24 +192,22 @@ namespace SCPBrowser
                     }
                 }
 
-                // Insert plate
+                // Insert plate (NO biological_condition or batch_number)
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        INSERT INTO plates (project_id, plate_name, run_date, biological_condition, 
-                                          description, instrument_name, operator_name, batch_number)
-                        VALUES (@projectId, @plateName, @runDate, @bioCondition, 
-                                @description, @instrument, @operator, @batch);
-                        SELECT last_insert_rowid();
-                    ";
+                INSERT INTO plates (project_id, plate_name, run_date, 
+                                  description, instrument_name, operator_name)
+                VALUES (@projectId, @plateName, @runDate, 
+                        @description, @instrument, @operator);
+                SELECT last_insert_rowid();
+            ";
                     command.Parameters.AddWithValue("@projectId", projectId);
                     command.Parameters.AddWithValue("@plateName", plate.PlateName);
                     command.Parameters.AddWithValue("@runDate", plate.RunDate ?? "");
-                    command.Parameters.AddWithValue("@bioCondition", plate.BiologicalCondition ?? "");
                     command.Parameters.AddWithValue("@description", plate.Description ?? "");
                     command.Parameters.AddWithValue("@instrument", plate.InstrumentName ?? "");
                     command.Parameters.AddWithValue("@operator", plate.OperatorName ?? "");
-                    command.Parameters.AddWithValue("@batch", plate.BatchNumber ?? "");
 
                     var result = await command.ExecuteScalarAsync();
                     return Convert.ToInt32(result);
@@ -231,14 +230,14 @@ namespace SCPBrowser
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        SELECT p.plate_id, p.plate_name, p.run_date, p.biological_condition, 
-                               p.description, p.instrument_name, p.operator_name, p.batch_number,
-                               COUNT(pi.import_id) as file_count
-                        FROM plates p
-                        LEFT JOIN parquet_imports pi ON p.plate_id = pi.plate_id
-                        GROUP BY p.plate_id
-                        ORDER BY p.plate_name
-                    ";
+                SELECT p.plate_id, p.plate_name, p.run_date, 
+                       p.description, p.instrument_name, p.operator_name,
+                       COUNT(pi.import_id) as file_count
+                FROM plates p
+                LEFT JOIN parquet_imports pi ON p.plate_id = pi.plate_id
+                GROUP BY p.plate_id
+                ORDER BY p.plate_name
+            ";
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
@@ -249,12 +248,10 @@ namespace SCPBrowser
                                 PlateId = reader.GetInt32(0),
                                 PlateName = reader.GetString(1),
                                 RunDate = reader.IsDBNull(2) ? "" : reader.GetString(2),
-                                BiologicalCondition = reader.IsDBNull(3) ? "" : reader.GetString(3),
-                                Description = reader.IsDBNull(4) ? "" : reader.GetString(4),
-                                InstrumentName = reader.IsDBNull(5) ? "" : reader.GetString(5),
-                                OperatorName = reader.IsDBNull(6) ? "" : reader.GetString(6),
-                                BatchNumber = reader.IsDBNull(7) ? "" : reader.GetString(7),
-                                FileCount = reader.GetInt32(8)
+                                Description = reader.IsDBNull(3) ? "" : reader.GetString(3),
+                                InstrumentName = reader.IsDBNull(4) ? "" : reader.GetString(4),
+                                OperatorName = reader.IsDBNull(5) ? "" : reader.GetString(5),
+                                FileCount = reader.GetInt32(6)
                             });
                         }
                     }
@@ -278,24 +275,20 @@ namespace SCPBrowser
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        UPDATE plates 
-                        SET plate_name = @plateName,
-                            run_date = @runDate,
-                            biological_condition = @bioCondition,
-                            description = @description,
-                            instrument_name = @instrument,
-                            operator_name = @operator,
-                            batch_number = @batch
-                        WHERE plate_id = @plateId
-                    ";
+                UPDATE plates 
+                SET plate_name = @plateName,
+                    run_date = @runDate,
+                    description = @description,
+                    instrument_name = @instrument,
+                    operator_name = @operator
+                WHERE plate_id = @plateId
+            ";
                     command.Parameters.AddWithValue("@plateId", plate.PlateId);
                     command.Parameters.AddWithValue("@plateName", plate.PlateName);
                     command.Parameters.AddWithValue("@runDate", plate.RunDate ?? "");
-                    command.Parameters.AddWithValue("@bioCondition", plate.BiologicalCondition ?? "");
                     command.Parameters.AddWithValue("@description", plate.Description ?? "");
                     command.Parameters.AddWithValue("@instrument", plate.InstrumentName ?? "");
                     command.Parameters.AddWithValue("@operator", plate.OperatorName ?? "");
-                    command.Parameters.AddWithValue("@batch", plate.BatchNumber ?? "");
 
                     await command.ExecuteNonQueryAsync();
                 }
@@ -388,6 +381,235 @@ namespace SCPBrowser
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Inserts a parquet import record and returns the new import_id
+        /// </summary>
+        public async Task<int> InsertParquetImportAsync(ParquetImportInfo importInfo)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                INSERT INTO parquet_imports 
+                (plate_id, file_name, file_hash, import_timestamp, row_count, protein_count, cell_count, column_mapping)
+                VALUES 
+                (@plateId, @fileName, @fileHash, @timestamp, @rowCount, @proteinCount, @cellCount, @mapping);
+                
+                SELECT last_insert_rowid();
+            ";
+
+                    command.Parameters.AddWithValue("@plateId", importInfo.PlateId);
+                    command.Parameters.AddWithValue("@fileName", importInfo.FileName);
+                    command.Parameters.AddWithValue("@fileHash", importInfo.FileHash);
+                    command.Parameters.AddWithValue("@timestamp", importInfo.ImportTimestamp.ToString("o"));
+                    command.Parameters.AddWithValue("@rowCount", importInfo.RowCount);
+                    command.Parameters.AddWithValue("@proteinCount", importInfo.ProteinCount);
+                    command.Parameters.AddWithValue("@cellCount", importInfo.CellCount);
+                    command.Parameters.AddWithValue("@mapping", importInfo.ColumnMappingJson);
+
+                    var result = await command.ExecuteScalarAsync();
+                    return Convert.ToInt32(result);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Bulk inserts raw file records associated with an import
+        /// </summary>
+        /// <summary>
+        /// Bulk inserts raw file records associated with an import
+        /// Returns the raw files with their assigned raw_file_id values
+        /// </summary>
+        public async Task<List<RawFileInfo>> InsertRawFilesAsync(int importId, List<RawFileInfo> rawFiles)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+            var insertedFiles = new List<RawFileInfo>();
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        foreach (var rawFile in rawFiles)
+                        {
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandText = @"
+                            INSERT INTO raw_files 
+                            (import_id, raw_file_name, biological_condition, plate_id, protein_count, peptide_count, total_ion_current)
+                            VALUES 
+                            (@importId, @rawFileName, @condition, @plateId, @proteinCount, @peptideCount, @tic);
+                            
+                            SELECT last_insert_rowid();
+                        ";
+
+                                command.Parameters.AddWithValue("@importId", importId);
+                                command.Parameters.AddWithValue("@rawFileName", rawFile.RawFileName);
+                                command.Parameters.AddWithValue("@condition", rawFile.BiologicalCondition ?? (object)DBNull.Value);
+                                command.Parameters.AddWithValue("@plateId", rawFile.PlateId.HasValue ? rawFile.PlateId.Value : (object)DBNull.Value);
+                                command.Parameters.AddWithValue("@proteinCount", rawFile.ProteinCount);
+                                command.Parameters.AddWithValue("@peptideCount", rawFile.PeptideCount);
+                                command.Parameters.AddWithValue("@tic", rawFile.TotalIonCurrent);
+
+                                var result = await command.ExecuteScalarAsync();
+                                int rawFileId = Convert.ToInt32(result);
+
+                                // Update the raw file object with its database ID
+                                rawFile.RawFileId = rawFileId;
+                                insertedFiles.Add(rawFile);
+                            }
+                        }
+
+                        await transaction.CommitAsync();
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync();
+                        throw;
+                    }
+                }
+            }
+
+            return insertedFiles;
+        }
+
+        /// <summary>
+        /// Extracts protein quantification data from parquet and stores summary statistics
+        /// </summary>
+        public async Task ExtractAndStoreProteinQuantAsync(
+            string parquetPath,
+            int importId,
+            List<RawFileInfo> rawFiles,
+            IProgress<string> progress = null)
+        {
+            progress?.Report("Loading parquet file...");
+
+            // Load parquet data using existing service
+            var parquetService = new ParquetDataService();
+            var mapping = new ColumnMapping
+            {
+                RawFileColumn = "Run",
+                ProteinGroupColumn = "Protein.Group",
+                PeptideColumn = "Stripped.Sequence",
+                TotalIonCurrentColumn = "Precursor.Quantity"
+            };
+
+            var data = await parquetService.LoadParquetFileAsync(parquetPath, mapping);
+
+            progress?.Report($"Processing {data.ProteinQuantMatrix.Count} proteins across {data.RawFileNames.Count} files...");
+
+            // Create lookup: RawFileName -> raw_file_id
+            var rawFileIdMap = rawFiles.ToDictionary(rf => rf.RawFileName, rf => rf.RawFileId);
+
+            // Prepare protein statistics
+            var proteinStats = new List<ProteinQuantSummary>();
+
+            foreach (var protein in data.ProteinQuantMatrix.Keys)
+            {
+                foreach (var rawFileName in data.RawFileNames)
+                {
+                    if (!rawFileIdMap.ContainsKey(rawFileName))
+                        continue; // Skip if raw file not in our import
+
+                    int rawFileId = rawFileIdMap[rawFileName];
+
+                    // Get the summed intensity for this protein in this raw file
+                    double intensity = 0;
+                    if (data.ProteinQuantMatrix[protein].ContainsKey(rawFileName))
+                    {
+                        intensity = data.ProteinQuantMatrix[protein][rawFileName];
+                    }
+
+                    // For now, we'll use the summed intensity as both median and mean
+                    // In a more sophisticated version, we'd store all peptide intensities
+                    // and calculate proper statistics
+                    if (intensity > 0)
+                    {
+                        proteinStats.Add(new ProteinQuantSummary
+                        {
+                            ProteinId = protein,
+                            RawFileId = rawFileId,
+                            MedianIntensity = intensity,
+                            MeanIntensity = intensity,
+                            DetectionCount = 1 // Detected in this file
+                        });
+                    }
+                }
+            }
+
+            progress?.Report($"Storing {proteinStats.Count} protein quantification records...");
+
+            // Bulk insert protein statistics
+            await BulkInsertProteinQuantAsync(proteinStats);
+
+            progress?.Report("Protein quantification complete!");
+        }
+
+        /// <summary>
+        /// Bulk inserts protein quantification summary records
+        /// </summary>
+        private async Task BulkInsertProteinQuantAsync(List<ProteinQuantSummary> proteinStats)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        foreach (var stat in proteinStats)
+                        {
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandText = @"
+                            INSERT INTO protein_quant_summary 
+                            (protein_id, raw_file_id, median_intensity, mean_intensity, detection_count)
+                            VALUES 
+                            (@proteinId, @rawFileId, @median, @mean, @count)
+                        ";
+
+                                command.Parameters.AddWithValue("@proteinId", stat.ProteinId);
+                                command.Parameters.AddWithValue("@rawFileId", stat.RawFileId);
+                                command.Parameters.AddWithValue("@median", stat.MedianIntensity);
+                                command.Parameters.AddWithValue("@mean", stat.MeanIntensity);
+                                command.Parameters.AddWithValue("@count", stat.DetectionCount);
+
+                                await command.ExecuteNonQueryAsync();
+                            }
+                        }
+
+                        await transaction.CommitAsync();
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync();
+                        throw;
+                    }
+                }
+            }
+        }
+
+        // Helper class for protein statistics
+        private class ProteinQuantSummary
+        {
+            public string ProteinId { get; set; }
+            public int RawFileId { get; set; }
+            public double MedianIntensity { get; set; }
+            public double MeanIntensity { get; set; }
+            public int DetectionCount { get; set; }
         }
 
         /// <summary>

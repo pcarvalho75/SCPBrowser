@@ -136,40 +136,87 @@ namespace SCPBrowser
                 // Check if file is in imports folder
                 if (!filePath.Equals(expectedPath, StringComparison.OrdinalIgnoreCase))
                 {
-                    var result = MessageBox.Show(
-                        $"The selected file is not in the project's imports folder.\n\n" +
-                        $"Expected location:\n{importsPath}\n\n" +
-                        $"Would you like to copy the file to the imports folder?",
-                        "File Not in Imports Folder",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question);
-
-                    if (result == MessageBoxResult.Yes)
+                    // Check if a file with the same name already exists in imports folder
+                    if (File.Exists(expectedPath))
                     {
-                        // Ensure imports directory exists
-                        if (!Directory.Exists(importsPath))
-                        {
-                            Directory.CreateDirectory(importsPath);
-                        }
+                        var overwriteResult = MessageBox.Show(
+                            $"A file with the same name already exists in the imports folder:\n\n{fileName}\n\n" +
+                            $"The selected file:\n{filePath}\n\n" +
+                            $"Would you like to use the existing file in the imports folder instead?",
+                            "File Already Exists",
+                            MessageBoxButton.YesNoCancel,
+                            MessageBoxImage.Question);
 
-                        // Copy file
-                        File.Copy(filePath, expectedPath, overwrite: false);
-                        filePath = expectedPath;
+                        if (overwriteResult == MessageBoxResult.Yes)
+                        {
+                            // Use the existing file in imports folder
+                            filePath = expectedPath;
+                        }
+                        else if (overwriteResult == MessageBoxResult.No)
+                        {
+                            // Offer to replace the existing file
+                            var replaceResult = MessageBox.Show(
+                                $"Do you want to replace the existing file with the selected one?\n\n" +
+                                $"This will overwrite:\n{expectedPath}",
+                                "Replace Existing File",
+                                MessageBoxButton.YesNo,
+                                MessageBoxImage.Warning);
+
+                            if (replaceResult == MessageBoxResult.Yes)
+                            {
+                                File.Delete(expectedPath);
+                                File.Copy(filePath, expectedPath, overwrite: false);
+                                filePath = expectedPath;
+                            }
+                            else
+                            {
+                                return;
+                            }
+                        }
+                        else
+                        {
+                            // User cancelled
+                            return;
+                        }
                     }
                     else
                     {
-                        FileValidationText.Text = "⚠️ File must be in the imports folder to continue.";
-                        FileValidationText.Visibility = Visibility.Visible;
-                        return;
+                        // File doesn't exist in imports, offer to copy
+                        var result = MessageBox.Show(
+                            $"The selected file is not in the project's imports folder.\n\n" +
+                            $"Expected location:\n{importsPath}\n\n" +
+                            $"Would you like to copy the file to the imports folder?",
+                            "File Not in Imports Folder",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Question);
+
+                        if (result == MessageBoxResult.Yes)
+                        {
+                            // Ensure imports directory exists
+                            if (!Directory.Exists(importsPath))
+                            {
+                                Directory.CreateDirectory(importsPath);
+                            }
+
+                            // Copy file
+                            File.Copy(filePath, expectedPath, overwrite: false);
+                            filePath = expectedPath;
+                        }
+                        else
+                        {
+                            FileValidationText.Text = "⚠️ File must be in the imports folder to continue.";
+                            FileValidationText.Visibility = Visibility.Visible;
+                            return;
+                        }
                     }
                 }
 
-                // Check if already imported
+                // Check if already imported in database
                 bool alreadyImported = await _projectService.IsParquetImportedAsync(fileName);
                 if (alreadyImported)
                 {
                     var result = MessageBox.Show(
-                        $"This parquet file has already been imported:\n\n{fileName}\n\n" +
+                        $"This parquet file has already been imported to the database:\n\n{fileName}\n\n" +
                         $"Do you want to delete the existing import and re-import?",
                         "File Already Imported",
                         MessageBoxButton.YesNo,
@@ -192,6 +239,14 @@ namespace SCPBrowser
                 // Load parquet preview
                 await LoadParquetPreviewAsync(filePath);
                 ValidateImportButton();
+            }
+            catch (IOException ioEx) when (ioEx.Message.Contains("already exists"))
+            {
+                MessageBox.Show(
+                    $"Error: A file with the same name already exists in the imports folder.\n\n{ioEx.Message}",
+                    "File Already Exists",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
             catch (Exception ex)
             {
@@ -553,6 +608,16 @@ namespace SCPBrowser
                     }
                 }
 
+                // Disable UI during import
+                ImportButton.IsEnabled = false;
+                PlateComboBox.IsEnabled = false;
+                RawFilesDataGrid.IsEnabled = false;
+                this.Cursor = System.Windows.Input.Cursors.Wait;
+
+                // Show progress in status (we don't have LoadingOverlay in dialog, so we'll update window title)
+                string originalTitle = this.Title;
+                this.Title = "Importing... Please wait";
+
                 // Calculate file hash
                 string fileHash = _projectService.CalculateFileHash(_selectedParquetPath);
                 string fileName = Path.GetFileName(_selectedParquetPath);
@@ -567,28 +632,71 @@ namespace SCPBrowser
                 };
                 string mappingJson = System.Text.Json.JsonSerializer.Serialize(mapping);
 
-                // Create import record
+                // STEP 1: Insert parquet import record
+                this.Title = "Importing... Creating import record";
+                Console.WriteLine("Step 1: Creating parquet import record...");
+
                 var importInfo = new ParquetImportInfo
                 {
                     PlateId = SelectedPlate.PlateId,
                     FileName = fileName,
                     FileHash = fileHash,
                     ImportTimestamp = DateTime.Now,
-                    RowCount = 0, // Will be filled by actual import process
+                    RowCount = 0, // Will be updated after reading parquet
                     ProteinCount = RawFiles.Sum(rf => rf.ProteinCount),
                     CellCount = RawFiles.Count,
                     ColumnMappingJson = mappingJson
                 };
 
-                // TODO: In next phase, we'll implement the actual import logic
-                // For now, we'll just show success
+                int importId = await _projectService.InsertParquetImportAsync(importInfo);
+                Console.WriteLine($"Import record created with ID: {importId}");
+
+                // STEP 2: Insert raw file records
+                this.Title = "Importing... Saving raw file information";
+                Console.WriteLine($"Step 2: Inserting {RawFiles.Count} raw file records...");
+
+                // Assign plate_id to each raw file
+                foreach (var rawFile in RawFiles)
+                {
+                    rawFile.PlateId = SelectedPlate.PlateId;
+                }
+
+                var insertedRawFiles = await _projectService.InsertRawFilesAsync(importId, RawFiles.ToList());
+                Console.WriteLine($"Raw file records inserted successfully");
+
+                // STEP 3: Extract and store protein quantification data
+                this.Title = "Importing... Processing protein quantification";
+                Console.WriteLine("Step 3: Extracting protein quantification data...");
+
+                var progress = new Progress<string>(message =>
+                {
+                    this.Dispatcher.Invoke(() =>
+                    {
+                        this.Title = $"Importing... {message}";
+                        Console.WriteLine(message);
+                    });
+                });
+
+                await _projectService.ExtractAndStoreProteinQuantAsync(
+                    _selectedParquetPath,
+                    importId,
+                    insertedRawFiles,
+                    progress);
+
+                Console.WriteLine("Protein quantification data stored successfully");
+
+                // Restore UI
+                this.Title = originalTitle;
+                this.Cursor = System.Windows.Input.Cursors.Arrow;
+
+                // Show success message
                 MessageBox.Show(
-                    $"Import prepared successfully!\n\n" +
+                    $"Import completed successfully!\n\n" +
                     $"Plate: {SelectedPlate.PlateName}\n" +
                     $"Raw Files: {RawFiles.Count}\n" +
-                    $"Conditions: {uniqueConditions.Count}\n\n" +
-                    $"NOTE: Full import implementation coming in next phase.",
-                    "Import Prepared",
+                    $"Conditions: {uniqueConditions.Count}\n" +
+                    $"Proteins Tracked: {importInfo.ProteinCount}",
+                    "Import Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
 
@@ -597,11 +705,24 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
+                // Restore cursor
+                this.Cursor = System.Windows.Input.Cursors.Arrow;
+
+                Console.WriteLine($"Import error: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+
                 MessageBox.Show(
                     $"Error during import:\n\n{ex.Message}",
                     "Import Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
+            }
+            finally
+            {
+                // Re-enable UI
+                ImportButton.IsEnabled = true;
+                PlateComboBox.IsEnabled = true;
+                RawFilesDataGrid.IsEnabled = true;
             }
         }
 

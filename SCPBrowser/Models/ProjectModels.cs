@@ -11,133 +11,56 @@ namespace SCPBrowser.Models
         private int _plateId;
         private string _plateName;
         private string _runDate;
-        private string _biologicalCondition;
-        private string _description;
         private string _instrumentName;
         private string _operatorName;
-        private string _batchNumber;
+        private string _description;
         private int _fileCount;
 
         public int PlateId
         {
             get => _plateId;
-            set
-            {
-                if (_plateId != value)
-                {
-                    _plateId = value;
-                    OnPropertyChanged(nameof(PlateId));
-                }
-            }
+            set { _plateId = value; OnPropertyChanged(nameof(PlateId)); }
         }
 
         public string PlateName
         {
             get => _plateName;
-            set
-            {
-                if (_plateName != value)
-                {
-                    _plateName = value;
-                    OnPropertyChanged(nameof(PlateName));
-                }
-            }
+            set { _plateName = value; OnPropertyChanged(nameof(PlateName)); }
         }
 
         public string RunDate
         {
             get => _runDate;
-            set
-            {
-                if (_runDate != value)
-                {
-                    _runDate = value;
-                    OnPropertyChanged(nameof(RunDate));
-                }
-            }
-        }
-
-        public string BiologicalCondition
-        {
-            get => _biologicalCondition;
-            set
-            {
-                if (_biologicalCondition != value)
-                {
-                    _biologicalCondition = value;
-                    OnPropertyChanged(nameof(BiologicalCondition));
-                }
-            }
-        }
-
-        public string Description
-        {
-            get => _description;
-            set
-            {
-                if (_description != value)
-                {
-                    _description = value;
-                    OnPropertyChanged(nameof(Description));
-                }
-            }
+            set { _runDate = value; OnPropertyChanged(nameof(RunDate)); }
         }
 
         public string InstrumentName
         {
             get => _instrumentName;
-            set
-            {
-                if (_instrumentName != value)
-                {
-                    _instrumentName = value;
-                    OnPropertyChanged(nameof(InstrumentName));
-                }
-            }
+            set { _instrumentName = value; OnPropertyChanged(nameof(InstrumentName)); }
         }
 
         public string OperatorName
         {
             get => _operatorName;
-            set
-            {
-                if (_operatorName != value)
-                {
-                    _operatorName = value;
-                    OnPropertyChanged(nameof(OperatorName));
-                }
-            }
+            set { _operatorName = value; OnPropertyChanged(nameof(OperatorName)); }
         }
 
-        public string BatchNumber
+        public string Description
         {
-            get => _batchNumber;
-            set
-            {
-                if (_batchNumber != value)
-                {
-                    _batchNumber = value;
-                    OnPropertyChanged(nameof(BatchNumber));
-                }
-            }
+            get => _description;
+            set { _description = value; OnPropertyChanged(nameof(Description)); }
         }
 
         public int FileCount
         {
             get => _fileCount;
-            set
-            {
-                if (_fileCount != value)
-                {
-                    _fileCount = value;
-                    OnPropertyChanged(nameof(FileCount));
-                }
-            }
+            set { _fileCount = value; OnPropertyChanged(nameof(FileCount)); }
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
 
-        protected virtual void OnPropertyChanged(string propertyName)
+        protected void OnPropertyChanged(string propertyName)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }

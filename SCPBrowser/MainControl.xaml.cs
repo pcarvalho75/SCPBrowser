@@ -30,6 +30,7 @@ namespace SCPBrowser
             _goEnrichmentManager = new GoEnrichmentManager();
         }
 
+
         private async System.Threading.Tasks.Task LoadTranscriptomicReferenceAsync()
         {
             if (_transcriptomicManager.IsLoaded)
@@ -42,9 +43,8 @@ namespace SCPBrowser
                 return;
             }
 
-            var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
-            var referenceDataPath = Path.Combine(appDirectory, "ReferenceData");
-            var databasePath = Path.Combine(referenceDataPath, "reference_data.db");
+            // Use the database path from settings
+            var databasePath = Settings.Default.ReferenceDatabasePath;
 
             if (File.Exists(databasePath))
             {
@@ -75,21 +75,30 @@ namespace SCPBrowser
             }
         }
 
+        // Replace the LoadGoEnrichmentAsync method in MainControl.xaml.cs with this updated version:
+
         private async System.Threading.Tasks.Task LoadGoEnrichmentAsync()
         {
             if (_goEnrichmentManager.IsLoaded)
             {
                 StatusText.Text = "Running GO enrichment analysis...";
-                _goEnrichmentResults = _goEnrichmentManager.EnrichAllRuns(_currentData);
+
+                // Use settings for GO enrichment parameters
+                var pValueCutoff = Settings.Default.GOPValueCutoff;
+                var minOverlap = Settings.Default.GOMinimumOverlap;
+
+                _goEnrichmentResults = _goEnrichmentManager.EnrichAllRuns(
+                    _currentData,
+                    pValueCutoff,
+                    minOverlap);
 
                 int enrichedCount = _goEnrichmentResults.Count(kvp => !string.IsNullOrEmpty(kvp.Value.TopGoTermId));
                 StatusText.Text += $" | GO enrichment: {enrichedCount}/{_currentData.TotalRawFiles} runs";
                 return;
             }
 
-            var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
-            var referenceDataPath = Path.Combine(appDirectory, "ReferenceData");
-            var databasePath = Path.Combine(referenceDataPath, "reference_data.db");
+            // Use the database path from settings
+            var databasePath = Settings.Default.ReferenceDatabasePath;
 
             if (File.Exists(databasePath))
             {
@@ -102,7 +111,15 @@ namespace SCPBrowser
                     StatusText.Text = $"GO database loaded: {db.TotalProteins:N0} proteins, {db.GoTermToProteins.Count} GO terms";
 
                     StatusText.Text = "Running GO enrichment analysis...";
-                    _goEnrichmentResults = _goEnrichmentManager.EnrichAllRuns(_currentData);
+
+                    // Use settings for GO enrichment parameters
+                    var pValueCutoff = Settings.Default.GOPValueCutoff;
+                    var minOverlap = Settings.Default.GOMinimumOverlap;
+
+                    _goEnrichmentResults = _goEnrichmentManager.EnrichAllRuns(
+                        _currentData,
+                        pValueCutoff,
+                        minOverlap);
 
                     int enrichedCount = _goEnrichmentResults.Count(kvp => !string.IsNullOrEmpty(kvp.Value.TopGoTermId));
                     StatusText.Text += $" | GO enrichment: {enrichedCount}/{_currentData.TotalRawFiles} runs";

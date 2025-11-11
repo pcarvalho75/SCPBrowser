@@ -21,12 +21,35 @@ namespace SCPBrowser
             MinOverlapUpDown.Value = Settings.Default.GOMinimumOverlap;
 
             string dbPath = Settings.Default.ReferenceDatabasePath;
+
+            // Initialize default path if empty
             if (string.IsNullOrEmpty(dbPath))
             {
-                // Default to application directory
-                var appDir = AppDomain.CurrentDomain.BaseDirectory;
-                dbPath = Path.Combine(appDir, "ReferenceData", "reference_data.db");
+                // Default to Documents/SCPBrowser/reference_data.db
+                var documentsFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                var scpBrowserFolder = Path.Combine(documentsFolder, "SCPBrowser");
+
+                // Create the folder if it doesn't exist
+                try
+                {
+                    if (!Directory.Exists(scpBrowserFolder))
+                    {
+                        Directory.CreateDirectory(scpBrowserFolder);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Could not create SCPBrowser folder: {ex.Message}",
+                        "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+
+                dbPath = Path.Combine(scpBrowserFolder, "reference_data.db");
+
+                // Save this default path
+                Settings.Default.ReferenceDatabasePath = dbPath;
+                Settings.Default.Save();
             }
+
             DatabasePathTextBox.Text = dbPath;
         }
 
@@ -71,8 +94,9 @@ namespace SCPBrowser
                 PValueUpDown.Value = 0.05;
                 MinOverlapUpDown.Value = 2;
 
-                var appDir = AppDomain.CurrentDomain.BaseDirectory;
-                DatabasePathTextBox.Text = Path.Combine(appDir, "ReferenceData", "reference_data.db");
+                var documentsFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                var scpBrowserFolder = Path.Combine(documentsFolder, "SCPBrowser");
+                DatabasePathTextBox.Text = Path.Combine(scpBrowserFolder, "reference_data.db");
 
                 ShowStatusMessage("Settings reset to defaults (click Save to apply)", false);
             }

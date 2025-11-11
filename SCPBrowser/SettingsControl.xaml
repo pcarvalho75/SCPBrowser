@@ -79,25 +79,31 @@
                     <TextBlock Text="Reference Database" 
                                Style="{StaticResource SubheaderText}"/>
                 </GroupBox.Header>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="220"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" 
-                               Text="Database Path:" 
-                               Style="{StaticResource LabelText}"/>
-                    <TextBox Grid.Column="1" 
-                             x:Name="DatabasePathTextBox"
-                             VerticalAlignment="Center"
-                             Margin="0,0,10,0"
-                             IsReadOnly="True"/>
-                    <Button Grid.Column="2" 
-                            Content="Browse..."
-                            Click="BrowseDatabasePath_Click"
-                            Style="{StaticResource SecondaryButton}"/>
-                </Grid>
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" 
+                                   Text="Database Path:" 
+                                   Style="{StaticResource LabelText}"/>
+                        <TextBox Grid.Column="1" 
+                                 x:Name="DatabasePathTextBox"
+                                 VerticalAlignment="Center"
+                                 Margin="0,0,10,0"
+                                 IsReadOnly="True"/>
+                        <Button Grid.Column="2" 
+                                Content="Browse..."
+                                Click="BrowseDatabasePath_Click"
+                                Style="{StaticResource SecondaryButton}"/>
+                    </Grid>
+                    <TextBlock Margin="220,5,0,0"
+                               TextWrapping="Wrap"
+                               Style="{StaticResource HelpText}"
+                               Text="Place your reference_data.db file in this location. Use Tools menu to convert transcriptomic data or compile GO annotations."/>
+                </StackPanel>
             </GroupBox>
 
             <!-- Action Buttons and Status -->

@@ -17,7 +17,18 @@
         <!-- Menu Bar -->
         <Menu Grid.Row="0">
             <MenuItem Header="_File">
-                <MenuItem Header="_Open DIA-NN Parquet File..." Click="OpenDiannFile_Click"/>
+                <MenuItem Header="_New Project..." Click="NewProject_Click"/>
+                <MenuItem Header="_Open Project..." Click="OpenProject_Click"/>
+                <Separator/>
+                <MenuItem Header="_Import Parquet..." 
+                          x:Name="ImportParquetMenuItem"
+                          Click="ImportParquet_Click"
+                          IsEnabled="False"/>
+                <Separator/>
+                <MenuItem Header="_Close Project" 
+                          x:Name="CloseProjectMenuItem"
+                          Click="CloseProject_Click"
+                          IsEnabled="False"/>
                 <Separator/>
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
             </MenuItem>
@@ -34,11 +45,125 @@
             </MenuItem>
         </Menu>
 
-        <!-- Main Content Area (Grid.Row="1") - Everything switches here -->
+        <!-- Main Content Area (Grid.Row="1") -->
         <Grid Grid.Row="1">
-            <!-- TabControl - Main application interface -->
+            <!-- Welcome Screen (shown when no project is open) -->
+            <Border x:Name="WelcomeScreen"
+                    Background="White"
+                    Visibility="Visible"
+                    Panel.ZIndex="1">
+                <StackPanel HorizontalAlignment="Center" 
+                           VerticalAlignment="Center"
+                           Width="400">
+
+                    <!-- Logo/Icon -->
+                    <Border Background="#eff6ff"
+                           Width="120"
+                           Height="120"
+                           CornerRadius="60"
+                           Margin="0,0,0,30"
+                           HorizontalAlignment="Center">
+                        <TextBlock Text="📊" 
+                                  FontSize="60"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"/>
+                    </Border>
+
+                    <!-- Welcome Text -->
+                    <TextBlock Text="Welcome to SCP Browser" 
+                              FontSize="24" 
+                              FontWeight="Bold"
+                              Foreground="#0f172a"
+                              TextAlignment="Center"
+                              Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Single Cell Proteomics Analysis Platform" 
+                              FontSize="13"
+                              Foreground="#64748b"
+                              TextAlignment="Center"
+                              Margin="0,0,0,40"/>
+
+                    <!-- Action Buttons -->
+                    <Button Content="📁 Create New Project"
+                           Click="NewProject_Click"
+                           Height="45"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,15"
+                           Background="#2563eb"
+                           Foreground="White"
+                           BorderThickness="0"
+                           Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                       CornerRadius="6"
+                                       Padding="20,12">
+                                    <ContentPresenter HorizontalAlignment="Center" 
+                                                    VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#1d4ed8"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
+                    <Button Content="📂 Open Existing Project"
+                           Click="OpenProject_Click"
+                           Height="45"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Background="#f1f5f9"
+                           Foreground="#334155"
+                           BorderThickness="0"
+                           Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                       CornerRadius="6"
+                                       Padding="20,12">
+                                    <ContentPresenter HorizontalAlignment="Center" 
+                                                    VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#e2e8f0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
+                    <!-- Recent Projects (placeholder for future) -->
+                    <TextBlock Text="Recent Projects" 
+                              FontSize="12"
+                              FontWeight="SemiBold"
+                              Foreground="#64748b"
+                              Margin="0,30,0,10"
+                              TextAlignment="Center"/>
+                    <TextBlock Text="No recent projects" 
+                              FontSize="11"
+                              Foreground="#94a3b8"
+                              FontStyle="Italic"
+                              TextAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <!-- TabControl - Main application interface (hidden initially) -->
             <TabControl x:Name="MainTabControl" 
                         SelectionChanged="MainTabControl_SelectionChanged"
+                        Visibility="Collapsed"
                         Panel.ZIndex="0">
                 <TabItem Header="Protein Groups">
                     <local:MainControl x:Name="MainControlTab" DataLoaded="MainControlTab_DataLoaded"/>
@@ -49,35 +174,27 @@
                 <TabItem Header="Protein Matrix">
                     <local:ProteinMatrixControl x:Name="ProteinMatrixTab"/>
                 </TabItem>
-                <TabItem Header="Settings">
-                    <local:SettingsControl x:Name="SettingsTab"/>
+                <TabItem Header="GO Enrichment" x:Name="GoEnrichmentTabItem">
+                    <local:GoEnrichmentTabControl x:Name="GoEnrichmentTab"/>
+                </TabItem>
+                <TabItem Header="Cell Type Analysis" x:Name="CellTypeTabItem">
+                    <local:CellTypeTabControl x:Name="CellTypeTab"/>
                 </TabItem>
             </TabControl>
 
-            <!-- Logo overlay - shown initially -->
-            <Border x:Name="LogoOverlay"
-                    Background="White"
-                    Panel.ZIndex="1000">
-                <Image Source="/Images/logo.png"
-                       Stretch="Uniform"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       MaxWidth="600"
-                       MaxHeight="600"/>
-            </Border>
+            <!-- Settings Dialog -->
+            <local:SettingsControl x:Name="SettingsDialog" 
+                                   Visibility="Collapsed"
+                                   Panel.ZIndex="2"/>
 
-            <!-- DB Browser overlay - shown when Utils > DB Browser is clicked -->
-            <Border x:Name="DBBrowserOverlay"
-                    Background="White"
-                    Panel.ZIndex="1500"
-                    Visibility="Collapsed">
-                <local:DBBrowserControl x:Name="DBBrowser"/>
-            </Border>
+            <!-- DB Browser Dialog -->
+            <local:DBBrowserControl x:Name="DBBrowserDialog"
+                                    Visibility="Collapsed"
+                                    Panel.ZIndex="2"/>
 
-            <!-- Loading overlay - shown during operations -->
-            <local:LoadingOverlay x:Name="LoadingOverlay"
-                                  Visibility="Collapsed"
-                                  Panel.ZIndex="2000"/>
+            <!-- Loading Overlay -->
+            <local:LoadingOverlay x:Name="LoadingOverlay" 
+                                  Panel.ZIndex="3"/>
         </Grid>
     </Grid>
 </Window>

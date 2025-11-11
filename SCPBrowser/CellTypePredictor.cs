@@ -4,45 +4,74 @@ using System.Linq;
 
 namespace SCPBrowser
 {
+    /// <summary>
+    /// Predicts cell types by comparing proteomics data against aggregated transcriptomic cell type profiles
+    /// Uses a sophisticated scoring system combining correlation, specificity, and enrichment statistics
+    /// </summary>
     public class CellTypePredictor
     {
         private readonly TranscriptomicDatabase _database;
         private readonly Dictionary<string, double> _geneSpecificity;
         private readonly Dictionary<string, HashSet<string>> _cellTypeMarkers;
 
+        /// <summary>
+        /// Creates a new CellTypePredictor using aggregated cell type profiles
+        /// </summary>
+        /// <param name="database">Database containing cell type profiles (not individual cells)</param>
+        /// <param name="markerSpecificityThreshold">Minimum specificity score for a gene to be considered a marker (default: 0.5)</param>
         public CellTypePredictor(TranscriptomicDatabase database, double markerSpecificityThreshold = 0.5)
         {
             _database = database ?? throw new ArgumentNullException(nameof(database));
+
+            if (_database.CellTypeProfiles == null || _database.CellTypeProfiles.Count == 0)
+                throw new ArgumentException("Database must contain cell type profiles", nameof(database));
+
+            // Pre-calculate gene specificity and marker sets for efficient prediction
             _geneSpecificity = CalculateGeneSpecificity();
             _cellTypeMarkers = DefineCellTypeMarkers(markerSpecificityThreshold);
         }
 
+        /// <summary>
+        /// Calculates how specific each gene is to certain cell types
+        /// Higher specificity = gene is expressed in fewer cell types (more discriminative)
+        /// Uses inverse document frequency (IDF) logic: log(total_cell_types / cell_types_expressing_gene)
+        /// </summary>
         private Dictionary<string, double> CalculateGeneSpecificity()
         {
             var specificity = new Dictionary<string, double>();
-            int totalCellTypes = _database.CellTypeIndex.Count;
+            int totalCellTypes = _database.CellTypeProfiles.Count;
 
             if (totalCellTypes == 0)
                 return specificity;
 
-            foreach (var gene in _database.GeneExpression.Keys)
+            // Collect all unique genes across all cell type profiles
+            var allGenes = new HashSet<string>();
+            foreach (var profile in _database.CellTypeProfiles.Values)
             {
-                var cellTypesExpressingGene = new HashSet<string>();
-
-                foreach (var (cellId, count) in _database.GeneExpression[gene])
+                foreach (var gene in profile.MedianExpression.Keys)
                 {
-                    if (_database.CellMetadata.TryGetValue(cellId, out var metadata) &&
-                        !string.IsNullOrEmpty(metadata.CellType))
+                    allGenes.Add(gene);
+                }
+            }
+
+            // Calculate specificity for each gene
+            foreach (var gene in allGenes)
+            {
+                int cellTypesExpressingGene = 0;
+
+                // Count how many cell types express this gene (median > 0)
+                foreach (var profile in _database.CellTypeProfiles.Values)
+                {
+                    if (profile.MedianExpression.ContainsKey(gene) && profile.MedianExpression[gene] > 0)
                     {
-                        cellTypesExpressingGene.Add(metadata.CellType);
+                        cellTypesExpressingGene++;
                     }
                 }
 
-                int numCellTypes = cellTypesExpressingGene.Count;
-
-                if (numCellTypes > 0)
+                // IDF-style specificity: genes expressed in fewer cell types are more specific
+                if (cellTypesExpressingGene > 0)
                 {
-                    specificity[gene] = Math.Log((double)totalCellTypes / numCellTypes);
+                    specificity[gene] = Math.Log((double)totalCellTypes / cellTypesExpressingGene);
                 }
                 else
                 {
@@ -53,23 +82,40 @@ namespace SCPBrowser
             return specificity;
         }
 
+        /// <summary>
+        /// Identifies marker genes for each cell type based on:
+        /// 1. High specificity (gene is not widely expressed across all cell types)
+        /// 2. High expression in this cell type (median expression > 0)
+        /// 3. High prevalence (expressed in many cells of this type - PercentExpressing)
+        /// </summary>
         private Dictionary<string, HashSet<string>> DefineCellTypeMarkers(double specificityThreshold)
         {
             var markers = new Dictionary<string, HashSet<string>>();
 
-            foreach (var cellType in _database.CellTypeIndex.Keys)
+            foreach (var (cellType, profile) in _database.CellTypeProfiles)
             {
                 markers[cellType] = new HashSet<string>();
-                var cellsOfType = _database.CellTypeIndex[cellType].ToHashSet();
 
-                foreach (var gene in _database.GeneExpression.Keys)
+                // Consider genes that are both specific and well-expressed in this cell type
+                foreach (var (gene, medianExpression) in profile.MedianExpression)
                 {
+                    if (medianExpression <= 0)
+                        continue;
+
+                    // Check if gene is specific enough
                     if (_geneSpecificity.TryGetValue(gene, out double specificity) &&
                         specificity >= specificityThreshold)
                     {
-                        var avgExpression = GetAverageExpressionForCellType(gene, cellsOfType);
-                        if (avgExpression > 0)
+                        // Optional: Also check that gene is expressed in a good fraction of cells
+                        // This makes markers more robust
+                        if (profile.PercentExpressing.TryGetValue(gene, out double percentExpressing) &&
+                            percentExpressing >= 0.2) // At least 20% of cells express it
                         {
+                            markers[cellType].Add(gene);
+                        }
+                        else if (!profile.PercentExpressing.ContainsKey(gene))
+                        {
+                            // If PercentExpressing not available, just use specificity
                             markers[cellType].Add(gene);
                         }
                     }
@@ -79,6 +125,12 @@ namespace SCPBrowser
             return markers;
         }
 
+        /// <summary>
+        /// Predicts cell type for a single cell based on its protein abundances
+        /// Compares against all cell type profiles and returns ranked scores
+        /// </summary>
+        /// <param name="proteinAbundances">Dictionary of gene/protein name -> abundance value</param>
+        /// <returns>Prediction result with scores for all cell types</returns>
         public CellTypePredictionResult PredictCellType(Dictionary<string, double> proteinAbundances)
         {
             if (proteinAbundances == null || proteinAbundances.Count == 0)
@@ -86,14 +138,17 @@ namespace SCPBrowser
 
             var results = new Dictionary<string, CellTypeScore>();
 
-            foreach (var cellType in _database.CellTypeIndex.Keys)
+            // Compare against each cell type profile
+            foreach (var cellType in _database.CellTypeProfiles.Keys)
             {
                 var score = CalculateComprehensiveScore(proteinAbundances, cellType);
                 results[cellType] = score;
             }
 
-            var orderedResults = results.OrderByDescending(kvp => kvp.Value.CompositeScore)
-                                       .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            // Order by composite score (highest first)
+            var orderedResults = results
+                .OrderByDescending(kvp => kvp.Value.CompositeScore)
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
             return new CellTypePredictionResult
             {
@@ -103,14 +158,34 @@ namespace SCPBrowser
             };
         }
 
+        /// <summary>
+        /// Calculates a comprehensive score combining multiple statistical approaches
+        /// </summary>
         private CellTypeScore CalculateComprehensiveScore(Dictionary<string, double> proteinAbundances, string cellType)
         {
-            var cellsOfType = _database.CellTypeIndex[cellType].ToHashSet();
+            if (!_database.CellTypeProfiles.ContainsKey(cellType))
+            {
+                return new CellTypeScore
+                {
+                    SpearmanCorrelation = 0,
+                    SpecificityScore = 0,
+                    HypergeometricPValue = 1.0,
+                    CompositeScore = 0
+                };
+            }
 
-            double spearmanCorr = CalculateSpearmanCorrelation(proteinAbundances, cellsOfType);
-            double specificityScore = CalculateSpecificityWeightedScore(proteinAbundances, cellsOfType);
+            var profile = _database.CellTypeProfiles[cellType];
+
+            // 1. Spearman correlation: How well do protein ranks correlate with transcript ranks?
+            double spearmanCorr = CalculateSpearmanCorrelation(proteinAbundances, profile);
+
+            // 2. Specificity-weighted score: Prioritize specific marker genes
+            double specificityScore = CalculateSpecificityWeightedScore(proteinAbundances, profile);
+
+            // 3. Hypergeometric p-value: Is the overlap with markers statistically significant?
             double hypergeometricPValue = CalculateHypergeometricPValue(proteinAbundances.Keys.ToList(), cellType);
 
+            // Combine scores: correlation (40%) + specificity (40%) + enrichment (20%)
             double compositeScore = (spearmanCorr * 0.4) + (specificityScore * 0.4) + ((1 - hypergeometricPValue) * 0.2);
 
             return new CellTypeScore
@@ -122,67 +197,95 @@ namespace SCPBrowser
             };
         }
 
-        private double CalculateSpearmanCorrelation(Dictionary<string, double> proteinAbundances, HashSet<string> cellsOfType)
+        /// <summary>
+        /// Calculates Spearman rank correlation between proteomics and transcriptomics
+        /// Uses cell type profile median expression values (NOT individual cells)
+        /// </summary>
+        private double CalculateSpearmanCorrelation(Dictionary<string, double> proteinAbundances, CellTypeProfile profile)
         {
+            // Find common genes between proteomics data and this cell type profile
             var commonProteins = proteinAbundances.Keys
-                .Where(p => _database.GeneExpression.ContainsKey(p))
+                .Where(p => profile.MedianExpression.ContainsKey(p) && profile.MedianExpression[p] > 0)
                 .ToList();
 
             if (commonProteins.Count < 3)
                 return 0;
 
-            var proteomicsRanks = GetRanks(proteinAbundances
-                .Where(kvp => commonProteins.Contains(kvp.Key))
-                .Select(kvp => kvp.Value)
-                .ToList());
-
-            var transcriptomicsValues = commonProteins
-                .Select(p => GetAverageExpressionForCellType(p, cellsOfType))
+            // Get proteomics values and rank them
+            var proteomicsValues = commonProteins
+                .Select(p => proteinAbundances[p])
                 .ToList();
+            var proteomicsRanks = GetRanks(proteomicsValues);
 
+            // Get transcriptomics median expression values and rank them
+            var transcriptomicsValues = commonProteins
+                .Select(p => profile.MedianExpression[p])
+                .ToList();
             var transcriptomicsRanks = GetRanks(transcriptomicsValues);
 
+            // Calculate Pearson correlation on ranks (= Spearman correlation)
             return CalculatePearsonCorrelation(proteomicsRanks, transcriptomicsRanks);
         }
 
-        private double CalculateSpecificityWeightedScore(Dictionary<string, double> proteinAbundances, HashSet<string> cellsOfType)
+        /// <summary>
+        /// Calculates a specificity-weighted score that prioritizes cell-type-specific genes
+        /// Genes that are more specific to this cell type contribute more to the score
+        /// </summary>
+        private double CalculateSpecificityWeightedScore(Dictionary<string, double> proteinAbundances, CellTypeProfile profile)
         {
             double totalScore = 0;
             int matchCount = 0;
 
-            foreach (var protein in proteinAbundances.Keys)
+            foreach (var (protein, abundance) in proteinAbundances)
             {
+                // Check if this gene is in the cell type profile
+                if (!profile.MedianExpression.ContainsKey(protein))
+                    continue;
+
+                double medianExpression = profile.MedianExpression[protein];
+                if (medianExpression <= 0)
+                    continue;
+
+                // Get gene specificity (how unique is this gene to certain cell types?)
                 if (!_geneSpecificity.ContainsKey(protein))
                     continue;
 
                 double specificity = _geneSpecificity[protein];
-
                 if (specificity <= 0)
                     continue;
 
-                double avgExpression = GetAverageExpressionForCellType(protein, cellsOfType);
-
-                if (avgExpression > 0)
-                {
-                    totalScore += specificity * Math.Log(avgExpression + 1);
-                    matchCount++;
-                }
+                // Weight the match by specificity and log-expression
+                // Specific genes with high expression contribute more
+                totalScore += specificity * Math.Log(medianExpression + 1) * Math.Log(abundance + 1);
+                matchCount++;
             }
 
             if (matchCount == 0)
                 return 0;
 
+            // Normalize by sqrt of matches to prevent bias toward cell types with many expressed genes
             return totalScore / Math.Sqrt(matchCount);
         }
 
+        /// <summary>
+        /// Calculates hypergeometric p-value for marker enrichment
+        /// Tests: "Is the overlap between detected proteins and cell type markers statistically significant?"
+        /// </summary>
         private double CalculateHypergeometricPValue(List<string> detectedProteins, string cellType)
         {
             if (!_cellTypeMarkers.ContainsKey(cellType))
                 return 1.0;
 
-            int N = _database.GeneExpression.Count;
+            // N = total genes in universe (all genes across all cell types)
+            int N = _geneSpecificity.Count;
+
+            // K = number of markers for this cell type
             int K = _cellTypeMarkers[cellType].Count;
+
+            // n = number of detected proteins
             int n = detectedProteins.Count;
+
+            // k = overlap (how many detected proteins are markers for this cell type)
             int k = detectedProteins.Count(p => _cellTypeMarkers[cellType].Contains(p));
 
             if (K == 0 || n == 0)
@@ -191,10 +294,15 @@ namespace SCPBrowser
             return CalculateHypergeometricPValueExact(N, K, n, k);
         }
 
+        /// <summary>
+        /// Exact calculation of hypergeometric p-value (right-tailed test)
+        /// P(X >= k) where X ~ Hypergeometric(N, K, n)
+        /// </summary>
         private double CalculateHypergeometricPValueExact(int N, int K, int n, int k)
         {
             double pValue = 0;
 
+            // Sum probabilities from k to min(n, K)
             for (int i = k; i <= Math.Min(n, K); i++)
             {
                 double probability = (BinomialCoefficient(K, i) * BinomialCoefficient(N - K, n - i)) /
@@ -205,6 +313,9 @@ namespace SCPBrowser
             return Math.Min(1.0, pValue);
         }
 
+        /// <summary>
+        /// Calculates binomial coefficient: "n choose k"
+        /// </summary>
         private double BinomialCoefficient(int n, int k)
         {
             if (k > n || k < 0)
@@ -224,20 +335,41 @@ namespace SCPBrowser
             return result;
         }
 
+        /// <summary>
+        /// Converts values to ranks (1 = lowest, n = highest)
+        /// Handles ties by averaging ranks
+        /// </summary>
         private List<double> GetRanks(List<double> values)
         {
             var indexed = values.Select((value, index) => new { value, index }).ToList();
             var sorted = indexed.OrderBy(x => x.value).ToList();
 
             var ranks = new double[values.Count];
-            for (int i = 0; i < sorted.Count; i++)
+
+            int i = 0;
+            while (i < sorted.Count)
             {
-                ranks[sorted[i].index] = i + 1;
+                // Find range of tied values
+                int j = i;
+                while (j < sorted.Count && Math.Abs(sorted[j].value - sorted[i].value) < 1e-10)
+                    j++;
+
+                // Average rank for ties
+                double avgRank = (i + j + 1) / 2.0; // +1 because ranks are 1-indexed
+                for (int k = i; k < j; k++)
+                {
+                    ranks[sorted[k].index] = avgRank;
+                }
+
+                i = j;
             }
 
             return ranks.ToList();
         }
 
+        /// <summary>
+        /// Calculates Pearson correlation coefficient between two lists
+        /// </summary>
         private double CalculatePearsonCorrelation(List<double> x, List<double> y)
         {
             if (x.Count != y.Count || x.Count == 0)
@@ -265,22 +397,11 @@ namespace SCPBrowser
 
             return numerator / Math.Sqrt(denomX * denomY);
         }
-
-        private double GetAverageExpressionForCellType(string geneName, HashSet<string> cellsOfType)
-        {
-            if (!_database.GeneExpression.ContainsKey(geneName))
-                return 0;
-
-            var expressionData = _database.GeneExpression[geneName];
-            var relevantCells = expressionData.Where(e => cellsOfType.Contains(e.cellId)).ToList();
-
-            if (relevantCells.Count == 0)
-                return 0;
-
-            return relevantCells.Average(e => e.count);
-        }
     }
 
+    /// <summary>
+    /// Result of cell type prediction containing scores for all cell types
+    /// </summary>
     public class CellTypePredictionResult
     {
         public Dictionary<string, CellTypeScore> Scores { get; set; } = new Dictionary<string, CellTypeScore>();
@@ -288,11 +409,33 @@ namespace SCPBrowser
         public CellTypeScore TopScore { get; set; }
     }
 
+    /// <summary>
+    /// Individual score components for a cell type prediction
+    /// </summary>
     public class CellTypeScore
     {
+        /// <summary>
+        /// Spearman rank correlation between proteomics and transcriptomics profiles (0-1)
+        /// Higher = better rank agreement
+        /// </summary>
         public double SpearmanCorrelation { get; set; }
+
+        /// <summary>
+        /// Specificity-weighted similarity score (0-∞, typically 0-10)
+        /// Higher = more specific marker genes match
+        /// </summary>
         public double SpecificityScore { get; set; }
+
+        /// <summary>
+        /// Hypergeometric p-value for marker enrichment (0-1)
+        /// Lower = more significant enrichment
+        /// </summary>
         public double HypergeometricPValue { get; set; }
+
+        /// <summary>
+        /// Composite score combining all metrics (0-1)
+        /// Higher = better overall match
+        /// </summary>
         public double CompositeScore { get; set; }
 
         public override string ToString()

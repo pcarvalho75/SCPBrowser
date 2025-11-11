@@ -274,6 +274,29 @@ namespace SCPBrowser
             MainControlTab.OpenDiannFile();
         }
 
+        private void Settings_Click(object sender, RoutedEventArgs e)
+        {
+            Console.WriteLine("Opening Settings...");
+            // Hide DB Browser if it's open
+            DBBrowserOverlay.Visibility = Visibility.Collapsed;
+
+            // Find the Settings tab by its content type
+            foreach (TabItem tab in MainTabControl.Items)
+            {
+                if (tab.Content is SettingsControl)
+                {
+                    tab.IsSelected = true;
+                    break;
+                }
+            }
+        }
+
+        private void DBBrowser_Click(object sender, RoutedEventArgs e)
+        {
+            Console.WriteLine("Opening DB Browser...");
+            DBBrowserOverlay.Visibility = Visibility.Visible;
+        }
+
         private void About_Click(object sender, RoutedEventArgs e)
         {
             MessageBox.Show(

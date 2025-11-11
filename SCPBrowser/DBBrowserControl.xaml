@@ -1,0 +1,515 @@
+﻿<UserControl x:Class="SCPBrowser.DBBrowserControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="900"
+             Background="White">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header with Close button -->
+        <Border Grid.Row="0" 
+                Background="#2563eb" 
+                Padding="15,10">
+            <Grid>
+                <TextBlock Text="Database Browser" 
+                           FontSize="18" 
+                           FontWeight="SemiBold" 
+                           Foreground="White"
+                           VerticalAlignment="Center"/>
+                <Button Content="✕ Close" 
+                        Click="CloseButton_Click"
+                        HorizontalAlignment="Right"
+                        Background="#1e40af"
+                        Foreground="White"
+                        BorderThickness="0"
+                        Padding="15,5"
+                        Cursor="Hand"
+                        FontSize="14"/>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Load Database Section -->
+            <Border Grid.Row="0"
+                    BorderBrush="#cbd5e1" 
+                    BorderThickness="0,0,0,1" 
+                    Padding="20,15"
+                    Background="#f8fafc">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="Database:" 
+                               FontSize="13" 
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0"/>
+
+                    <TextBox x:Name="DatabasePathTextBox"
+                             Grid.Column="1"
+                             IsReadOnly="True"
+                             Padding="8"
+                             Margin="0,0,10,0"
+                             VerticalContentAlignment="Center"
+                             Background="White"
+                             BorderBrush="#cbd5e1"/>
+
+                    <Button Grid.Column="2"
+                            Content="Browse..."
+                            Click="BrowseDatabase_Click"
+                            Padding="20,8"
+                            Style="{StaticResource ModernButton}"/>
+                </Grid>
+            </Border>
+
+            <!-- Tabbed Content -->
+            <TabControl x:Name="DataTabControl"
+                        Grid.Row="1"
+                        Visibility="Collapsed"
+                        Margin="0">
+
+                <!-- GO Annotations Tab -->
+                <TabItem Header="GO Annotations">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- GO Summary Panel with Tooltips -->
+                        <Border Grid.Row="0"
+        Background="#f1f5f9"
+        Padding="15"
+        BorderBrush="#cbd5e1"
+        BorderThickness="0,0,0,1">
+                            <StackPanel>
+                                <TextBlock Text="Gene Ontology Statistics" 
+                   FontSize="15" 
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,10"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Total Terms -->
+                                    <Border Grid.Column="0" 
+                    Background="White" 
+                    CornerRadius="4" 
+                    Padding="10" 
+                    Margin="0,0,5,0"
+                    BorderBrush="#e2e8f0"
+                    BorderThickness="1">
+                                        <Border.ToolTip>
+                                            <ToolTip>
+                                                <TextBlock TextWrapping="Wrap" MaxWidth="300">
+                            <Bold>Total GO Terms</Bold>
+                            <LineBreak/>
+                            Total number of Gene Ontology terms in the GO Slim database. GO Slim is a subset of the full GO containing high-level terms useful for annotation.
+                                                </TextBlock>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Total Terms" 
+                               FontSize="11" 
+                               Foreground="#64748b"/>
+                                            <TextBlock x:Name="TotalTermsText" 
+                               Text="0" 
+                               FontSize="20" 
+                               FontWeight="Bold"
+                               Foreground="#2563eb"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Annotated Proteins -->
+                                    <Border Grid.Column="1" 
+                    Background="White" 
+                    CornerRadius="4" 
+                    Padding="10" 
+                    Margin="0,0,5,0"
+                    BorderBrush="#e2e8f0"
+                    BorderThickness="1">
+                                        <Border.ToolTip>
+                                            <ToolTip>
+                                                <TextBlock TextWrapping="Wrap" MaxWidth="300">
+                            <Bold>Annotated Proteins</Bold>
+                            <LineBreak/>
+                            Number of unique proteins that have been annotated with at least one GO term. These are proteins with known biological functions or cellular locations.
+                                                </TextBlock>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Annotated Proteins" 
+                               FontSize="11" 
+                               Foreground="#64748b"/>
+                                            <TextBlock x:Name="TotalProteinsText" 
+                               Text="0" 
+                               FontSize="20" 
+                               FontWeight="Bold"
+                               Foreground="#10b981"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Total Annotations -->
+                                    <Border Grid.Column="2" 
+                    Background="White" 
+                    CornerRadius="4" 
+                    Padding="10" 
+                    Margin="0,0,5,0"
+                    BorderBrush="#e2e8f0"
+                    BorderThickness="1">
+                                        <Border.ToolTip>
+                                            <ToolTip>
+                                                <TextBlock TextWrapping="Wrap" MaxWidth="300">
+                            <Bold>Total Annotations</Bold>
+                            <LineBreak/>
+                            Total number of protein-to-GO-term mappings. A single protein can have multiple GO annotations (e.g., involved in multiple processes or located in multiple cellular components).
+                                                </TextBlock>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Total Annotations" 
+                               FontSize="11" 
+                               Foreground="#64748b"/>
+                                            <TextBlock x:Name="TotalAnnotationsText" 
+                               Text="0" 
+                               FontSize="20" 
+                               FontWeight="Bold"
+                               Foreground="#f59e0b"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- GO Slim Terms Used -->
+                                    <Border Grid.Column="3" 
+                    Background="White" 
+                    CornerRadius="4" 
+                    Padding="10"
+                    BorderBrush="#e2e8f0"
+                    BorderThickness="1">
+                                        <Border.ToolTip>
+                                            <ToolTip>
+                                                <TextBlock TextWrapping="Wrap" MaxWidth="300">
+                            <Bold>GO Slim Terms Used</Bold>
+                            <LineBreak/>
+                            Number of GO Slim terms that actually have proteins annotated to them. This is typically less than "Total Terms" because some high-level terms may not have direct protein annotations.
+                                                </TextBlock>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="GO Slim Terms" 
+                               FontSize="11" 
+                               Foreground="#64748b"/>
+                                            <TextBlock x:Name="GoSlimTermsText" 
+                               Text="0" 
+                               FontSize="20" 
+                               FontWeight="Bold"
+                               Foreground="#8b5cf6"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- GO Tree View -->
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Left: GO Term Tree -->
+                            <Border Grid.Column="0" 
+                                    BorderBrush="#cbd5e1" 
+                                    BorderThickness="0,0,1,0"
+                                    Padding="10">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Top"
+                                               Text="GO Term Hierarchy" 
+                                               FontSize="14" 
+                                               FontWeight="SemiBold"
+                                               Margin="5,5,5,10"/>
+                                    <TreeView x:Name="GoTreeView"
+                                              SelectedItemChanged="GoTreeView_SelectedItemChanged"
+                                              BorderThickness="0">
+                                        <TreeView.ItemContainerStyle>
+                                            <Style TargetType="TreeViewItem">
+                                                <Setter Property="IsExpanded" Value="False"/>
+                                                <Setter Property="Padding" Value="3"/>
+                                            </Style>
+                                        </TreeView.ItemContainerStyle>
+                                    </TreeView>
+                                </DockPanel>
+                            </Border>
+
+                            <GridSplitter Grid.Column="1" 
+                                          Width="5" 
+                                          HorizontalAlignment="Center" 
+                                          VerticalAlignment="Stretch"
+                                          Background="#e2e8f0"/>
+
+                            <!-- Right: Term Details -->
+                            <ScrollViewer Grid.Column="2" 
+                                          VerticalScrollBarVisibility="Auto"
+                                          Padding="15">
+                                <StackPanel x:Name="GoTermDetailsPanel">
+                                    <TextBlock Text="Select a GO term to view details" 
+                                               FontSize="13" 
+                                               Foreground="#64748b"
+                                               FontStyle="Italic"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Margin="0,50,0,0"/>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <!-- Transcriptomic Data Tab -->
+                <TabItem Header="Transcriptomic Data">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Transcriptomic Summary Panel with Tooltips -->
+                        <Border Grid.Row="0"
+        Background="#f1f5f9"
+        Padding="15"
+        BorderBrush="#cbd5e1"
+        BorderThickness="0,0,0,1">
+                            <StackPanel>
+                                <TextBlock Text="Transcriptomic Database Statistics" 
+                   FontSize="15" 
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,10"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Cell Types -->
+                                    <Border Grid.Column="0" 
+                    Background="White" 
+                    CornerRadius="4" 
+                    Padding="10" 
+                    Margin="0,0,5,0"
+                    BorderBrush="#e2e8f0"
+                    BorderThickness="1">
+                                        <Border.ToolTip>
+                                            <ToolTip>
+                                                <TextBlock TextWrapping="Wrap" MaxWidth="300">
+                            <Bold>Cell Types</Bold>
+                            <LineBreak/>
+                            Number of distinct cell types in the transcriptomic reference database. Each cell type represents an aggregated gene expression profile from multiple cells of the same type.
+                                                </TextBlock>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Cell Types" 
+                               FontSize="11" 
+                               Foreground="#64748b"/>
+                                            <TextBlock x:Name="TotalCellTypesText" 
+                               Text="0" 
+                               FontSize="20" 
+                               FontWeight="Bold"
+                               Foreground="#2563eb"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Total Cells -->
+                                    <Border Grid.Column="1" 
+                    Background="White" 
+                    CornerRadius="4" 
+                    Padding="10" 
+                    Margin="0,0,5,0"
+                    BorderBrush="#e2e8f0"
+                    BorderThickness="1">
+                                        <Border.ToolTip>
+                                            <ToolTip>
+                                                <TextBlock TextWrapping="Wrap" MaxWidth="300">
+                            <Bold>Total Cells</Bold>
+                            <LineBreak/>
+                            Total number of individual cells that were profiled to create the aggregated cell type profiles. More cells per cell type generally means more reliable predictions.
+                                                </TextBlock>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Total Cells" 
+                               FontSize="11" 
+                               Foreground="#64748b"/>
+                                            <TextBlock x:Name="TotalCellsText" 
+                               Text="0" 
+                               FontSize="20" 
+                               FontWeight="Bold"
+                               Foreground="#10b981"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Total Genes -->
+                                    <Border Grid.Column="2" 
+                    Background="White" 
+                    CornerRadius="4" 
+                    Padding="10"
+                    BorderBrush="#e2e8f0"
+                    BorderThickness="1">
+                                        <Border.ToolTip>
+                                            <ToolTip>
+                                                <TextBlock TextWrapping="Wrap" MaxWidth="300">
+                            <Bold>Total Genes</Bold>
+                            <LineBreak/>
+                            Number of unique genes detected across all cell types in the transcriptomic database. This represents the gene coverage available for cell type prediction.
+                                                </TextBlock>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Total Genes" 
+                               FontSize="11" 
+                               Foreground="#64748b"/>
+                                            <TextBlock x:Name="TotalGenesText" 
+                               Text="0" 
+                               FontSize="20" 
+                               FontWeight="Bold"
+                               Foreground="#f59e0b"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Cell Type Details -->
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="300"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Left: Cell Type List -->
+                            <Border Grid.Column="0" 
+                                    BorderBrush="#cbd5e1" 
+                                    BorderThickness="0,0,1,0"
+                                    Padding="10">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Top"
+                                               Text="Cell Types" 
+                                               FontSize="14" 
+                                               FontWeight="SemiBold"
+                                               Margin="5,5,5,10"/>
+                                    <ListBox x:Name="CellTypeListBox"
+                                             SelectionChanged="CellTypeListBox_SelectionChanged"
+                                             BorderThickness="0"
+                                             Background="Transparent">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="White"
+                                                        BorderBrush="#e2e8f0"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="10"
+                                                        Margin="0,2">
+                                                    <Grid>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                        </Grid.RowDefinitions>
+                                                        <TextBlock Grid.Row="0"
+                                                                   Text="{Binding CellType}" 
+                                                                   FontWeight="SemiBold"
+                                                                   FontSize="13"/>
+                                                        <TextBlock Grid.Row="1"
+                                                                   FontSize="11"
+                                                                   Foreground="#64748b">
+                                                            <Run Text="{Binding CellCount, StringFormat='{}{0:N0} cells'}"/>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </DockPanel>
+                            </Border>
+
+                            <GridSplitter Grid.Column="1" 
+                                          Width="5" 
+                                          HorizontalAlignment="Center" 
+                                          VerticalAlignment="Stretch"
+                                          Background="#e2e8f0"/>
+
+                            <!-- Right: Cell Type Details -->
+                            <ScrollViewer Grid.Column="2" 
+                                          VerticalScrollBarVisibility="Auto"
+                                          Padding="15">
+                                <StackPanel x:Name="CellTypeDetailsPanel">
+                                    <TextBlock Text="Select a cell type to view details" 
+                                               FontSize="13" 
+                                               Foreground="#64748b"
+                                               FontStyle="Italic"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Margin="0,50,0,0"/>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <!-- Database Info Tab -->
+                <TabItem Header="Database Info">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" 
+                                  Padding="20">
+                        <StackPanel x:Name="DatabaseInfoPanel">
+                            <TextBlock Text="No database loaded" 
+                                       FontSize="13" 
+                                       Foreground="#64748b"
+                                       FontStyle="Italic"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+
+            <!-- Empty State -->
+            <StackPanel Grid.Row="1"
+                        x:Name="EmptyStatePanel"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                <TextBlock Text="📁" 
+                           FontSize="48"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,10"/>
+                <TextBlock Text="No database loaded" 
+                           FontSize="16" 
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,5"/>
+                <TextBlock Text="Click 'Browse...' to select a reference database" 
+                           FontSize="13" 
+                           Foreground="#64748b"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

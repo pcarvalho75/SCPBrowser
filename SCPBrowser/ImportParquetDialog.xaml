@@ -215,11 +215,12 @@
                                Width="100"
                                Style="{StaticResource LabelText}"/>
                     <ComboBox Grid.Column="1" 
-                              x:Name="PlateComboBox"
-                              DisplayMemberPath="PlateName"
-                              Padding="8"
-                              Margin="0,0,10,0"
-                              SelectionChanged="PlateComboBox_SelectionChanged"/>
+          x:Name="PlateComboBox"
+          ItemsSource="{Binding Plates}"
+          DisplayMemberPath="PlateName"
+          Padding="8"
+          Margin="0,0,10,0"
+          SelectionChanged="PlateComboBox_SelectionChanged"/>
                     <Button Grid.Column="2" 
                             Content="New Plate..."
                             Click="NewPlate_Click"

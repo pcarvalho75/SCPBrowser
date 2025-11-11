@@ -33,45 +33,46 @@ namespace SCPBrowser
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = @"
-                    -- Cell type profiles table (aggregated gene expression by cell type)
-                    CREATE TABLE IF NOT EXISTS cell_type_profiles (
-                        cell_type TEXT NOT NULL,
-                        gene_name TEXT NOT NULL,
-                        median_expression REAL NOT NULL,
-                        mean_expression REAL NOT NULL,
-                        percent_expressing REAL NOT NULL,
-                        PRIMARY KEY (cell_type, gene_name)
-                    ) WITHOUT ROWID;
+            -- Cell type profiles table (aggregated gene expression by cell type)
+            CREATE TABLE IF NOT EXISTS cell_type_profiles (
+                cell_type TEXT NOT NULL,
+                gene_name TEXT NOT NULL,
+                median_expression REAL NOT NULL,
+                mean_expression REAL NOT NULL,
+                percent_expressing REAL NOT NULL,
+                PRIMARY KEY (cell_type, gene_name)
+            ) WITHOUT ROWID;
 
-                    -- Cell type metadata table
-                    CREATE TABLE IF NOT EXISTS cell_type_metadata (
-                        cell_type TEXT PRIMARY KEY,
-                        cell_count INTEGER NOT NULL,
-                        genes_expressed INTEGER NOT NULL,
-                        age_range TEXT,
-                        batch_info TEXT
-                    );
+            -- Cell type metadata table
+            CREATE TABLE IF NOT EXISTS cell_type_metadata (
+                cell_type TEXT PRIMARY KEY,
+                cell_count INTEGER NOT NULL,
+                genes_expressed INTEGER NOT NULL,
+                age_range TEXT,
+                batch_info TEXT
+            );
 
-                    -- GO terms (GO Slim)
-                    CREATE TABLE IF NOT EXISTS go_terms (
-                        go_id TEXT PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        namespace TEXT NOT NULL
-                    );
+            -- GO terms (GO Slim)
+            CREATE TABLE IF NOT EXISTS go_terms (
+                go_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                namespace TEXT NOT NULL,
+                definition TEXT          -- ✅ ADDED: Store GO term definitions
+            );
 
-                    -- Protein to GO term annotations
-                    CREATE TABLE IF NOT EXISTS protein_go_annotations (
-                        protein_id TEXT NOT NULL,
-                        go_term_id TEXT NOT NULL,
-                        PRIMARY KEY (protein_id, go_term_id)
-                    );
+            -- Protein to GO term annotations
+            CREATE TABLE IF NOT EXISTS protein_go_annotations (
+                protein_id TEXT NOT NULL,
+                go_term_id TEXT NOT NULL,
+                PRIMARY KEY (protein_id, go_term_id)
+            );
 
-                    -- Indexes
-                    CREATE INDEX IF NOT EXISTS idx_cell_type_profiles_cell_type ON cell_type_profiles(cell_type);
-                    CREATE INDEX IF NOT EXISTS idx_cell_type_profiles_gene ON cell_type_profiles(gene_name);
-                    CREATE INDEX IF NOT EXISTS idx_protein_go ON protein_go_annotations(protein_id);
-                    CREATE INDEX IF NOT EXISTS idx_go_protein ON protein_go_annotations(go_term_id);
-                ";
+            -- Indexes
+            CREATE INDEX IF NOT EXISTS idx_cell_type_profiles_cell_type ON cell_type_profiles(cell_type);
+            CREATE INDEX IF NOT EXISTS idx_cell_type_profiles_gene ON cell_type_profiles(gene_name);
+            CREATE INDEX IF NOT EXISTS idx_protein_go ON protein_go_annotations(protein_id);
+            CREATE INDEX IF NOT EXISTS idx_go_protein ON protein_go_annotations(go_term_id);
+        ";
 
                 await command.ExecuteNonQueryAsync();
             }
@@ -431,15 +432,19 @@ namespace SCPBrowser
             }
         }
 
-        /// <summary>
-        /// Writes GO annotations to the database
-        /// </summary>
+
+
+
         public async Task WriteGoAnnotationsAsync(
-            string databasePath,
-            GoSlimDatabase goSlimDatabase,
-            GoAnnotationDatabase annotationDatabase,
-            bool clearExistingData = true)
+      string databasePath,
+      GoSlimDatabase goSlimDatabase,
+      GoAnnotationDatabase annotationDatabase,
+      bool clearExistingData = true,
+      IProgressReporter progress = null)
         {
+            progress?.ReportMessage("Writing to Database");
+            progress?.ReportProgress("Opening database connection...");
+
             var connectionString = $"Data Source={databasePath}";
 
             using (var connection = new SqliteConnection(connectionString))
@@ -452,44 +457,109 @@ namespace SCPBrowser
                 // Clear existing GO data if requested
                 if (clearExistingData)
                 {
+                    progress?.ReportProgress("Clearing existing GO data...");
                     using (var command = connection.CreateCommand())
                     {
                         command.CommandText = @"
-                            DELETE FROM protein_go_annotations;
-                            DELETE FROM go_terms;
-                        ";
+                    DELETE FROM protein_go_annotations;
+                    DELETE FROM go_terms;
+                ";
                         await command.ExecuteNonQueryAsync();
                     }
-                    Console.WriteLine("Cleared existing GO annotation data from database.");
                 }
 
-                // Performance optimizations for bulk insert
+                progress?.ReportProgress("Writing GO terms...");
+
+                // Write GO terms with definitions
+                using (var transaction = connection.BeginTransaction())
+                {
+                    int termCount = 0;
+                    foreach (var term in goSlimDatabase.Terms.Values)
+                    {
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = @"
+                        INSERT INTO go_terms (go_id, name, namespace, definition)
+                        VALUES (@goId, @name, @namespace, @definition)
+                    ";
+                            command.Parameters.AddWithValue("@goId", term.Id);
+                            command.Parameters.AddWithValue("@name", term.Name);
+                            command.Parameters.AddWithValue("@namespace", term.Namespace);
+                            command.Parameters.AddWithValue("@definition", term.Definition ?? (object)DBNull.Value);
+
+                            await command.ExecuteNonQueryAsync();
+                        }
+
+                        termCount++;
+                        if (termCount % 100 == 0)
+                        {
+                            progress?.ReportProgress($"Writing GO terms... {termCount:N0} / {goSlimDatabase.TotalTerms:N0}");
+                        }
+                    }
+                    await transaction.CommitAsync();
+                }
+
+                progress?.ReportProgress("Writing protein annotations...");
+
+                // Write protein annotations
+                using (var transaction = connection.BeginTransaction())
+                {
+                    int annotationCount = 0;
+                    int totalAnnotations = annotationDatabase.ProteinToGoTerms.Sum(p => p.Value.Count);
+
+                    foreach (var proteinAnnotation in annotationDatabase.ProteinToGoTerms)
+                    {
+                        var proteinId = proteinAnnotation.Key;
+                        foreach (var goTermId in proteinAnnotation.Value)
+                        {
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandText = @"
+                            INSERT INTO protein_go_annotations (protein_id, go_term_id)
+                            VALUES (@proteinId, @goTermId)
+                        ";
+                                command.Parameters.AddWithValue("@proteinId", proteinId);
+                                command.Parameters.AddWithValue("@goTermId", goTermId);
+
+                                await command.ExecuteNonQueryAsync();
+                            }
+
+                            annotationCount++;
+                            if (annotationCount % 5000 == 0)
+                            {
+                                var percentage = (annotationCount * 100.0 / totalAnnotations);
+                                progress?.ReportProgress($"Writing annotations... {annotationCount:N0} / {totalAnnotations:N0} ({percentage:F1}%)");
+                            }
+                        }
+                    }
+                    await transaction.CommitAsync();
+                }
+
+                progress?.ReportProgress("Creating indexes...");
+
+                // Create indexes for fast lookups
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        PRAGMA synchronous = OFF;
-                        PRAGMA journal_mode = MEMORY;
-                        PRAGMA temp_store = MEMORY;
-                    ";
+                CREATE INDEX IF NOT EXISTS idx_protein_go ON protein_go_annotations(protein_id);
+                CREATE INDEX IF NOT EXISTS idx_go_protein ON protein_go_annotations(go_term_id);
+            ";
                     await command.ExecuteNonQueryAsync();
                 }
 
-                // Insert GO terms
-                await InsertGoTermsAsync(connection, goSlimDatabase);
+                progress?.ReportProgress($"Database write complete!");
 
-                // Insert protein annotations
-                await InsertProteinAnnotationsAsync(connection, annotationDatabase);
-
-                // Restore normal settings
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
-                        PRAGMA synchronous = FULL;
-                    ";
-                    await command.ExecuteNonQueryAsync();
-                }
+                // ✅ NEW: Explicitly close the connection
+                await connection.CloseAsync();
             }
+
+            // ✅ NEW: Force garbage collection to release file handles
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+
+            progress?.ReportProgress("Connection closed successfully");
         }
+
 
         private async Task InsertGoTermsAsync(SqliteConnection connection, GoSlimDatabase goSlimDatabase)
         {
@@ -514,18 +584,20 @@ namespace SCPBrowser
                             var term = batch[j];
                             var paramPrefix = $"@p{j}_";
 
-                            valuesClauses.Add($"({paramPrefix}go_id, {paramPrefix}name, {paramPrefix}namespace)");
+                            // ✅ UPDATED: Include definition in batch insert
+                            valuesClauses.Add($"({paramPrefix}go_id, {paramPrefix}name, {paramPrefix}namespace, {paramPrefix}definition)");
 
                             parameters.Add(new SqliteParameter($"{paramPrefix}go_id", term.Id));
                             parameters.Add(new SqliteParameter($"{paramPrefix}name", term.Name ?? string.Empty));
                             parameters.Add(new SqliteParameter($"{paramPrefix}namespace", term.Namespace ?? string.Empty));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}definition",
+                                term.Definition ?? (object)DBNull.Value));  // ✅ ADDED: Include definition
                         }
 
-                        // Use INSERT OR IGNORE to skip duplicates (safety net)
                         command.CommandText = $@"
-                            INSERT OR IGNORE INTO go_terms (go_id, name, namespace)
-                            VALUES {string.Join(", ", valuesClauses)}
-                        ";
+                    INSERT OR IGNORE INTO go_terms (go_id, name, namespace, definition)
+                    VALUES {string.Join(", ", valuesClauses)}
+                ";
 
                         command.Parameters.AddRange(parameters.ToArray());
                         await command.ExecuteNonQueryAsync();
@@ -599,6 +671,7 @@ namespace SCPBrowser
             Console.WriteLine("Protein-GO annotations insertion complete.");
         }
 
+
         /// <summary>
         /// Loads GO annotations from the database
         /// </summary>
@@ -615,10 +688,11 @@ namespace SCPBrowser
             {
                 await connection.OpenAsync();
 
-                // Load GO terms
+                // Load GO terms with definitions
                 using (var command = connection.CreateCommand())
                 {
-                    command.CommandText = "SELECT go_id, name, namespace FROM go_terms";
+                    // ✅ UPDATED: Now reads definition column
+                    command.CommandText = "SELECT go_id, name, namespace, definition FROM go_terms";
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
@@ -627,12 +701,14 @@ namespace SCPBrowser
                             var goId = reader.GetString(0);
                             var name = reader.GetString(1);
                             var namespace_ = reader.GetString(2);
+                            var definition = reader.IsDBNull(3) ? null : reader.GetString(3);
 
                             goSlimDatabase.Terms[goId] = new GoTerm
                             {
                                 Id = goId,
                                 Name = name,
-                                Namespace = namespace_
+                                Namespace = namespace_,
+                                Definition = definition  // ✅ ADDED: Load definition
                             };
                         }
                     }

@@ -8,22 +8,38 @@ namespace SCPBrowser.GOTools
     public class GoAnnotationCompiler
     {
         public async Task<GoAnnotationDatabase> CompileAnnotationsAsync(
-            string goSlimOboPath,
-            string goaGafPath)
+     string goSlimOboPath,
+     string goaGafPath,
+     IProgressReporter progress = null)
         {
+            progress?.ReportMessage("Loading GO Slim Database");
+            progress?.ReportProgress("Parsing OBO file...");
+
             // Load GO Slim database
             var goSlimParser = new GoSlimParser();
             var goSlimDatabase = await goSlimParser.ParseOboFileAsync(goSlimOboPath);
+
+            progress?.ReportProgress($"Loaded {goSlimDatabase.TotalTerms:N0} GO Slim terms");
+
+            progress?.ReportMessage("Loading GOA Annotations");
+            progress?.ReportProgress("Parsing GAF file...");
 
             // Load GOA annotations
             var goaParser = new GoAnnotationParser();
             var rawAnnotations = await goaParser.ParseGafFileAsync(goaGafPath);
 
+            progress?.ReportProgress($"Loaded {rawAnnotations.Count:N0} protein annotations");
+
             // Build set of GO Slim term IDs for fast lookup
             var goSlimTermIds = new HashSet<string>(goSlimDatabase.Terms.Keys);
 
+            progress?.ReportMessage("Compiling GO Annotations");
+            progress?.ReportProgress("Filtering and mapping to GO Slim terms...");
+
             // Filter and compile annotations
             var compiledDatabase = new GoAnnotationDatabase();
+            int processedCount = 0;
+            int totalAnnotations = rawAnnotations.Count;
 
             foreach (var annotation in rawAnnotations)
             {
@@ -68,7 +84,18 @@ namespace SCPBrowser.GOTools
                         }
                     }
                 }
+
+                processedCount++;
+
+                // Update progress every 1000 proteins
+                if (processedCount % 1000 == 0)
+                {
+                    var percentage = (processedCount * 100.0 / totalAnnotations);
+                    progress?.ReportProgress($"Processed {processedCount:N0} / {totalAnnotations:N0} proteins ({percentage:F1}%)");
+                }
             }
+
+            progress?.ReportProgress($"Compilation complete: {compiledDatabase.TotalProteins:N0} proteins with GO annotations");
 
             return compiledDatabase;
         }

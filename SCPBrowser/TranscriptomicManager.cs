@@ -136,7 +136,8 @@ namespace SCPBrowser
             if (!IsLoaded)
                 return new Dictionary<string, System.Windows.Media.Color>();
 
-            var cellTypes = _database.CellTypeIndex.Keys.OrderBy(ct => ct).ToList();
+            // FIX: Use CellTypeProfiles.Keys instead of CellTypeIndex.Keys
+            var cellTypes = _database.CellTypeProfiles.Keys.OrderBy(ct => ct).ToList();
             var colorMap = new Dictionary<string, System.Windows.Media.Color>();
 
             for (int i = 0; i < cellTypes.Count; i++)

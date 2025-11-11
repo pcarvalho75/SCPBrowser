@@ -156,6 +156,7 @@ namespace SCPBrowser
             }
         }
 
+
         private async void CompileGoAnnotations_Click(object sender, RoutedEventArgs e)
         {
             var oboDialog = new OpenFileDialog
@@ -186,39 +187,56 @@ namespace SCPBrowser
             if (saveDialog.ShowDialog() != true)
                 return;
 
+            // Create UI progress reporter
+            var progressReporter = new UIProgressReporter(LoadingOverlay);
+
             try
             {
-                Mouse.OverrideCursor = Cursors.Wait;
+                LoadingOverlay.SetMessage("Compiling GO Annotations");
+                LoadingOverlay.SetProgress("Initializing...");
+                LoadingOverlay.Show();
+
+                // Compile annotations from GAF with progress reporting
+                var compiler = new GoAnnotationCompiler();
+                var compiledDatabase = await compiler.CompileAnnotationsAsync(
+                    oboDialog.FileName,
+                    gafDialog.FileName,
+                    progressReporter);
 
                 // Parse GO Slim OBO
                 var goSlimParser = new GoSlimParser();
                 var goSlimDatabase = await goSlimParser.ParseOboFileAsync(oboDialog.FileName);
-
-                // Compile annotations from GAF
-                var compiler = new GoAnnotationCompiler();
-                var compiledDatabase = await compiler.CompileAnnotationsAsync(
-                    oboDialog.FileName,
-                    gafDialog.FileName);
 
                 // Create or append to database
                 var referenceService = new ReferenceDataService();
 
                 if (!File.Exists(saveDialog.FileName))
                 {
+                    progressReporter.ReportProgress("Creating new database...");
                     await referenceService.CreateDatabaseAsync(saveDialog.FileName);
                 }
 
-                // Write GO annotations
+                // Write GO annotations with progress reporting
                 await referenceService.WriteGoAnnotationsAsync(
                     saveDialog.FileName,
                     goSlimDatabase,
-                    compiledDatabase);
+                    compiledDatabase,
+                    true,
+                    progressReporter);
 
                 // Test reading it back
+                progressReporter.ReportMessage("Verifying Database");
+                progressReporter.ReportProgress("Reading data back...");
+
                 var (loadedGoSlim, loadedAnnotations) = await referenceService.LoadGoAnnotationsAsync(
                     saveDialog.FileName);
 
-                Mouse.OverrideCursor = null;
+                // ✅ NEW: Force cleanup after verification
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                await Task.Delay(500); // Give Windows time to release the file lock
+
+                LoadingOverlay.Hide();
 
                 var fileInfo = new FileInfo(saveDialog.FileName);
                 var fileSizeMB = fileInfo.Length / (1024.0 * 1024.0);
@@ -236,23 +254,21 @@ namespace SCPBrowser
                     $"Annotations: {loadedAnnotations.TotalAnnotations:N0}\n" +
                     $"GO Slim terms used: {loadedAnnotations.GoTermToProteins.Count:N0}\n\n" +
                     $"Sample proteins:\n{sampleText}\n\n" +
-                    $"Copy this database to the 'ReferenceData' folder\n" +
-                    $"in your application directory.",
+                    $"The database is now ready for transcriptomic data or use in analysis.",
                     "Compilation Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                Mouse.OverrideCursor = null;
+                LoadingOverlay.Hide();
                 MessageBox.Show(
-                    $"Error:\n\n{ex.Message}",
-                    "Error",
+                    $"Error during GO annotation compilation:\n\n{ex.Message}",
+                    "Compilation Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
         }
-
         private void OpenDiannFile_Click(object sender, RoutedEventArgs e)
         {
             MainControlTab.OpenDiannFile();

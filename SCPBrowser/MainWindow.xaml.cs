@@ -19,6 +19,9 @@ namespace SCPBrowser
         {
             InitializeComponent();
             UpdateWindowTitle();
+
+            // CRITICAL: Ensure loading overlay is hidden on startup
+            LoadingOverlay.Hide();
         }
 
         // ==================== PROJECT MANAGEMENT ====================
@@ -223,7 +226,7 @@ namespace SCPBrowser
 
         private async void ConvertTranscriptomicData_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new TranscriptomicConverter
+            var dialog = new TranscriptomicConverterDialog  // CHANGED: was TranscriptomicConverter
             {
                 Owner = this
             };
@@ -239,7 +242,7 @@ namespace SCPBrowser
                 LoadingOverlay.SetProgress("Initializing...");
                 LoadingOverlay.Show();
 
-                var parser = new TranscriptomicParser();
+                var parser = new TranscriptomicTsvParser();  // CHANGED: was TranscriptomicParser
                 var parsedData = await parser.ParseTranscriptomicDataAsync(
                     dialog.ExpressionFilePath,
                     dialog.MetadataFilePath,
@@ -264,7 +267,7 @@ namespace SCPBrowser
                 MessageBox.Show(
                     $"Transcriptomic data converted successfully!\n\n" +
                     $"Cell Types: {parsedData.CellTypeProfiles.Count:N0}\n" +
-                    $"Total Cells: {parsedData.TotalCells:N0}\n" +
+                    $"Total Cells: {parsedData.CellTypeMetadata.Sum(m => m.CellCount):N0}\n" +
                     $"Output: {dialog.OutputDatabasePath}",
                     "Conversion Complete",
                     MessageBoxButton.OK,
@@ -378,15 +381,13 @@ namespace SCPBrowser
 
         // ==================== TAB CONTROL HANDLERS ====================
 
-        private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void MainTabControl_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
+            // Tab switching logic - can be implemented later as needed
             if (MainTabControl.SelectedItem == GoEnrichmentTabItem)
             {
-                GoEnrichmentTab.RefreshFromMainControl(MainControlTab);
-            }
-            else if (MainTabControl.SelectedItem == CellTypeTabItem)
-            {
-                CellTypeTab.RefreshFromMainControl(MainControlTab);
+                // TODO: Implement when integrating with project data
+                // GoEnrichmentTab.RefreshFromMainControl(MainControlTab);
             }
         }
 

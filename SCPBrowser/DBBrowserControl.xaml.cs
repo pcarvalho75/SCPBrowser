@@ -30,12 +30,8 @@ namespace SCPBrowser
         {
             Console.WriteLine("Closing DB Browser...");
 
-            // Find the parent window and hide the overlay
-            var mainWindow = Window.GetWindow(this) as MainWindow;
-            if (mainWindow != null)
-            {
-                mainWindow.DBBrowserOverlay.Visibility = Visibility.Collapsed;
-            }
+            // Simply hide this control - no need to reference DBBrowserOverlay
+            this.Visibility = Visibility.Collapsed;
         }
 
         private async void BrowseDatabase_Click(object sender, RoutedEventArgs e)

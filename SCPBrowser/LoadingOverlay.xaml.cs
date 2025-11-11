@@ -8,12 +8,15 @@ namespace SCPBrowser
     public partial class LoadingOverlay : UserControl
     {
         private Storyboard _animationStoryboard;
+        private bool _isAnimating = false;
 
         public LoadingOverlay()
         {
             InitializeComponent();
             CreateAnimations();
-            Loaded += LoadingOverlay_Loaded;
+
+            // DON'T auto-start animations on load
+            // Loaded += LoadingOverlay_Loaded;
         }
 
         private void CreateAnimations()
@@ -91,11 +94,6 @@ namespace SCPBrowser
             _animationStoryboard.Children.Add(fadeAnimation);
         }
 
-        private void LoadingOverlay_Loaded(object sender, RoutedEventArgs e)
-        {
-            _animationStoryboard.Begin(this);
-        }
-
         /// <summary>
         /// Sets the main loading message
         /// </summary>
@@ -117,8 +115,22 @@ namespace SCPBrowser
         /// </summary>
         public void Show()
         {
-            Visibility = Visibility.Visible;
-            _animationStoryboard.Begin(this);
+            this.Visibility = Visibility.Visible;
+
+            // Only start animation if not already animating
+            if (!_isAnimating)
+            {
+                try
+                {
+                    _animationStoryboard.Begin(this);
+                    _isAnimating = true;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Animation error: {ex.Message}");
+                    // Continue anyway - the overlay will still show
+                }
+            }
         }
 
         /// <summary>
@@ -126,8 +138,21 @@ namespace SCPBrowser
         /// </summary>
         public void Hide()
         {
-            Visibility = Visibility.Collapsed;
-            _animationStoryboard.Stop(this);
+            this.Visibility = Visibility.Collapsed;
+
+            // Stop animation
+            if (_isAnimating)
+            {
+                try
+                {
+                    _animationStoryboard.Stop(this);
+                    _isAnimating = false;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Animation stop error: {ex.Message}");
+                }
+            }
         }
     }
 }

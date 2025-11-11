@@ -33,7 +33,6 @@
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
             </MenuItem>
             <MenuItem Header="_Tools">
-                <MenuItem Header="_Convert Transcriptomic TSV to SQLite..." Click="ConvertTranscriptomicData_Click"/>
                 <MenuItem Header="_Compile GO Annotations..." Click="CompileGoAnnotations_Click"/>
             </MenuItem>
             <MenuItem Header="_Utils">
@@ -57,16 +56,8 @@
                            Width="400">
 
                     <!-- Logo/Icon -->
-                    <Border Background="#eff6ff"
-                           Width="120"
-                           Height="120"
-                           CornerRadius="60"
-                           Margin="0,0,0,30"
-                           HorizontalAlignment="Center">
-                        <TextBlock Text="📊" 
-                                  FontSize="60"
-                                  HorizontalAlignment="Center"
-                                  VerticalAlignment="Center"/>
+                    <Border Margin="0,0,0,30" HorizontalAlignment="Center">
+                        <Image Source="images/logo.png"   HorizontalAlignment="Center"  VerticalAlignment="Center"/>
                     </Border>
 
                     <!-- Welcome Text -->
@@ -176,9 +167,6 @@
                 </TabItem>
                 <TabItem Header="GO Enrichment" x:Name="GoEnrichmentTabItem">
                     <local:GoEnrichmentTabControl x:Name="GoEnrichmentTab"/>
-                </TabItem>
-                <TabItem Header="Cell Type Analysis" x:Name="CellTypeTabItem">
-                    <local:CellTypeTabControl x:Name="CellTypeTab"/>
                 </TabItem>
             </TabControl>
 

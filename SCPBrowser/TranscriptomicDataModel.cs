@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 
 namespace SCPBrowser
 {
@@ -91,10 +92,17 @@ namespace SCPBrowser
     }
 
     /// <summary>
-    /// Result from parsing transcriptomic data - includes lookup tables
+    /// Result from parsing transcriptomic data - NOW INCLUDES CELL TYPE PROFILES
     /// </summary>
     public class ParsedTranscriptomicData
     {
+        // NEW: Cell type profiles (aggregated data)
+        public List<CellTypeProfile> CellTypeProfiles { get; set; }
+
+        // NEW: Metadata about each cell type
+        public List<CellTypeMetadata> CellTypeMetadata { get; set; }
+
+        // Keep these for backwards compatibility during transition
         public List<GeneExpressionRecord> ExpressionRecords { get; set; }
         public List<CellMetadata> Metadata { get; set; }
         public GeneLookup GeneLookup { get; set; }
@@ -102,6 +110,8 @@ namespace SCPBrowser
 
         public ParsedTranscriptomicData()
         {
+            CellTypeProfiles = new List<CellTypeProfile>();
+            CellTypeMetadata = new List<CellTypeMetadata>();
             ExpressionRecords = new List<GeneExpressionRecord>();
             Metadata = new List<CellMetadata>();
             GeneLookup = new GeneLookup();
@@ -109,21 +119,63 @@ namespace SCPBrowser
         }
     }
 
+    /// <summary>
+    /// NEW VERSION: Stores aggregated cell type profiles instead of individual cells
+    /// This is MUCH faster to load and use for predictions
+    /// </summary>
     public class TranscriptomicDatabase
     {
-        public Dictionary<string, List<(string cellId, int count)>> GeneExpression { get; set; }
-        public Dictionary<string, CellMetadata> CellMetadata { get; set; }
-        public Dictionary<string, List<string>> CellTypeIndex { get; set; }
+        /// <summary>
+        /// Cell type profiles: cell type name -> aggregated gene expression profile
+        /// This replaces the old GeneExpression dictionary
+        /// </summary>
+        public Dictionary<string, CellTypeProfile> CellTypeProfiles { get; set; }
+
+        /// <summary>
+        /// Metadata about each cell type (count, age range, etc.)
+        /// This replaces the old CellMetadata and CellTypeIndex
+        /// </summary>
+        public Dictionary<string, CellTypeMetadata> CellTypeMetadata { get; set; }
 
         public TranscriptomicDatabase()
         {
-            GeneExpression = new Dictionary<string, List<(string cellId, int count)>>();
-            CellMetadata = new Dictionary<string, CellMetadata>();
-            CellTypeIndex = new Dictionary<string, List<string>>();
+            CellTypeProfiles = new Dictionary<string, CellTypeProfile>();
+            CellTypeMetadata = new Dictionary<string, CellTypeMetadata>();
         }
 
-        public int TotalGenes => GeneExpression.Count;
-        public int TotalCells => CellMetadata.Count;
-        public int TotalCellTypes => CellTypeIndex.Count;
+        /// <summary>
+        /// Total number of unique genes across all cell type profiles
+        /// </summary>
+        public int TotalGenes
+        {
+            get
+            {
+                var allGenes = new HashSet<string>();
+                foreach (var profile in CellTypeProfiles.Values)
+                {
+                    foreach (var gene in profile.MedianExpression.Keys)
+                    {
+                        allGenes.Add(gene);
+                    }
+                }
+                return allGenes.Count;
+            }
+        }
+
+        /// <summary>
+        /// Total number of cells represented across all cell types
+        /// </summary>
+        public int TotalCells
+        {
+            get
+            {
+                return CellTypeMetadata.Values.Sum(m => m.CellCount);
+            }
+        }
+
+        /// <summary>
+        /// Total number of distinct cell types
+        /// </summary>
+        public int TotalCellTypes => CellTypeProfiles.Count;
     }
 }

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace SCPBrowser
@@ -9,7 +10,7 @@ namespace SCPBrowser
     public class TranscriptomicTsvParser
     {
         /// <summary>
-        /// Parses the gene expression matrix and builds lookup tables for efficient storage
+        /// Parses the gene expression matrix and builds cell type profiles
         /// </summary>
         public async Task<ParsedTranscriptomicData> ParseTranscriptomicDataAsync(
             string expressionMatrixPath,
@@ -27,7 +28,136 @@ namespace SCPBrowser
             result.Metadata = await ParseCellMetadataAsync(metadataPath, result.CellLookup, progress);
             progress?.ReportProgress($"Loaded metadata for {result.Metadata.Count:N0} cells");
 
+            // NEW: Aggregate into cell type profiles
+            progress?.ReportMessage("Aggregating data into cell type profiles...");
+            AggregateToCellTypeProfiles(result, progress);
+            progress?.ReportProgress($"Created {result.CellTypeProfiles.Count} cell type profiles");
+
             return result;
+        }
+
+        /// <summary>
+        /// NEW METHOD: Aggregates individual cell data into cell type profiles
+        /// </summary>
+        private void AggregateToCellTypeProfiles(ParsedTranscriptomicData parsedData, IProgressReporter progress = null)
+        {
+            // Group cells by cell type
+            var cellsByType = parsedData.Metadata
+                .Where(m => !string.IsNullOrEmpty(m.CellType))
+                .GroupBy(m => m.CellType)
+                .ToList();
+
+            progress?.ReportProgress($"Found {cellsByType.Count} unique cell types");
+
+            foreach (var cellTypeGroup in cellsByType)
+            {
+                var cellType = cellTypeGroup.Key;
+                var cellsInType = cellTypeGroup.ToList();
+
+                progress?.ReportProgress($"Aggregating {cellType}: {cellsInType.Count} cells...");
+
+                // Create cell ID set for fast lookup
+                var cellIdSet = new HashSet<string>(cellsInType.Select(c => c.CellID));
+
+                // Build gene expression dictionary for this cell type
+                // gene name -> list of expression values from all cells of this type
+                var geneExpressionData = new Dictionary<string, List<int>>();
+
+                // Collect all expression values for genes in these cells
+                foreach (var record in parsedData.ExpressionRecords)
+                {
+                    var cellName = parsedData.CellLookup.GetCellName(record.CellId);
+                    if (cellName != null && cellIdSet.Contains(cellName))
+                    {
+                        var geneName = parsedData.GeneLookup.GetGeneName(record.GeneId);
+                        if (geneName != null)
+                        {
+                            if (!geneExpressionData.ContainsKey(geneName))
+                            {
+                                geneExpressionData[geneName] = new List<int>();
+                            }
+                            geneExpressionData[geneName].Add(record.Count);
+                        }
+                    }
+                }
+
+                // Calculate aggregated statistics for each gene
+                var profile = new CellTypeProfile
+                {
+                    CellType = cellType,
+                    CellCount = cellsInType.Count
+                };
+
+                foreach (var (geneName, expressionValues) in geneExpressionData)
+                {
+                    if (expressionValues.Count > 0)
+                    {
+                        // Calculate median (more robust than mean for expression data)
+                        var sorted = expressionValues.OrderBy(x => x).ToList();
+                        double median = sorted.Count % 2 == 0
+                            ? (sorted[sorted.Count / 2 - 1] + sorted[sorted.Count / 2]) / 2.0
+                            : sorted[sorted.Count / 2];
+
+                        // Calculate mean
+                        double mean = expressionValues.Average();
+
+                        // Calculate percent expressing (percentage of cells in this type that express this gene)
+                        double percentExpressing = (double)expressionValues.Count / cellsInType.Count;
+
+                        profile.MedianExpression[geneName] = median;
+                        profile.MeanExpression[geneName] = mean;
+                        profile.PercentExpressing[geneName] = percentExpressing;
+                    }
+                }
+
+                parsedData.CellTypeProfiles.Add(profile);
+
+                // Create metadata
+                var metadata = new CellTypeMetadata
+                {
+                    CellType = cellType,
+                    CellCount = cellsInType.Count,
+                    GenesExpressed = profile.MedianExpression.Count,
+                    AgeRange = GetAgeRange(cellsInType),
+                    BatchInfo = GetBatchInfo(cellsInType)
+                };
+
+                parsedData.CellTypeMetadata.Add(metadata);
+
+                progress?.ReportProgress($"  {cellType}: {profile.TotalGenesExpressed} genes expressed");
+            }
+        }
+
+        private string GetAgeRange(List<CellMetadata> cells)
+        {
+            var ages = cells.Where(c => !string.IsNullOrEmpty(c.Age) && c.Age != "NA")
+                           .Select(c => c.Age)
+                           .Distinct()
+                           .ToList();
+
+            if (ages.Count == 0)
+                return null;
+
+            if (ages.Count == 1)
+                return ages[0];
+
+            return $"{ages.Min()}-{ages.Max()}";
+        }
+
+        private string GetBatchInfo(List<CellMetadata> cells)
+        {
+            var batches = cells.Where(c => !string.IsNullOrEmpty(c.Batch) && c.Batch != "NA")
+                              .Select(c => c.Batch)
+                              .Distinct()
+                              .ToList();
+
+            if (batches.Count == 0)
+                return null;
+
+            if (batches.Count <= 3)
+                return string.Join(", ", batches);
+
+            return $"{batches.Count} batches";
         }
 
         private async Task ParseGeneExpressionMatrixAsync(

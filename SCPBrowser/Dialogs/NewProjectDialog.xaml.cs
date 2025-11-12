@@ -2,6 +2,7 @@
 using System.IO;
 using System.Windows;
 using Microsoft.Win32;
+using SCPBrowser.Services;
 
 namespace SCPBrowser
 {

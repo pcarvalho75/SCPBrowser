@@ -334,10 +334,11 @@
                                             Binding="{Binding RawFileName}" 
                                             Width="*" 
                                             IsReadOnly="True"/>
-                        <DataGridComboBoxColumn Header="Biological Condition" 
-                                                Width="200"
-                                                SelectedItemBinding="{Binding BiologicalCondition, UpdateSourceTrigger=PropertyChanged}"
-                                                ItemsSource="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=ConditionNames}"/>
+
+                        <DataGridComboBoxColumn Header="Biological Condition"
+                        Width="200"
+                        SelectedItemBinding="{Binding BiologicalCondition, UpdateSourceTrigger=PropertyChanged}"
+                        ItemsSource="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=ConditionNames}"/>
                     </DataGrid.Columns>
                 </DataGrid>
 
@@ -374,24 +375,32 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0" 
-                               Text="📋 Batch Assign:" 
-                               Width="100"
-                               Style="{StaticResource LabelText}"/>
+               Text="📋 Batch Assign:" 
+               Width="100"
+               Style="{StaticResource LabelText}"/>
 
                     <ComboBox Grid.Column="1"
-                              x:Name="BatchConditionComboBox"
-                              Padding="8"
-                              Margin="0,0,10,0"
-                              ToolTip="Select condition to assign to filtered runs"/>
+              x:Name="BatchConditionComboBox"
+              Padding="8"
+              Margin="0,0,10,0"
+              ToolTip="Select condition to assign to filtered runs"/>
 
                     <Button Grid.Column="2"
-                            Content="➡️ Apply to Filtered"
-                            Click="ApplyBatchAssignment_Click"
-                            Style="{StaticResource SuccessButton}"
-                            ToolTip="Assign the selected condition to all currently visible runs"/>
+            Content="+ New Condition"
+            Click="NewCondition_Click"
+            Padding="15,8"
+            Margin="0,0,10,0"
+            ToolTip="Create a new biological condition"/>
+
+                    <Button Grid.Column="3"
+            Content="➡️ Apply to Filtered"
+            Click="ApplyBatchAssignment_Click"
+            Style="{StaticResource SuccessButton}"
+            ToolTip="Assign the selected condition to all currently visible runs"/>
                 </Grid>
             </Grid>
         </Border>

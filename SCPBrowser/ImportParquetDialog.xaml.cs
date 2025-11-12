@@ -258,6 +258,45 @@ namespace SCPBrowser
             }
         }
 
+        private void NewCondition_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new NewConditionDialog
+            {
+                Owner = this
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                string newConditionName = dialog.ConditionName;
+
+                // Check if condition already exists
+                if (ConditionNames.Contains(newConditionName))
+                {
+                    MessageBox.Show(
+                        $"A condition named '{newConditionName}' already exists.",
+                        "Duplicate Condition",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Add the new condition to the list
+                ConditionNames.Add(newConditionName);
+
+                // Select the newly added condition in the ComboBox
+                BatchConditionComboBox.SelectedItem = newConditionName;
+
+                Console.WriteLine($"New biological condition added: {newConditionName}");
+
+                MessageBox.Show(
+                    $"Condition '{newConditionName}' has been added successfully.\n\n" +
+                    $"You can now assign it to raw files.",
+                    "Condition Added",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+        }
+
         private async System.Threading.Tasks.Task LoadParquetPreviewAsync(string filePath)
         {
             try

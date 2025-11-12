@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using SCPBrowser.GOTools;
+using SCPBrowser.Services;
 
 namespace SCPBrowser
 {

@@ -9,6 +9,7 @@ using System.Windows.Media;
 using Microsoft.Win32;
 using System.Collections.Generic;
 using SCPBrowser.GOTools;
+using SCPBrowser.Services;
 
 namespace SCPBrowser
 {

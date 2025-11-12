@@ -7,6 +7,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
+using SCPBrowser.Services;
 
 namespace SCPBrowser
 {

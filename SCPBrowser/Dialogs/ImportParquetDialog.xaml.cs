@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using SCPBrowser.Models;
+using SCPBrowser.Services;
 
 namespace SCPBrowser
 {
@@ -82,7 +83,52 @@ namespace SCPBrowser
             Plates = new ObservableCollection<PlateInfo>();
             ConditionNames = new ObservableCollection<string>();
 
-            LoadPlatesAsync();
+            // Add some debugging
+            Console.WriteLine("ImportParquetDialog initialized");
+            Console.WriteLine($"ConditionNames collection created with {ConditionNames.Count} items");
+
+            // Load plates and existing conditions
+            LoadPlatesAndConditionsAsync();
+        }
+
+        private async void LoadPlatesAndConditionsAsync()
+        {
+            try
+            {
+                // Load plates
+                var plates = await _projectService.GetPlatesAsync();
+                Plates.Clear();
+                foreach (var plate in plates)
+                {
+                    Plates.Add(plate);
+                }
+
+                if (Plates.Count > 0)
+                {
+                    PlateComboBox.SelectedIndex = 0;
+                }
+
+                // Load existing biological conditions from database
+                Console.WriteLine("Loading existing biological conditions from database...");
+                var existingConditions = await _projectService.GetBiologicalConditionsAsync();
+
+                ConditionNames.Clear();
+                foreach (var condition in existingConditions)
+                {
+                    ConditionNames.Add(condition);
+                    Console.WriteLine($"  Loaded condition: '{condition}'");
+                }
+
+                Console.WriteLine($"Loaded {ConditionNames.Count} existing biological conditions from database");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Error loading data:\n\n{ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
 
         private async void LoadPlatesAsync()
@@ -260,6 +306,8 @@ namespace SCPBrowser
 
         private void NewCondition_Click(object sender, RoutedEventArgs e)
         {
+            Console.WriteLine("=== NewCondition_Click started ===");
+
             var dialog = new NewConditionDialog
             {
                 Owner = this
@@ -268,10 +316,12 @@ namespace SCPBrowser
             if (dialog.ShowDialog() == true)
             {
                 string newConditionName = dialog.ConditionName;
+                Console.WriteLine($"Dialog returned condition name: '{newConditionName}'");
 
-                // Check if condition already exists
-                if (ConditionNames.Contains(newConditionName))
+                // Check if condition already exists (case-insensitive)
+                if (ConditionNames.Any(c => c.Equals(newConditionName, StringComparison.OrdinalIgnoreCase)))
                 {
+                    Console.WriteLine($"Condition '{newConditionName}' already exists");
                     MessageBox.Show(
                         $"A condition named '{newConditionName}' already exists.",
                         "Duplicate Condition",
@@ -281,10 +331,21 @@ namespace SCPBrowser
                 }
 
                 // Add the new condition to the list
+                Console.WriteLine($"Adding condition to ConditionNames collection (current count: {ConditionNames.Count})");
                 ConditionNames.Add(newConditionName);
+                Console.WriteLine($"After add, ConditionNames count: {ConditionNames.Count}");
+
+                // Print all conditions
+                Console.WriteLine("Current conditions in ConditionNames:");
+                foreach (var cond in ConditionNames)
+                {
+                    Console.WriteLine($"  - '{cond}'");
+                }
 
                 // Select the newly added condition in the ComboBox
                 BatchConditionComboBox.SelectedItem = newConditionName;
+                Console.WriteLine($"Set BatchConditionComboBox.SelectedItem to '{newConditionName}'");
+                Console.WriteLine($"BatchConditionComboBox.SelectedItem is now: '{BatchConditionComboBox.SelectedItem}'");
 
                 Console.WriteLine($"New biological condition added: {newConditionName}");
 
@@ -295,6 +356,12 @@ namespace SCPBrowser
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
             }
+            else
+            {
+                Console.WriteLine("Dialog was cancelled");
+            }
+
+            Console.WriteLine("=== NewCondition_Click ended ===");
         }
 
         private async System.Threading.Tasks.Task LoadParquetPreviewAsync(string filePath)
@@ -510,8 +577,13 @@ namespace SCPBrowser
 
         private void ApplyBatchAssignment_Click(object sender, RoutedEventArgs e)
         {
+            Console.WriteLine("=== ApplyBatchAssignment_Click started ===");
+            Console.WriteLine($"BatchConditionComboBox.SelectedItem: {BatchConditionComboBox.SelectedItem}");
+            Console.WriteLine($"FilteredRawFiles count: {FilteredRawFiles?.Count ?? 0}");
+
             if (BatchConditionComboBox.SelectedItem == null)
             {
+                Console.WriteLine("No condition selected - showing warning");
                 MessageBox.Show(
                     "Please select a condition to assign.",
                     "No Condition Selected",
@@ -521,11 +593,14 @@ namespace SCPBrowser
             }
 
             string selectedCondition = BatchConditionComboBox.SelectedItem.ToString();
+            Console.WriteLine($"Selected condition: '{selectedCondition}'");
 
             var filteredList = FilteredRawFiles.ToList();
+            Console.WriteLine($"Filtered list count: {filteredList.Count}");
 
             if (filteredList.Count == 0)
             {
+                Console.WriteLine("No runs match filter - showing message");
                 MessageBox.Show(
                     "No runs match the current filter.",
                     "No Runs to Assign",
@@ -535,18 +610,29 @@ namespace SCPBrowser
             }
 
             // Show preview
+            Console.WriteLine("Showing batch assignment preview");
             if (ShowBatchAssignmentPreview(filteredList, selectedCondition))
             {
+                Console.WriteLine("User confirmed - applying assignments");
+                int assignmentCount = 0;
+
                 foreach (var rawFile in filteredList)
                 {
                     var originalRawFile = RawFiles.FirstOrDefault(rf => rf.RawFileName == rawFile.RawFileName);
                     if (originalRawFile != null)
                     {
+                        Console.WriteLine($"Assigning '{selectedCondition}' to '{originalRawFile.RawFileName}'");
                         originalRawFile.BiologicalCondition = selectedCondition;
+                        assignmentCount++;
                     }
                 }
 
+                Console.WriteLine($"Assigned condition to {assignmentCount} files");
+                Console.WriteLine("Refreshing DataGrid");
                 RawFilesDataGrid.Items.Refresh();
+
+                // **NEW: Validate Import button after assignment**
+                ValidateImportButton();
 
                 // Optional: Clear filter after assignment
                 if (!string.IsNullOrEmpty(_currentFilter))
@@ -559,10 +645,26 @@ namespace SCPBrowser
 
                     if (result == MessageBoxResult.Yes)
                     {
+                        Console.WriteLine("Clearing filter");
                         FilterTextBox.Clear();
                     }
                 }
             }
+            else
+            {
+                Console.WriteLine("User cancelled batch assignment");
+            }
+
+            Console.WriteLine("=== ApplyBatchAssignment_Click ended ===");
+        }
+
+        private void RawFilesDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
+        {
+            // Schedule validation for after the edit completes
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                ValidateImportButton();
+            }), System.Windows.Threading.DispatcherPriority.Background);
         }
 
         private bool ShowBatchAssignmentPreview(List<RawFileInfo> runs, string condition)
@@ -608,27 +710,49 @@ namespace SCPBrowser
             bool hasFile = !string.IsNullOrEmpty(_selectedParquetPath);
             bool hasPlate = SelectedPlate != null;
             bool hasRawFiles = RawFiles != null && RawFiles.Count > 0;
+            bool allConditionsAssigned = RawFiles != null &&
+                                         RawFiles.All(rf => !string.IsNullOrEmpty(rf.BiologicalCondition));
 
-            ImportButton.IsEnabled = hasFile && hasPlate && hasRawFiles;
+            ImportButton.IsEnabled = hasFile && hasPlate && hasRawFiles && allConditionsAssigned;
+
+            Console.WriteLine($"ValidateImportButton: hasFile={hasFile}, hasPlate={hasPlate}, hasRawFiles={hasRawFiles}, allConditionsAssigned={allConditionsAssigned}");
         }
+
 
         private async void Import_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                // Validate all raw files have conditions assigned
+                // Validate all raw files have conditions assigned - BLOCK if not all assigned
                 var unassignedFiles = RawFiles.Where(rf => string.IsNullOrEmpty(rf.BiologicalCondition)).ToList();
                 if (unassignedFiles.Count > 0)
                 {
-                    var result = MessageBox.Show(
-                        $"{unassignedFiles.Count} raw file(s) do not have biological conditions assigned.\n\n" +
-                        $"Do you want to continue anyway? Unassigned files will be imported without conditions.",
-                        "Unassigned Conditions",
-                        MessageBoxButton.YesNo,
+                    // Build list of unassigned file names
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine($"{unassignedFiles.Count} raw file(s) do not have biological conditions assigned:");
+                    sb.AppendLine();
+
+                    int displayCount = Math.Min(unassignedFiles.Count, 10);
+                    for (int i = 0; i < displayCount; i++)
+                    {
+                        sb.AppendLine($"• {unassignedFiles[i].RawFileName}");
+                    }
+
+                    if (unassignedFiles.Count > 10)
+                    {
+                        sb.AppendLine($"... and {unassignedFiles.Count - 10} more");
+                    }
+
+                    sb.AppendLine();
+                    sb.AppendLine("Please assign biological conditions to all raw files before importing.");
+
+                    MessageBox.Show(
+                        sb.ToString(),
+                        "Missing Biological Conditions",
+                        MessageBoxButton.OK,
                         MessageBoxImage.Warning);
 
-                    if (result == MessageBoxResult.No)
-                        return;
+                    return; // Block the import
                 }
 
                 // Get unique conditions

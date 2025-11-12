@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using SCPBrowser.Models;
 
-namespace SCPBrowser
+namespace SCPBrowser.Services
 {
     /// <summary>
     /// Service for managing project-level data including plates, parquet imports, and raw files
@@ -167,6 +167,41 @@ namespace SCPBrowser
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Gets all distinct biological conditions from the database
+        /// </summary>
+        public async Task<List<string>> GetBiologicalConditionsAsync()
+        {
+            var conditions = new List<string>();
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                SELECT DISTINCT biological_condition 
+                FROM raw_files 
+                WHERE biological_condition IS NOT NULL 
+                  AND biological_condition != ''
+                ORDER BY biological_condition
+            ";
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            conditions.Add(reader.GetString(0));
+                        }
+                    }
+                }
+            }
+
+            return conditions;
         }
 
         /// <summary>
@@ -456,7 +491,7 @@ namespace SCPBrowser
                                 command.Parameters.AddWithValue("@importId", importId);
                                 command.Parameters.AddWithValue("@rawFileName", rawFile.RawFileName);
                                 command.Parameters.AddWithValue("@condition", rawFile.BiologicalCondition ?? (object)DBNull.Value);
-                                command.Parameters.AddWithValue("@plateId", rawFile.PlateId.HasValue ? rawFile.PlateId.Value : (object)DBNull.Value);
+                                command.Parameters.AddWithValue("@plateId", rawFile.PlateId.HasValue ? rawFile.PlateId.Value : DBNull.Value);
                                 command.Parameters.AddWithValue("@proteinCount", rawFile.ProteinCount);
                                 command.Parameters.AddWithValue("@peptideCount", rawFile.PeptideCount);
                                 command.Parameters.AddWithValue("@tic", rawFile.TotalIonCurrent);
@@ -732,7 +767,7 @@ namespace SCPBrowser
                         WHERE raw_file_id = @rawFileId
                     ";
                     command.Parameters.AddWithValue("@rawFileId", rawFileId);
-                    command.Parameters.AddWithValue("@plateId", plateId.HasValue ? (object)plateId.Value : DBNull.Value);
+                    command.Parameters.AddWithValue("@plateId", plateId.HasValue ? plateId.Value : DBNull.Value);
                     await command.ExecuteNonQueryAsync();
                 }
             }

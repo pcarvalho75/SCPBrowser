@@ -1,0 +1,523 @@
+﻿<!-- ImportParquetDialog.xaml - Optimized Layout -->
+<Window x:Class="SCPBrowser.ImportParquetDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Import DIA-NN Parquet File" 
+        Height="750" 
+        Width="950"
+        WindowStartupLocation="CenterOwner"
+        Background="#f8fafc">
+
+    <Window.Resources>
+        <!-- Boolean to Visibility Converter -->
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- Label Style -->
+        <Style x:Key="LabelText" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#334155"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+
+        <!-- Section Header Style -->
+        <Style x:Key="SectionHeader" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#0f172a"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+
+        <!-- Primary Button -->
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="#2563eb"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="20,8"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#1d4ed8"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#cbd5e1"/>
+                    <Setter Property="Cursor" Value="Arrow"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Secondary Button -->
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Background" Value="#e2e8f0"/>
+            <Setter Property="Foreground" Value="#475569"/>
+            <Setter Property="Padding" Value="20,8"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#cbd5e1"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Success Button -->
+        <Style x:Key="SuccessButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+            <Setter Property="Background" Value="#10b981"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#059669"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- DataGrid Row Style with Highlighting -->
+        <Style x:Key="HighlightableDataGridRow" TargetType="DataGridRow">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGrid}, Path=Tag}" Value="Filtered">
+                    <Setter Property="Background" Value="#fef3c7"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <!-- Header -->
+            <RowDefinition Height="Auto"/>
+            <!-- File & Plate (Combined) -->
+            <RowDefinition Height="*"/>
+            <!-- Raw Files Grid -->
+            <RowDefinition Height="Auto"/>
+            <!-- Buttons -->
+        </Grid.RowDefinitions>
+
+        <!-- Compact Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="Import DIA-NN Parquet File" 
+                       FontSize="18" 
+                       FontWeight="Bold"
+                       Foreground="#0f172a"/>
+            <TextBlock Text="Select a file, assign to a plate, and label biological conditions" 
+                       FontSize="11"
+                       Foreground="#64748b"
+                       Margin="0,3,0,0"/>
+        </StackPanel>
+
+        <!-- Combined Section: File Selection + Plate Assignment -->
+        <Border Grid.Row="1" 
+                BorderBrush="#e2e8f0" 
+                BorderThickness="1" 
+                CornerRadius="6" 
+                Padding="12"
+                Background="White"
+                Margin="0,0,0,12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="80"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- File Selection Row -->
+                <TextBlock Grid.Row="0" Grid.Column="0"
+                           Text="📁 File:"
+                           Style="{StaticResource LabelText}"
+                           ToolTip="Step 1: Select the DIA-NN parquet file to import"/>
+
+                <TextBox Grid.Row="0" Grid.Column="1"
+                         x:Name="FilePathTextBox"
+                         IsReadOnly="True"
+                         Height="28"
+                         Padding="6,4"
+                         VerticalContentAlignment="Center"
+                         Background="#f8fafc"
+                         Margin="0,0,8,0"
+                         ToolTip="Path to the selected parquet file"/>
+
+                <Button Grid.Row="0" Grid.Column="2"
+                        Content="Browse..."
+                        Click="BrowseFile_Click"
+                        Padding="12,6"
+                        Height="28"
+                        ToolTip="Browse for a parquet file in your project's imports folder"/>
+
+                <!-- File Validation Message -->
+                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                           x:Name="FileValidationText"
+                           Foreground="#dc2626"
+                           FontSize="10"
+                           FontStyle="Italic"
+                           Visibility="Collapsed"
+                           Margin="0,3,0,8"/>
+
+                <!-- Plate Assignment Row -->
+                <TextBlock Grid.Row="2" Grid.Column="0"
+                           Text="🧪 Plate:"
+                           Style="{StaticResource LabelText}"
+                           Margin="0,8,0,0"
+                           ToolTip="Step 2: Assign raw files to an experimental plate"/>
+
+                <ComboBox Grid.Row="2" Grid.Column="1"
+                          x:Name="PlateComboBox"
+                          ItemsSource="{Binding Plates}"
+                          DisplayMemberPath="PlateName"
+                          Height="28"
+                          Padding="6,4"
+                          VerticalContentAlignment="Center"
+                          Margin="0,8,8,0"
+                          SelectionChanged="PlateComboBox_SelectionChanged"
+                          ToolTip="Select the plate/experiment for these raw files"/>
+
+                <Button Grid.Row="2" Grid.Column="2"
+                        Content="New Plate..."
+                        Click="NewPlate_Click"
+                        Padding="12,6"
+                        Height="28"
+                        Margin="0,8,0,0"
+                        ToolTip="Create a new plate/experiment"/>
+            </Grid>
+        </Border>
+
+        <!-- Raw Files & Condition Labeling Section -->
+        <Border Grid.Row="2" 
+                BorderBrush="#e2e8f0" 
+                BorderThickness="1" 
+                CornerRadius="6" 
+                Padding="12"
+                Background="White">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Section Header -->
+                <TextBlock Grid.Row="0" 
+                           Text="🏷️ Biological Conditions"
+                           Style="{StaticResource SectionHeader}"/>
+
+                <!-- Batch Assignment Controls (Moved to Top) -->
+                <Grid Grid.Row="1" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="200"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" 
+                               Text="Batch Assign:"
+                               Width="80"
+                               Style="{StaticResource LabelText}"
+                               ToolTip="Step 3: Assign conditions to multiple files at once"/>
+
+                    <ComboBox Grid.Column="1"
+                              x:Name="BatchConditionComboBox"
+                              ItemsSource="{Binding ConditionNames}"
+                              Height="28"
+                              Padding="6,4"
+                              VerticalContentAlignment="Center"
+                              Margin="0,0,8,0"
+                              ToolTip="Select a biological condition to assign to filtered runs"/>
+
+                    <Button Grid.Column="2"
+                            Content="+ New"
+                            Click="NewCondition_Click"
+                            Padding="12,6"
+                            Height="28"
+                            Margin="0,0,8,0"
+                            ToolTip="Create a new biological condition (e.g., Control, Treatment, 1mo, 6mo)"/>
+
+                    <Button Grid.Column="3"
+                            Content="➡️ Apply to Filtered"
+                            Click="ApplyBatchAssignment_Click"
+                            Style="{StaticResource SuccessButton}"
+                            Height="28"
+                            ToolTip="Assign the selected condition to all currently visible runs"/>
+                </Grid>
+
+                <!-- Filter Controls (Compact) -->
+                <Grid Grid.Row="2" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" 
+                               Text="Filter:"
+                               Width="80"
+                               Style="{StaticResource LabelText}"
+                               ToolTip="Filter raw files by name (use * for wildcards)"/>
+
+                    <Grid Grid.Column="1">
+                        <TextBox x:Name="FilterTextBox"
+                                 Height="26"
+                                 Padding="6,3"
+                                 VerticalContentAlignment="Center"
+                                 TextChanged="FilterTextBox_TextChanged"
+                                 ToolTip="Type to filter by raw file name. Use * for wildcards (e.g., *_1mo_*)"/>
+
+                        <Button x:Name="FilterClearButton"
+                                Content="✕"
+                                Width="20"
+                                Height="20"
+                                FontSize="10"
+                                HorizontalAlignment="Right"
+                                Margin="0,0,4,0"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Foreground="#64748b"
+                                Cursor="Hand"
+                                Click="FilterClearButton_Click"
+                                Visibility="Collapsed"
+                                ToolTip="Clear filter">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="10">
+                                                    <ContentPresenter HorizontalAlignment="Center" 
+                                                                    VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#f1f5f9"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </Grid>
+
+                    <!-- Filter Status -->
+                    <TextBlock Grid.Column="2"
+                               x:Name="FilterStatusText"
+                               FontSize="10"
+                               Foreground="#64748b"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0"
+                               Text="All files shown"/>
+                </Grid>
+
+                <!-- Raw Files DataGrid -->
+                <DataGrid Grid.Row="3"
+                          x:Name="RawFilesDataGrid"
+                          AutoGenerateColumns="False"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserReorderColumns="False"
+                          SelectionMode="Extended"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal"
+                          RowStyle="{StaticResource HighlightableDataGridRow}"
+                          BorderBrush="#e2e8f0"
+                          BorderThickness="1"
+                          CellEditEnding="RawFilesDataGrid_CellEditEnding"
+                          RowHeight="32">
+                    <DataGrid.ColumnHeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#f1f5f9"/>
+                            <Setter Property="Foreground" Value="#334155"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="FontSize" Value="11"/>
+                            <Setter Property="Padding" Value="8,6"/>
+                            <Setter Property="BorderBrush" Value="#e2e8f0"/>
+                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                        </Style>
+                    </DataGrid.ColumnHeaderStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Raw File Name" 
+                                            Binding="{Binding RawFileName}" 
+                                            Width="*" 
+                                            IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Padding" Value="8,0"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+
+                        <!-- Using DataGridTemplateColumn for proper binding updates -->
+                        <DataGridTemplateColumn Header="Biological Condition" Width="200">
+                            <DataGridTemplateColumn.HeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                    <Setter Property="ToolTip" Value="Double-click to edit. Assign a condition to each file."/>
+                                </Style>
+                            </DataGridTemplateColumn.HeaderStyle>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding BiologicalCondition}" 
+                                              VerticalAlignment="Center"
+                                              Padding="8,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <Trigger Property="Text" Value="">
+                                                        <Setter Property="Foreground" Value="#cbd5e1"/>
+                                                        <Setter Property="FontStyle" Value="Italic"/>
+                                                        <Setter Property="Text" Value="(unassigned)"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.ConditionNames, RelativeSource={RelativeSource AncestorType=Window}}"
+                                             SelectedItem="{Binding BiologicalCondition, UpdateSourceTrigger=PropertyChanged}"
+                                             IsEditable="False"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTextColumn Header="Proteins" 
+                                            Binding="{Binding ProteinCount, StringFormat=N0}" 
+                                            Width="85" 
+                                            IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Padding" Value="8,0"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="TextAlignment" Value="Right"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+
+                        <DataGridTextColumn Header="Peptides" 
+                                            Binding="{Binding PeptideCount, StringFormat=N0}" 
+                                            Width="85" 
+                                            IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Padding" Value="8,0"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="TextAlignment" Value="Right"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+
+                        <DataGridTextColumn Header="Total Ion Current" 
+                                            Binding="{Binding TotalIonCurrent, StringFormat=E2}" 
+                                            Width="130" 
+                                            IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Padding" Value="8,0"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="TextAlignment" Value="Right"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <!-- No Results Message -->
+                <Border Grid.Row="3"
+                        x:Name="NoResultsBorder"
+                        Background="White"
+                        BorderBrush="#e2e8f0"
+                        BorderThickness="1"
+                        Visibility="Collapsed">
+                    <StackPanel HorizontalAlignment="Center" 
+                                VerticalAlignment="Center"
+                                Margin="20">
+                        <TextBlock Text="🔍" 
+                                   FontSize="48"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,10"/>
+                        <TextBlock Text="No matching raw files found" 
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,5"/>
+                        <TextBlock x:Name="NoResultsHelpText"
+                                   Text="Try adjusting your filter"
+                                   FontSize="12"
+                                   Foreground="#64748b"
+                                   HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Help Text at Bottom -->
+                <TextBlock Grid.Row="4"
+                           Margin="0,8,0,0"
+                           FontSize="10"
+                           Foreground="#64748b"
+                           FontStyle="Italic">
+                    <Run Text="💡 Tip:"/>
+                    <Run Text="Double-click a Biological Condition cell to edit it directly, or use Batch Assign to set multiple files at once."/>
+                </TextBlock>
+            </Grid>
+        </Border>
+
+        <!-- Bottom Buttons -->
+        <StackPanel Grid.Row="3" 
+                    Orientation="Horizontal" 
+                    HorizontalAlignment="Right"
+                    Margin="0,12,0,0">
+            <Button Content="Import" 
+                    x:Name="ImportButton"
+                    Click="Import_Click"
+                    IsDefault="True"
+                    Style="{StaticResource PrimaryButton}"
+                    IsEnabled="False"
+                    Margin="0,0,10,0"
+                    ToolTip="Import the parquet file with assigned conditions (all files must have conditions)"/>
+            <Button Content="Cancel" 
+                    Click="Cancel_Click"
+                    IsCancel="True"
+                    Style="{StaticResource SecondaryButton}"
+                    ToolTip="Cancel import and close dialog"/>
+        </StackPanel>
+    </Grid>
+</Window>

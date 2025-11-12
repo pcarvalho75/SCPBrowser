@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using SCPBrowser.GOTools;
 
-namespace SCPBrowser
+namespace SCPBrowser.Services
 {
     /// <summary>
     /// Unified service for managing all reference data in a single SQLite database
@@ -264,9 +264,9 @@ namespace SCPBrowser
                         parameters.Add(new SqliteParameter($"{paramPrefix}cell_count", metadata.CellCount));
                         parameters.Add(new SqliteParameter($"{paramPrefix}genes_expressed", metadata.GenesExpressed));
                         parameters.Add(new SqliteParameter($"{paramPrefix}age_range",
-                            string.IsNullOrEmpty(metadata.AgeRange) ? (object)DBNull.Value : metadata.AgeRange));
+                            string.IsNullOrEmpty(metadata.AgeRange) ? DBNull.Value : metadata.AgeRange));
                         parameters.Add(new SqliteParameter($"{paramPrefix}batch_info",
-                            string.IsNullOrEmpty(metadata.BatchInfo) ? (object)DBNull.Value : metadata.BatchInfo));
+                            string.IsNullOrEmpty(metadata.BatchInfo) ? DBNull.Value : metadata.BatchInfo));
                     }
 
                     command.CommandText = $@"
@@ -527,7 +527,7 @@ namespace SCPBrowser
                             annotationCount++;
                             if (annotationCount % 5000 == 0)
                             {
-                                var percentage = (annotationCount * 100.0 / totalAnnotations);
+                                var percentage = annotationCount * 100.0 / totalAnnotations;
                                 progress?.ReportProgress($"Writing annotations... {annotationCount:N0} / {totalAnnotations:N0} ({percentage:F1}%)");
                             }
                         }

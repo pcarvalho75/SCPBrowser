@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Parquet;
 using Parquet.Data;
 
-namespace SCPBrowser
+namespace SCPBrowser.Services
 {
     /*
      * DIA-NN Parquet File Column Structure:
@@ -275,7 +275,7 @@ namespace SCPBrowser
             {
                 double totalTic = ticByFile[rawFile];
                 double targetTic = targetProteinTicByFile[rawFile];
-                data.TargetProteinRatioPerFile[rawFile] = totalTic > 0 ? (targetTic / totalTic) : 0;
+                data.TargetProteinRatioPerFile[rawFile] = totalTic > 0 ? targetTic / totalTic : 0;
             }
 
             return data;

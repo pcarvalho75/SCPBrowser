@@ -221,6 +221,7 @@ namespace SCPBrowser.Services
             progress?.ReportProgress("Cell type metadata complete");
         }
 
+
         /// <summary>
         /// Loads cell type profiles from the database
         /// </summary>
@@ -241,9 +242,9 @@ namespace SCPBrowser.Services
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        SELECT cell_type, cell_count, genes_expressed, age_range, batch_info
-                        FROM cell_type_metadata
-                    ";
+                SELECT cell_type, cell_count, genes_expressed, age_range, batch_info
+                FROM cell_type_metadata
+            ";
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
@@ -270,10 +271,10 @@ namespace SCPBrowser.Services
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        SELECT cell_type, gene_name, median_expression, mean_expression, percent_expressing
-                        FROM cell_type_profiles
-                        ORDER BY cell_type, gene_name
-                    ";
+                SELECT cell_type, gene_name, median_expression, mean_expression, percent_expressing
+                FROM cell_type_profiles
+                ORDER BY cell_type, gene_name
+            ";
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
@@ -285,9 +286,9 @@ namespace SCPBrowser.Services
                         {
                             var cellType = reader.GetString(0);
                             var geneName = reader.GetString(1);
-                            var medianExpression = reader.GetFloat(2);
-                            var meanExpression = reader.GetFloat(3);
-                            var percentExpressing = reader.GetFloat(4);
+                            var medianExpression = reader.GetDouble(2);
+                            var meanExpression = reader.GetDouble(3);
+                            var percentExpressing = reader.GetDouble(4);
 
                             // Start a new profile if cell type changed
                             if (cellType != currentCellType)
@@ -301,9 +302,9 @@ namespace SCPBrowser.Services
                                 currentProfile = new CellTypeProfile
                                 {
                                     CellType = cellType,
-                                    MedianExpression = new Dictionary<string, float>(),
-                                    MeanExpression = new Dictionary<string, float>(),
-                                    PercentExpressing = new Dictionary<string, float>(),
+                                    MedianExpression = new Dictionary<string, double>(),
+                                    MeanExpression = new Dictionary<string, double>(),
+                                    PercentExpressing = new Dictionary<string, double>(),
                                     CellCount = database.CellTypeMetadata.ContainsKey(cellType)
                                         ? database.CellTypeMetadata[cellType].CellCount
                                         : 0
@@ -338,7 +339,6 @@ namespace SCPBrowser.Services
 
             return database;
         }
-
         // ==================== GO ANNOTATIONS ====================
 
         /// <summary>

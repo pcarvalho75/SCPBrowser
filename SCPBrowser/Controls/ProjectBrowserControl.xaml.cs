@@ -96,25 +96,6 @@ namespace SCPBrowser
             }
         }
 
-        // DEPRECATED: 2024-11-13 - Refactoring to project-centric workflow
-        // This method will be removed once refactoring is complete and tested
-        // The control now receives database path automatically from MainWindow when project is open
-        /*
-        private async void BrowseDatabase_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new OpenFileDialog
-            {
-                Filter = "SQLite Database (*.db)|*.db|All files (*.*)|*.*",
-                Title = "Select Reference Database"
-            };
-
-            if (dialog.ShowDialog() != true)
-                return;
-
-            await LoadDatabaseAsync(dialog.FileName);
-        }
-        */
-
         public async Task ShowWithDatabaseAsync(string databasePath)
         {
             // Make control visible

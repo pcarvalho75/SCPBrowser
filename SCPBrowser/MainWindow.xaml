@@ -15,29 +15,33 @@
         </Grid.RowDefinitions>
 
         <!-- Menu Bar -->
+        <!-- Menu Bar -->
         <Menu Grid.Row="0">
             <MenuItem Header="_File">
                 <MenuItem Header="_New Project..." Click="NewProject_Click"/>
                 <MenuItem Header="_Open Project..." Click="OpenProject_Click"/>
                 <Separator/>
-                <MenuItem Header="_Import Parquet..." 
-                          x:Name="ImportParquetMenuItem"
-                          Click="ImportParquet_Click"
-                          IsEnabled="False"/>
-                <Separator/>
                 <MenuItem Header="_Close Project" 
-                          x:Name="CloseProjectMenuItem"
-                          Click="CloseProject_Click"
-                          IsEnabled="False"/>
+                  x:Name="CloseProjectMenuItem"
+                  Click="CloseProject_Click"
+                  IsEnabled="False"/>
                 <Separator/>
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
             </MenuItem>
-            <MenuItem Header="_Tools">
-                <MenuItem Header="_Compile GO Annotations..." Click="CompileGoAnnotations_Click"/>
+            <MenuItem Header="_Import">
+                <MenuItem Header="_Parquet File..." 
+                  x:Name="ImportParquetMenuItem"
+                  Click="ImportParquet_Click"
+                  IsEnabled="False"/>
+                <Separator/>
+                <MenuItem Header="_Omic Profile (Transcriptomic)..." 
+                  Click="ImportOmicProfile_Click"/>
+                <MenuItem Header="_GO Annotations..." 
+                  Click="CompileGoAnnotations_Click"/>
             </MenuItem>
             <MenuItem Header="_Utils">
                 <MenuItem Header="_Settings" Click="Settings_Click"/>
-                <MenuItem Header="_DB Browser" Click="DBBrowser_Click"/>
+                <MenuItem Header="_Project Browser" Click="ProjectBrowser_Click"/>
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Click="About_Click"/>

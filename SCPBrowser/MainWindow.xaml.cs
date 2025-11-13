@@ -223,63 +223,133 @@ namespace SCPBrowser
                 MessageBoxImage.Information);
         }
 
-        // ==================== TOOLS MENU ====================
 
-        private async void ConvertTranscriptomicData_Click(object sender, RoutedEventArgs e)
+
+
+        // ==================== IMPORT MENU ====================
+
+        // ==================== IMPORT MENU ====================
+
+        private async void ImportOmicProfile_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new TranscriptomicConverterDialog  // CHANGED: was TranscriptomicConverter
+            // Check if a project is open
+            if (!_hasOpenProject || _projectService == null)
             {
-                Owner = this
+                MessageBox.Show(
+                    "Please open or create a project first.\n\nOmic profile import requires an active project.",
+                    "No Project Open",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            // Get the project directory
+            string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
+
+            // Step 1: Select Gene Expression Matrix file
+            var expressionDialog = new OpenFileDialog
+            {
+                Filter = "TSV files (*.tsv)|*.tsv|Text files (*.txt)|*.txt|All files (*.*)|*.*",
+                Title = "Select Gene Expression Matrix TSV File",
+                InitialDirectory = projectDirectory
             };
 
-            if (dialog.ShowDialog() != true)
+            if (expressionDialog.ShowDialog() != true)
+                return;
+
+            string expressionFilePath = expressionDialog.FileName;
+
+            // Step 2: Select Cell Metadata file
+            var metadataDialog = new OpenFileDialog
+            {
+                Filter = "TSV files (*.tsv)|*.tsv|Text files (*.txt)|*.txt|All files (*.*)|*.*",
+                Title = "Select Cell Metadata TSV File",
+                InitialDirectory = Path.GetDirectoryName(expressionFilePath) // Start from same directory as expression file
+            };
+
+            if (metadataDialog.ShowDialog() != true)
+                return;
+
+            string metadataFilePath = metadataDialog.FileName;
+
+            // Get the reference database path from Settings
+            string referenceDatabasePath = Settings.Default.ReferenceDatabasePath;
+
+            if (string.IsNullOrEmpty(referenceDatabasePath))
+            {
+                MessageBox.Show(
+                    "No reference database configured.\n\nPlease configure a reference database path in Settings first.",
+                    "Configuration Required",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            // Confirm the import
+            var result = MessageBox.Show(
+                $"Import transcriptomic data to reference database?\n\n" +
+                $"Expression Matrix: {Path.GetFileName(expressionFilePath)}\n" +
+                $"Cell Metadata: {Path.GetFileName(metadataFilePath)}\n\n" +
+                $"Target Database: {referenceDatabasePath}",
+                "Confirm Import",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
                 return;
 
             var progressReporter = new UIProgressReporter(LoadingOverlay);
 
             try
             {
-                LoadingOverlay.SetMessage("Converting Transcriptomic Data");
-                LoadingOverlay.SetProgress("Initializing...");
+                LoadingOverlay.SetMessage("Importing Transcriptomic Data");
+                LoadingOverlay.SetProgress("Parsing TSV files...");
                 LoadingOverlay.Show();
 
-                var parser = new TranscriptomicTsvParser();  // CHANGED: was TranscriptomicParser
+                var parser = new TranscriptomicTsvParser();
                 var parsedData = await parser.ParseTranscriptomicDataAsync(
-                    dialog.ExpressionFilePath,
-                    dialog.MetadataFilePath,
+                    expressionFilePath,
+                    metadataFilePath,
                     progressReporter);
 
                 var referenceService = new ReferenceDataService();
 
-                if (!File.Exists(dialog.OutputDatabasePath))
+                // Create database if it doesn't exist
+                if (!File.Exists(referenceDatabasePath))
                 {
-                    progressReporter.ReportProgress("Creating new database...");
-                    await referenceService.CreateDatabaseAsync(dialog.OutputDatabasePath);
+                    progressReporter.ReportProgress("Creating new reference database...");
+                    await referenceService.CreateDatabaseAsync(referenceDatabasePath);
                 }
 
+                // Write transcriptomic data to the reference database
+                progressReporter.ReportProgress("Writing to reference database...");
                 await referenceService.WriteTranscriptomicDataAsync(
-                    dialog.OutputDatabasePath,
+                    referenceDatabasePath,
                     parsedData,
-                    true,
+                    true,  // overwrite existing data
                     progressReporter);
 
                 LoadingOverlay.Hide();
 
                 MessageBox.Show(
-                    $"Transcriptomic data converted successfully!\n\n" +
+                    $"Transcriptomic data imported successfully!\n\n" +
                     $"Cell Types: {parsedData.CellTypeProfiles.Count:N0}\n" +
                     $"Total Cells: {parsedData.CellTypeMetadata.Sum(m => m.CellCount):N0}\n" +
-                    $"Output: {dialog.OutputDatabasePath}",
-                    "Conversion Complete",
+                    $"Total Genes: {parsedData.CellTypeProfiles.FirstOrDefault()?.MedianExpression.Count ?? 0:N0}\n\n" +
+                    $"Database: {referenceDatabasePath}",
+                    "Import Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
+
+                Console.WriteLine($"Transcriptomic data imported to: {referenceDatabasePath}");
             }
             catch (Exception ex)
             {
                 LoadingOverlay.Hide();
+                Console.WriteLine($"Error importing transcriptomic data: {ex.Message}");
                 MessageBox.Show(
-                    $"Error during conversion:\n\n{ex.Message}",
-                    "Conversion Error",
+                    $"Error importing transcriptomic data:\n\n{ex.Message}",
+                    "Import Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -425,6 +495,11 @@ namespace SCPBrowser
                     await Task.Delay(10);
                 }, System.Windows.Threading.DispatcherPriority.Render);
             }
+        }
+
+        private void ProjectBrowser_Click(object sender, RoutedEventArgs e)
+        {
+
         }
     }
 }

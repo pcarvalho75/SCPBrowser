@@ -4,11 +4,12 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SCPBrowser"
+        xmlns:converters="clr-namespace:SCPBrowser.Converters"
         mc:Ignorable="d"
-        Title="SCP Browser" Height="650" Width="950">
+        Title="SCP Browser" Height="700" Width="950">
     <Window.Resources>
-        <Converters:FileNameConverter x:Key="FileNameConverter"/>
-        <Converters:DirectoryConverter x:Key="DirectoryConverter"/>
+        <converters:FileNameConverter x:Key="FileNameConverter"/>
+        <converters:DirectoryConverter x:Key="DirectoryConverter"/>
     </Window.Resources>
 
     <Grid>
@@ -74,8 +75,7 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- Main Welcome Content (Left Side) -->
-                    <!-- Main Welcome Content (Left Side) -->
-                    <Grid Grid.Column="0" Background="White">
+                    <Grid Grid.Column="0" Background="#f1f5f9">
                         <Border Background="White"
             BorderBrush="#cbd5e1"
             BorderThickness="1"

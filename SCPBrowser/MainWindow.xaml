@@ -46,7 +46,10 @@
             </MenuItem>
             <MenuItem Header="_Utils">
                 <MenuItem Header="_Settings" Click="Settings_Click"/>
-                <MenuItem Header="_Project Browser" Click="ProjectBrowser_Click"/>
+                <MenuItem Header="_Project Browser" 
+              x:Name="ProjectBrowserMenuItem"
+              Click="ProjectBrowser_Click"
+              IsEnabled="False"/>
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Click="About_Click"/>

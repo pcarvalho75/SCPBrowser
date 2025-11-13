@@ -35,22 +35,11 @@ namespace SCPBrowser
             this.Visibility = Visibility.Collapsed;
         }
 
-        private async void BrowseDatabase_Click(object sender, RoutedEventArgs e)
+        public async Task LoadDatabaseAsync(string databasePath)
         {
-            var dialog = new OpenFileDialog
-            {
-                Filter = "SQLite Database (*.db)|*.db|All files (*.*)|*.*",
-                Title = "Select Reference Database"
-            };
-
-            if (dialog.ShowDialog() != true)
-                return;
-
-            DatabasePathTextBox.Text = dialog.FileName;
-
             try
             {
-                Console.WriteLine($"Loading database: {dialog.FileName}");
+                Console.WriteLine($"Loading database: {databasePath}");
 
                 // Show loading overlay
                 var mainWindow = Window.GetWindow(this) as MainWindow;
@@ -62,7 +51,7 @@ namespace SCPBrowser
                 }
 
                 // Load GO annotations
-                (_goSlimDatabase, _goAnnotations) = await _referenceService.LoadGoAnnotationsAsync(dialog.FileName);
+                (_goSlimDatabase, _goAnnotations) = await _referenceService.LoadGoAnnotationsAsync(databasePath);
 
                 if (mainWindow != null)
                 {
@@ -70,7 +59,7 @@ namespace SCPBrowser
                 }
 
                 // Load transcriptomic data
-                _transcriptomicData = await _referenceService.LoadTranscriptomicDataAsync(dialog.FileName);
+                _transcriptomicData = await _referenceService.LoadTranscriptomicDataAsync(databasePath);
 
                 if (mainWindow != null)
                 {
@@ -83,7 +72,7 @@ namespace SCPBrowser
 
                 PopulateGoAnnotationsTab();
                 PopulateTranscriptomicTab();
-                PopulateDatabaseInfoTab(dialog.FileName);
+                PopulateDatabaseInfoTab(databasePath);
 
                 Console.WriteLine("Database statistics loaded successfully");
             }
@@ -105,6 +94,34 @@ namespace SCPBrowser
                 EmptyStatePanel.Visibility = Visibility.Visible;
                 DataTabControl.Visibility = Visibility.Collapsed;
             }
+        }
+
+        // DEPRECATED: 2024-11-13 - Refactoring to project-centric workflow
+        // This method will be removed once refactoring is complete and tested
+        // The control now receives database path automatically from MainWindow when project is open
+        /*
+        private async void BrowseDatabase_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Filter = "SQLite Database (*.db)|*.db|All files (*.*)|*.*",
+                Title = "Select Reference Database"
+            };
+
+            if (dialog.ShowDialog() != true)
+                return;
+
+            await LoadDatabaseAsync(dialog.FileName);
+        }
+        */
+
+        public async Task ShowWithDatabaseAsync(string databasePath)
+        {
+            // Make control visible
+            this.Visibility = Visibility.Visible;
+
+            // Load the database
+            await LoadDatabaseAsync(databasePath);
         }
 
         private void PopulateGoAnnotationsTab()

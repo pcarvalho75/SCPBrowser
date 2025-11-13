@@ -154,6 +154,8 @@ namespace SCPBrowser
                 Console.WriteLine($"Project opened: {projectInfo.ProjectName}");
                 Console.WriteLine($"Created: {projectInfo.CreatedDate}");
                 Console.WriteLine($"Location: {Path.GetDirectoryName(projectDbPath)}");
+
+                ProjectBrowserMenuItem.IsEnabled = true;
             }
             catch (Exception ex)
             {
@@ -195,6 +197,8 @@ namespace SCPBrowser
             ImportOmicProfileMenuItem.IsEnabled = false;
             ImportGoAnnotationsMenuItem.IsEnabled = false;
             CloseProjectMenuItem.IsEnabled = false;
+
+            ProjectBrowserMenuItem.IsEnabled = false;
 
             // Clear tabs (future implementation)
             // MainControlTab.ClearData();
@@ -262,9 +266,12 @@ namespace SCPBrowser
             SettingsDialog.Visibility = Visibility.Visible;
         }
 
-        private void ProjectBrowser_Click(object sender, RoutedEventArgs e)
+        private async void ProjectBrowser_Click(object sender, RoutedEventArgs e)
         {
-            ProjectBrowserDialog.Visibility = Visibility.Visible;
+            if (!_hasOpenProject)
+                return;
+
+            await ProjectBrowserDialog.ShowWithDatabaseAsync(_projectReferenceDatabasePath);
         }
 
         private void About_Click(object sender, RoutedEventArgs e)

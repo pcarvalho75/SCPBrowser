@@ -501,16 +501,14 @@ namespace SCPBrowser
         private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             // Tab switching logic - can be implemented later as needed
-            if (MainTabControl.SelectedItem == GoEnrichmentTabItem)
-            {
-                // TODO: Implement when integrating with project data
-                // GoEnrichmentTab.RefreshFromMainControl(MainControlTab);
-            }
         }
 
         private void MainControlTab_DataLoaded(object sender, EventArgs e)
         {
             Console.WriteLine("MainControlTab_DataLoaded event fired");
+
+            WelcomeScreen.Visibility = Visibility.Collapsed;
+            MainTabControl.Visibility = Visibility.Visible;
 
             // Get the loaded data from MainControlTab
             var data = MainControlTab.GetCurrentData();
@@ -599,7 +597,7 @@ namespace SCPBrowser
 
         private void LoadParquet(object sender, RoutedEventArgs e)
         {
-
+            MainControlTab.OpenDiannFile();
         }
     }
 }

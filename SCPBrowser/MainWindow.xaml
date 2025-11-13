@@ -174,9 +174,6 @@
                 <TabItem Header="Protein Matrix">
                     <local:ProteinMatrixControl x:Name="ProteinMatrixTab"/>
                 </TabItem>
-                <TabItem Header="GO Enrichment" x:Name="GoEnrichmentTabItem">
-                    <local:GoEnrichmentTabControl x:Name="GoEnrichmentTab"/>
-                </TabItem>
             </TabControl>
 
             <!-- Settings Dialog -->

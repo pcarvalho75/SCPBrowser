@@ -173,26 +173,53 @@ namespace SCPBrowser
         {
             if (string.IsNullOrEmpty(parquetFilePath))
             {
+                // No data has been imported yet
+                StatusPanel.Visibility = Visibility.Collapsed;
+                TotalRunsText.Text = "0";
+                TotalProteinsText.Text = "0";
+                TotalPeptidesText.Text = "0";
                 StatusText.Text = "Project open. Please import a Parquet file to see data.";
                 ReloadButton.IsEnabled = false;
-                // DO NOT attempt to load reference data, _currentData is null.
+
+                MessageBox.Show(
+                    "No data found in this project.\n\n" +
+                    "To get started:\n" +
+                    "1. Go to Import → Parquet File...\n" +
+                    "2. Select your DIA-NN parquet file\n" +
+                    "3. Assign biological conditions\n" +
+                    "4. Click Import",
+                    "No Data Available",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+
                 return;
             }
 
             if (!File.Exists(parquetFilePath))
             {
-                StatusText.Text = $"Error: Associated data file not found at {parquetFilePath}.";
-                ReloadButton.IsEnabled = false; // Can't reload if file is missing
-                // DO NOT attempt to load reference data, _currentData is null.
+                // File was imported but now missing
+                StatusPanel.Visibility = Visibility.Collapsed;
+                TotalRunsText.Text = "0";
+                TotalProteinsText.Text = "0";
+                TotalPeptidesText.Text = "0";
+                StatusText.Text = $"Error: Data file not found at {Path.GetFileName(parquetFilePath)}";
+                ReloadButton.IsEnabled = false;
+
+                MessageBox.Show(
+                    $"Associated data file not found:\n\n{Path.GetFileName(parquetFilePath)}\n\n" +
+                    $"Expected location:\n{parquetFilePath}\n\n" +
+                    "The file may have been moved or deleted. Please re-import your data.",
+                    "Data File Missing",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+
                 return;
             }
 
+            // File exists - load it normally
             _currentFilePath = parquetFilePath;
             _currentFileDirectory = Path.GetDirectoryName(parquetFilePath);
 
-            // Now call the existing data loading logic.
-            // LoadDataAsync() will correctly populate _currentData
-            // and THEN call the analysis methods itself.
             await LoadDataAsync();
         }
 
@@ -254,9 +281,6 @@ namespace SCPBrowser
 
                 StatusPanel.Visibility = Visibility.Visible;
 
-                // Raise event to hide the logo overlay
-                DataLoaded?.Invoke(this, EventArgs.Empty);
-
                 if (mainWindow != null)
                 {
                     mainWindow.LoadingOverlay.SetProgress("Loading reference databases...");
@@ -274,6 +298,10 @@ namespace SCPBrowser
                 {
                     mainWindow.LoadingOverlay.Hide();
                 }
+
+                // *** CRITICAL FIX: Raise the DataLoaded event after everything is loaded ***
+                Console.WriteLine("Raising DataLoaded event to populate other tabs");
+                DataLoaded?.Invoke(this, EventArgs.Empty);
             }
             catch (Exception ex)
             {

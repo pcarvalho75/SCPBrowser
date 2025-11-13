@@ -114,23 +114,26 @@ namespace SCPBrowser
 
                 UpdateWindowTitle(projectInfo.ProjectName);
 
-                // --- NEW LOGIC TO LOAD DATA ---
+                // Find and load the last imported parquet file
                 LoadingOverlay.SetProgress("Finding associated data...");
 
-                // 1. Find the last imported parquet file from the database
                 string lastImportedFile = await _projectService.GetLastImportedParquetFileAsync();
                 string parquetPath = null;
 
                 if (!string.IsNullOrEmpty(lastImportedFile))
                 {
-                    // 2. Construct the full path to that file
                     string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
                     parquetPath = Path.Combine(projectDirectory, "imports", lastImportedFile);
 
                     if (!File.Exists(parquetPath))
                     {
-                        LoadingOverlay.SetProgress($"Data file {lastImportedFile} not found. Please re-import.");
-                        parquetPath = null; // Set to null so main control shows a helpful message
+                        LoadingOverlay.Hide();
+                        MessageBox.Show(
+                            $"Data file '{lastImportedFile}' not found in imports folder.\n\nPlease re-import your data.",
+                            "Data File Missing",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        parquetPath = null;
                     }
                     else
                     {
@@ -142,11 +145,9 @@ namespace SCPBrowser
                     LoadingOverlay.SetProgress("No data imported yet. Please import a Parquet file.");
                 }
 
-                // 3. Tell MainControlTab to load this file
-                // This will trigger LoadDataAsync, which in turn fires the DataLoaded event.
-                // Our PREVIOUS fix will then catch this event and populate the other tabs.
+                // Load data into MainControlTab
+                // This will trigger the DataLoaded event which populates other tabs
                 await MainControlTab.LoadDataFromProject(parquetPath);
-                // --- END NEW LOGIC ---
 
                 LoadingOverlay.Hide();
 
@@ -157,13 +158,12 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 LoadingOverlay.Hide();
-                CloseProject(); // Reset the UI if opening fails
+                CloseProject();
                 MessageBox.Show(
                     $"Error opening project:\n\n{ex.Message}",
                     "Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
-                // Do not re-throw, just show the error to the user.
             }
         }
 
@@ -510,7 +510,61 @@ namespace SCPBrowser
 
         private void MainControlTab_DataLoaded(object sender, EventArgs e)
         {
-            // Data loaded event - can be used to update other tabs if needed
+            Console.WriteLine("MainControlTab_DataLoaded event fired");
+
+            // Get the loaded data from MainControlTab
+            var data = MainControlTab.GetCurrentData();
+
+            if (data == null)
+            {
+                Console.WriteLine("No data to populate other tabs");
+                return;
+            }
+
+            Console.WriteLine($"Populating tabs with data: {data.TotalRawFiles} runs, {data.TotalProteinGroups} proteins");
+
+            // Populate PeptideTicTab
+            try
+            {
+                var fileDirectory = MainControlTab.GetCurrentFileDirectory();
+                PeptideTicTab.SetImageBaseDirectory(fileDirectory);
+                PeptideTicTab.UpdateChart(data);
+
+                // Set predictions if available
+                var predictions = MainControlTab.GetCellTypePredictions();
+                if (predictions != null && predictions.Count > 0)
+                {
+                    var colorMap = MainControlTab.GetCellTypeColorMap();
+                    PeptideTicTab.SetCellTypePredictions(predictions, colorMap);
+                }
+
+                // Set GO enrichment if available
+                var goResults = MainControlTab.GetGoEnrichmentResults();
+                if (goResults != null && goResults.Count > 0)
+                {
+                    var goColorMap = MainControlTab.GetGoTermColorMap();
+                    PeptideTicTab.SetGoEnrichmentResults(goResults, goColorMap);
+                }
+
+                Console.WriteLine("PeptideTicTab populated successfully");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error populating PeptideTicTab: {ex.Message}");
+            }
+
+            // Populate ProteinMatrixTab
+            try
+            {
+                ProteinMatrixTab.UpdateMatrix(data);
+                Console.WriteLine("ProteinMatrixTab populated successfully");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error populating ProteinMatrixTab: {ex.Message}");
+            }
+
+            Console.WriteLine("All tabs populated from loaded data");
         }
 
         // ==================== PROGRESS REPORTER ====================
@@ -541,6 +595,11 @@ namespace SCPBrowser
                     await Task.Delay(10);
                 }, System.Windows.Threading.DispatcherPriority.Render);
             }
+        }
+
+        private void LoadParquet(object sender, RoutedEventArgs e)
+        {
+
         }
     }
 }

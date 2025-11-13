@@ -29,6 +29,9 @@ namespace SCPBrowser
 
             // CRITICAL: Ensure loading overlay is hidden on startup
             LoadingOverlay.Hide();
+
+            // Load recent projects
+            LoadRecentProjectsUI();
         }
 
         // ==================== PROJECT MANAGEMENT ====================
@@ -155,6 +158,8 @@ namespace SCPBrowser
                 Console.WriteLine($"Created: {projectInfo.CreatedDate}");
                 Console.WriteLine($"Location: {Path.GetDirectoryName(projectDbPath)}");
 
+                AddToRecentProjects(projectDbPath);
+
                 ProjectBrowserMenuItem.IsEnabled = true;
             }
             catch (Exception ex)
@@ -167,6 +172,24 @@ namespace SCPBrowser
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
+        }
+
+        private void LoadRecentProjectsUI()
+        {
+            var recentProjects = GetRecentProjects();
+
+            if (recentProjects.Count > 0)
+            {
+                RecentProjectsList.ItemsSource = recentProjects;
+                NoRecentProjectsText.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                RecentProjectsList.ItemsSource = null;
+                NoRecentProjectsText.Visibility = Visibility.Visible;
+            }
+
+            Console.WriteLine($"Loaded {recentProjects.Count} recent projects for display");
         }
 
         private void CloseProject_Click(object sender, RoutedEventArgs e)
@@ -602,9 +625,104 @@ namespace SCPBrowser
             }
         }
 
+        // ==================== RECENT PROJECTS MANAGEMENT ====================
+
+        private void AddToRecentProjects(string projectPath)
+        {
+            // Initialize the collection if it's null
+            if (Settings.Default.RecentProjects == null)
+            {
+                Settings.Default.RecentProjects = new System.Collections.Specialized.StringCollection();
+            }
+
+            // Remove the project if it already exists (we'll add it to the front)
+            if (Settings.Default.RecentProjects.Contains(projectPath))
+            {
+                Settings.Default.RecentProjects.Remove(projectPath);
+            }
+
+            // Add to the beginning
+            Settings.Default.RecentProjects.Insert(0, projectPath);
+
+            // Keep only the last 5 projects
+            while (Settings.Default.RecentProjects.Count > 5)
+            {
+                Settings.Default.RecentProjects.RemoveAt(Settings.Default.RecentProjects.Count - 1);
+            }
+
+            // Save settings
+            Settings.Default.Save();
+
+            Console.WriteLine($"Added to recent projects: {projectPath}");
+        }
+
+        private List<string> GetRecentProjects()
+        {
+            var recentProjects = new List<string>();
+
+            if (Settings.Default.RecentProjects != null)
+            {
+                foreach (string projectPath in Settings.Default.RecentProjects)
+                {
+                    // Only include projects that still exist
+                    if (File.Exists(projectPath))
+                    {
+                        recentProjects.Add(projectPath);
+                    }
+                }
+            }
+
+            return recentProjects;
+        }
+
+        private void ClearRecentProjects()
+        {
+            if (Settings.Default.RecentProjects != null)
+            {
+                Settings.Default.RecentProjects.Clear();
+                Settings.Default.Save();
+            }
+        }
+
         private void LoadParquet(object sender, RoutedEventArgs e)
         {
             MainControlTab.OpenDiannFile();
+        }
+
+        private async void RecentProject_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is string projectPath)
+            {
+                Console.WriteLine($"Recent project clicked: {projectPath}");
+
+                // Check if the file still exists
+                if (!File.Exists(projectPath))
+                {
+                    var result = MessageBox.Show(
+                        $"This project file no longer exists:\n\n{projectPath}\n\nRemove it from recent projects?",
+                        "Project Not Found",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        // Remove from settings
+                        if (Settings.Default.RecentProjects != null && Settings.Default.RecentProjects.Contains(projectPath))
+                        {
+                            Settings.Default.RecentProjects.Remove(projectPath);
+                            Settings.Default.Save();
+                        }
+
+                        // Refresh the UI
+                        LoadRecentProjectsUI();
+                    }
+
+                    return;
+                }
+
+                // Open the project
+                await OpenProjectAsync(projectPath);
+            }
         }
     }
 }

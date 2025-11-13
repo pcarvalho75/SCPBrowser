@@ -6,6 +6,11 @@
         xmlns:local="clr-namespace:SCPBrowser"
         mc:Ignorable="d"
         Title="SCP Browser" Height="650" Width="950">
+    <Window.Resources>
+        <Converters:FileNameConverter x:Key="FileNameConverter"/>
+        <Converters:DirectoryConverter x:Key="DirectoryConverter"/>
+    </Window.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -14,7 +19,6 @@
             <!-- Main content area -->
         </Grid.RowDefinitions>
 
-        <!-- Menu Bar -->
         <!-- Menu Bar -->
         <Menu Grid.Row="0">
             <MenuItem Header="_File">
@@ -31,25 +35,25 @@
             </MenuItem>
             <MenuItem Header="_Import">
                 <MenuItem Header="_Parquet File..." 
-              x:Name="ImportParquetMenuItem"
-              Click="ImportParquet_Click"
-              IsEnabled="False"/>
+                  x:Name="ImportParquetMenuItem"
+                  Click="ImportParquet_Click"
+                  IsEnabled="False"/>
                 <Separator/>
                 <MenuItem Header="_Omic Profile (Transcriptomic)..." 
-              x:Name="ImportOmicProfileMenuItem"
-              Click="ImportOmicProfile_Click"
-              IsEnabled="False"/>
+                  x:Name="ImportOmicProfileMenuItem"
+                  Click="ImportOmicProfile_Click"
+                  IsEnabled="False"/>
                 <MenuItem Header="_GO Annotations..." 
-              x:Name="ImportGoAnnotationsMenuItem"
-              Click="CompileGoAnnotations_Click"
-              IsEnabled="False"/>
+                  x:Name="ImportGoAnnotationsMenuItem"
+                  Click="CompileGoAnnotations_Click"
+                  IsEnabled="False"/>
             </MenuItem>
             <MenuItem Header="_Utils">
                 <MenuItem Header="_Settings" Click="Settings_Click"/>
                 <MenuItem Header="_Project Browser" 
-              x:Name="ProjectBrowserMenuItem"
-              Click="ProjectBrowser_Click"
-              IsEnabled="False"/>
+                  x:Name="ProjectBrowserMenuItem"
+                  Click="ProjectBrowser_Click"
+                  IsEnabled="False"/>
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Click="About_Click"/>
@@ -63,104 +67,219 @@
                     Background="White"
                     Visibility="Visible"
                     Panel.ZIndex="1">
-                <StackPanel HorizontalAlignment="Center" 
-                           VerticalAlignment="Center"
-                           Width="400">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="280"/>
+                    </Grid.ColumnDefinitions>
 
-                    <!-- Logo/Icon -->
-                    <Border Margin="0,0,0,30" HorizontalAlignment="Center">
-                        <Image Source="images/logo.png"   HorizontalAlignment="Center"  VerticalAlignment="Center"/>
-                    </Border>
+                    <!-- Main Welcome Content (Left Side) -->
+                    <!-- Main Welcome Content (Left Side) -->
+                    <Grid Grid.Column="0" Background="White">
+                        <Border Background="White"
+            BorderBrush="#cbd5e1"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="40"
+            Margin="10">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" 
+                            Opacity="0.05" 
+                            BlurRadius="10" 
+                            ShadowDepth="2"/>
+                            </Border.Effect>
+                            <StackPanel HorizontalAlignment="Center" 
+                   VerticalAlignment="Center"
+                   Width="380">
 
-                    <!-- Welcome Text -->
-                    <TextBlock Text="Welcome to SCP Browser" 
-                              FontSize="24" 
-                              FontWeight="Bold"
-                              Foreground="#0f172a"
-                              TextAlignment="Center"
-                              Margin="0,0,0,10"/>
-
-                    <TextBlock Text="Single Cell Proteomics Analysis Platform" 
-                              FontSize="13"
-                              Foreground="#64748b"
-                              TextAlignment="Center"
-                              Margin="0,0,0,40"/>
-
-                    <!-- Action Buttons -->
-                    <Button Content="📁 Create New Project"
-                           Click="NewProject_Click"
-                           Height="45"
-                           FontSize="14"
-                           FontWeight="SemiBold"
-                           Margin="0,0,0,15"
-                           Background="#2563eb"
-                           Foreground="White"
-                           BorderThickness="0"
-                           Cursor="Hand">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}"
-                                       CornerRadius="6"
-                                       Padding="20,12">
-                                    <ContentPresenter HorizontalAlignment="Center" 
-                                                    VerticalAlignment="Center"/>
+                                <!-- Logo/Icon -->
+                                <Border Margin="0,0,0,30" HorizontalAlignment="Center">
+                                    <Image Source="images/logo.png" 
+                       HorizontalAlignment="Center"  
+                       VerticalAlignment="Center"/>
                                 </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#1d4ed8"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
 
-                    <Button Content="📂 Open Existing Project"
-                           Click="OpenProject_Click"
-                           Height="45"
-                           FontSize="14"
-                           FontWeight="SemiBold"
-                           Background="#f1f5f9"
-                           Foreground="#334155"
-                           BorderThickness="0"
-                           Cursor="Hand">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}"
-                                       CornerRadius="6"
-                                       Padding="20,12">
-                                    <ContentPresenter HorizontalAlignment="Center" 
-                                                    VerticalAlignment="Center"/>
-                                </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#e2e8f0"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                                <!-- Welcome Text -->
+                                <TextBlock Text="Welcome to SCP Browser" 
+                      FontSize="24" 
+                      FontWeight="Bold"
+                      Foreground="#0f172a"
+                      TextAlignment="Center"
+                      Margin="0,0,0,10"/>
 
-                    <!-- Recent Projects (placeholder for future) -->
-                    <TextBlock Text="Recent Projects" 
-                              FontSize="12"
-                              FontWeight="SemiBold"
-                              Foreground="#64748b"
-                              Margin="0,30,0,10"
-                              TextAlignment="Center"/>
-                    <TextBlock Text="No recent projects" 
+                                <TextBlock Text="Single Cell Proteomics Analysis Platform" 
+                      FontSize="13"
+                      Foreground="#64748b"
+                      TextAlignment="Center"
+                      Margin="0,0,0,40"/>
+
+                                <!-- Action Buttons -->
+                                <Button Content="➕ Create New Project"
+                   Click="NewProject_Click"
+                   Height="50"
+                   FontSize="15"
+                   FontWeight="SemiBold"
+                   Background="#0ea5e9"
+                   Foreground="White"
+                   BorderThickness="0"
+                   Cursor="Hand"
+                   Margin="0,0,0,15">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                               CornerRadius="8"
+                               Padding="20,12">
+                                                <ContentPresenter HorizontalAlignment="Center" 
+                                            VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#0284c7"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+
+                                <Button Content="📂 Open Existing Project"
+                   Click="OpenProject_Click"
+                   Height="45"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   Background="#f1f5f9"
+                   Foreground="#334155"
+                   BorderThickness="0"
+                   Cursor="Hand">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                               CornerRadius="6"
+                               Padding="20,12">
+                                                <ContentPresenter HorizontalAlignment="Center" 
+                                            VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#e2e8f0"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- Recent Projects Panel (Right Side) -->
+                    <Grid Grid.Column="1" Background="#f1f5f9">
+                        <Border Background="White"
+            BorderBrush="#cbd5e1"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="20" Margin="10">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" 
+                            Opacity="0.05" 
+                            BlurRadius="10" 
+                            ShadowDepth="2"/>
+                            </Border.Effect>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- Recent Projects Header -->
+                                <StackPanel Grid.Row="0" Margin="0,0,0,15">
+                                    <TextBlock Text="📌 Recent Projects" 
+                          FontSize="14"
+                          FontWeight="Bold"
+                          Foreground="#334155"
+                          Margin="0,0,0,5"/>
+                                    <TextBlock Text="Quick access to your recent work" 
+                          FontSize="11"
+                          Foreground="#64748b"/>
+                                </StackPanel>
+
+                                <!-- Recent Projects List -->
+                                <ScrollViewer Grid.Row="1" 
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Disabled">
+                                    <StackPanel>
+                                        <!-- List Container -->
+                                        <ItemsControl x:Name="RecentProjectsList">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Click="RecentProject_Click"
+                                       Tag="{Binding}"
+                                       Margin="0,0,0,8"
+                                       Padding="12,10"
+                                       HorizontalContentAlignment="Stretch"
+                                       Background="#f8fafc"
+                                       BorderBrush="#cbd5e1"
+                                       BorderThickness="1"
+                                       Cursor="Hand">
+                                                        <Button.Template>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border Background="{TemplateBinding Background}"
+                                                   BorderBrush="{TemplateBinding BorderBrush}"
+                                                   BorderThickness="{TemplateBinding BorderThickness}"
+                                                   CornerRadius="6"
+                                                   Padding="{TemplateBinding Padding}">
+                                                                    <ContentPresenter/>
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Button.Template>
+                                                        <Button.Style>
+                                                            <Style TargetType="Button">
+                                                                <Style.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter Property="Background" Value="#e0f2fe"/>
+                                                                        <Setter Property="BorderBrush" Value="#0ea5e9"/>
+                                                                    </Trigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Button.Style>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding Converter={StaticResource FileNameConverter}}" 
+                                                  FontSize="12"
+                                                  FontWeight="SemiBold"
+                                                  Foreground="#0f172a"
+                                                  TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding Converter={StaticResource DirectoryConverter}}" 
+                                                  FontSize="10"
+                                                  Foreground="#64748b"
+                                                  TextTrimming="CharacterEllipsis"
+                                                  Margin="0,2,0,0"/>
+                                                        </StackPanel>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <!-- No Recent Projects Message -->
+                                        <TextBlock x:Name="NoRecentProjectsText"
+                              Text="No recent projects yet"
                               FontSize="11"
                               Foreground="#94a3b8"
                               FontStyle="Italic"
-                              TextAlignment="Center"/>
-                </StackPanel>
+                              TextAlignment="Center"
+                              Margin="0,40,0,0"
+                              Visibility="Collapsed"/>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
             </Border>
 
             <!-- TabControl - Main application interface (hidden initially) -->

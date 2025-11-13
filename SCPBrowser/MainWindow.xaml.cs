@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,10 +12,15 @@ namespace SCPBrowser
 {
     public partial class MainWindow : Window
     {
-        // NEW: Project management fields
+        // Project management fields
         private string _currentProjectPath;
         private ProjectDataService _projectService;
         private bool _hasOpenProject = false;
+        private string _projectReferenceDatabasePath;
+
+        // Public properties for controls to access
+        public bool HasOpenProject => _hasOpenProject;
+        public string ProjectReferenceDatabasePath => _projectReferenceDatabasePath;
 
         public MainWindow()
         {
@@ -93,10 +99,15 @@ namespace SCPBrowser
 
                 _hasOpenProject = true;
 
+                // The project database IS the reference database (unified)
+                _projectReferenceDatabasePath = projectDbPath;
+
                 // Update UI
                 WelcomeScreen.Visibility = Visibility.Collapsed;
                 MainTabControl.Visibility = Visibility.Visible;
                 ImportParquetMenuItem.IsEnabled = true;
+                ImportOmicProfileMenuItem.IsEnabled = true;
+                ImportGoAnnotationsMenuItem.IsEnabled = true;
                 CloseProjectMenuItem.IsEnabled = true;
 
                 UpdateWindowTitle(projectInfo.ProjectName);
@@ -133,11 +144,14 @@ namespace SCPBrowser
             _currentProjectPath = null;
             _projectService = null;
             _hasOpenProject = false;
+            _projectReferenceDatabasePath = null;
 
             // Reset UI
             WelcomeScreen.Visibility = Visibility.Visible;
             MainTabControl.Visibility = Visibility.Collapsed;
             ImportParquetMenuItem.IsEnabled = false;
+            ImportOmicProfileMenuItem.IsEnabled = false;
+            ImportGoAnnotationsMenuItem.IsEnabled = false;
             CloseProjectMenuItem.IsEnabled = false;
 
             // Clear tabs (future implementation)
@@ -145,7 +159,6 @@ namespace SCPBrowser
             // PeptideTicTab.ClearData();
             // ProteinMatrixTab.ClearData();
             // GoEnrichmentTab.ClearData();
-            // CellTypeTab.ClearData();
 
             UpdateWindowTitle();
 
@@ -207,9 +220,9 @@ namespace SCPBrowser
             SettingsDialog.Visibility = Visibility.Visible;
         }
 
-        private void DBBrowser_Click(object sender, RoutedEventArgs e)
+        private void ProjectBrowser_Click(object sender, RoutedEventArgs e)
         {
-            DBBrowserDialog.Visibility = Visibility.Visible;
+            ProjectBrowserDialog.Visibility = Visibility.Visible;
         }
 
         private void About_Click(object sender, RoutedEventArgs e)
@@ -223,16 +236,11 @@ namespace SCPBrowser
                 MessageBoxImage.Information);
         }
 
-
-
-
-        // ==================== IMPORT MENU ====================
-
         // ==================== IMPORT MENU ====================
 
         private async void ImportOmicProfile_Click(object sender, RoutedEventArgs e)
         {
-            // Check if a project is open
+            // Project check - menu item is disabled when no project is open
             if (!_hasOpenProject || _projectService == null)
             {
                 MessageBox.Show(
@@ -264,7 +272,7 @@ namespace SCPBrowser
             {
                 Filter = "TSV files (*.tsv)|*.tsv|Text files (*.txt)|*.txt|All files (*.*)|*.*",
                 Title = "Select Cell Metadata TSV File",
-                InitialDirectory = Path.GetDirectoryName(expressionFilePath) // Start from same directory as expression file
+                InitialDirectory = Path.GetDirectoryName(expressionFilePath)
             };
 
             if (metadataDialog.ShowDialog() != true)
@@ -272,25 +280,16 @@ namespace SCPBrowser
 
             string metadataFilePath = metadataDialog.FileName;
 
-            // Get the reference database path from Settings
-            string referenceDatabasePath = Settings.Default.ReferenceDatabasePath;
-
-            if (string.IsNullOrEmpty(referenceDatabasePath))
-            {
-                MessageBox.Show(
-                    "No reference database configured.\n\nPlease configure a reference database path in Settings first.",
-                    "Configuration Required",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                return;
-            }
+            // Use the project database directly (unified database)
+            string referenceDatabasePath = _projectReferenceDatabasePath;
 
             // Confirm the import
             var result = MessageBox.Show(
-                $"Import transcriptomic data to reference database?\n\n" +
+                $"Import transcriptomic data to project database?\n\n" +
                 $"Expression Matrix: {Path.GetFileName(expressionFilePath)}\n" +
                 $"Cell Metadata: {Path.GetFileName(metadataFilePath)}\n\n" +
-                $"Target Database: {referenceDatabasePath}",
+                $"Target Database: {Path.GetFileName(referenceDatabasePath)}\n" +
+                $"Location: {Path.GetDirectoryName(referenceDatabasePath)}",
                 "Confirm Import",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
@@ -314,15 +313,9 @@ namespace SCPBrowser
 
                 var referenceService = new ReferenceDataService();
 
-                // Create database if it doesn't exist
-                if (!File.Exists(referenceDatabasePath))
-                {
-                    progressReporter.ReportProgress("Creating new reference database...");
-                    await referenceService.CreateDatabaseAsync(referenceDatabasePath);
-                }
-
-                // Write transcriptomic data to the reference database
-                progressReporter.ReportProgress("Writing to reference database...");
+                // Write transcriptomic data to the project database
+                // (database already exists from project creation)
+                progressReporter.ReportProgress("Writing to project database...");
                 await referenceService.WriteTranscriptomicDataAsync(
                     referenceDatabasePath,
                     parsedData,
@@ -336,7 +329,7 @@ namespace SCPBrowser
                     $"Cell Types: {parsedData.CellTypeProfiles.Count:N0}\n" +
                     $"Total Cells: {parsedData.CellTypeMetadata.Sum(m => m.CellCount):N0}\n" +
                     $"Total Genes: {parsedData.CellTypeProfiles.FirstOrDefault()?.MedianExpression.Count ?? 0:N0}\n\n" +
-                    $"Database: {referenceDatabasePath}",
+                    $"Database: {Path.GetFileName(referenceDatabasePath)}",
                     "Import Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -357,6 +350,17 @@ namespace SCPBrowser
 
         private async void CompileGoAnnotations_Click(object sender, RoutedEventArgs e)
         {
+            // Project check - menu item is disabled when no project is open
+            if (!_hasOpenProject || _projectService == null)
+            {
+                MessageBox.Show(
+                    "Please open or create a project first.\n\nGO annotations import requires an active project.",
+                    "No Project Open",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
             var oboDialog = new OpenFileDialog
             {
                 Filter = "OBO files (*.obo)|*.obo|All files (*.*)|*.*",
@@ -375,14 +379,21 @@ namespace SCPBrowser
             if (gafDialog.ShowDialog() != true)
                 return;
 
-            var saveDialog = new SaveFileDialog
-            {
-                Filter = "SQLite Database (*.db)|*.db|All files (*.*)|*.*",
-                Title = "Select Reference Database (will be created or appended to)",
-                FileName = "reference_data.db"
-            };
+            // Use the project database directly (unified database)
+            string referenceDatabasePath = _projectReferenceDatabasePath;
 
-            if (saveDialog.ShowDialog() != true)
+            // Confirm the import
+            var result = MessageBox.Show(
+                $"Compile GO annotations to project database?\n\n" +
+                $"GO Slim OBO: {Path.GetFileName(oboDialog.FileName)}\n" +
+                $"GOA GAF: {Path.GetFileName(gafDialog.FileName)}\n\n" +
+                $"Target Database: {Path.GetFileName(referenceDatabasePath)}\n" +
+                $"Location: {Path.GetDirectoryName(referenceDatabasePath)}",
+                "Confirm Compilation",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
                 return;
 
             var progressReporter = new UIProgressReporter(LoadingOverlay);
@@ -404,46 +415,39 @@ namespace SCPBrowser
 
                 var referenceService = new ReferenceDataService();
 
-                if (!File.Exists(saveDialog.FileName))
-                {
-                    progressReporter.ReportProgress("Creating new database...");
-                    await referenceService.CreateDatabaseAsync(saveDialog.FileName);
-                }
-
+                // Write to project database (already exists, no need to create)
                 await referenceService.WriteGoAnnotationsAsync(
-                    saveDialog.FileName,
+                    referenceDatabasePath,
                     goSlimDatabase,
                     compiledDatabase,
                     true,
                     progressReporter);
 
                 progressReporter.ReportMessage("Verifying Database");
-                progressReporter.ReportProgress("Reading data back...");
+                progressReporter.ReportProgress("Loading data back to verify...");
 
-                var (loadedGoSlim, loadedAnnotations) = await referenceService.LoadGoAnnotationsAsync(
-                    saveDialog.FileName);
-
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-                await Task.Delay(500);
+                var (loadedGoSlim, loadedAnnotations) = await referenceService.LoadGoAnnotationsAsync(referenceDatabasePath);
 
                 LoadingOverlay.Hide();
 
                 MessageBox.Show(
                     $"GO annotations compiled successfully!\n\n" +
-                    $"GO Terms: {loadedGoSlim.TotalTerms:N0}\n" +
+                    $"GO Terms: {loadedGoSlim.Terms.Count:N0}\n" +
                     $"Annotated Proteins: {loadedAnnotations.TotalProteins:N0}\n" +
                     $"Total Annotations: {loadedAnnotations.TotalAnnotations:N0}\n\n" +
-                    $"Database: {saveDialog.FileName}",
+                    $"Database: {Path.GetFileName(referenceDatabasePath)}",
                     "Compilation Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
+
+                Console.WriteLine($"GO annotations compiled to: {referenceDatabasePath}");
             }
             catch (Exception ex)
             {
                 LoadingOverlay.Hide();
+                Console.WriteLine($"Error compiling GO annotations: {ex.Message}");
                 MessageBox.Show(
-                    $"Error during compilation:\n\n{ex.Message}",
+                    $"Error compiling GO annotations:\n\n{ex.Message}",
                     "Compilation Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
@@ -452,7 +456,7 @@ namespace SCPBrowser
 
         // ==================== TAB CONTROL HANDLERS ====================
 
-        private void MainTabControl_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             // Tab switching logic - can be implemented later as needed
             if (MainTabControl.SelectedItem == GoEnrichmentTabItem)
@@ -495,11 +499,6 @@ namespace SCPBrowser
                     await Task.Delay(10);
                 }, System.Windows.Threading.DispatcherPriority.Render);
             }
-        }
-
-        private void ProjectBrowser_Click(object sender, RoutedEventArgs e)
-        {
-
         }
     }
 }

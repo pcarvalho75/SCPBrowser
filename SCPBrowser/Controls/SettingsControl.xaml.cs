@@ -19,38 +19,6 @@ namespace SCPBrowser
         {
             PValueUpDown.Value = Settings.Default.GOPValueCutoff;
             MinOverlapUpDown.Value = Settings.Default.GOMinimumOverlap;
-
-            string dbPath = Settings.Default.ReferenceDatabasePath;
-
-            // Initialize default path if empty
-            if (string.IsNullOrEmpty(dbPath))
-            {
-                // Default to Documents/SCPBrowser/reference_data.db
-                var documentsFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                var scpBrowserFolder = Path.Combine(documentsFolder, "SCPBrowser");
-
-                // Create the folder if it doesn't exist
-                try
-                {
-                    if (!Directory.Exists(scpBrowserFolder))
-                    {
-                        Directory.CreateDirectory(scpBrowserFolder);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Could not create SCPBrowser folder: {ex.Message}",
-                        "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-
-                dbPath = Path.Combine(scpBrowserFolder, "reference_data.db");
-
-                // Save this default path
-                Settings.Default.ReferenceDatabasePath = dbPath;
-                Settings.Default.Save();
-            }
-
-            DatabasePathTextBox.Text = dbPath;
         }
 
         private void SaveSettings_Click(object sender, RoutedEventArgs e)
@@ -74,7 +42,6 @@ namespace SCPBrowser
             // Save settings
             Settings.Default.GOPValueCutoff = PValueUpDown.Value.Value;
             Settings.Default.GOMinimumOverlap = MinOverlapUpDown.Value.Value;
-            Settings.Default.ReferenceDatabasePath = DatabasePathTextBox.Text;
             Settings.Default.Save();
 
             // Show success message
@@ -94,36 +61,7 @@ namespace SCPBrowser
                 PValueUpDown.Value = 0.05;
                 MinOverlapUpDown.Value = 2;
 
-                var documentsFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                var scpBrowserFolder = Path.Combine(documentsFolder, "SCPBrowser");
-                DatabasePathTextBox.Text = Path.Combine(scpBrowserFolder, "reference_data.db");
-
                 ShowStatusMessage("Settings reset to defaults (click Save to apply)", false);
-            }
-        }
-
-        private void BrowseDatabasePath_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new OpenFileDialog
-            {
-                Filter = "SQLite Database (*.db)|*.db|All files (*.*)|*.*",
-                Title = "Select Reference Database",
-                CheckFileExists = false
-            };
-
-            // Start from current path if it exists
-            if (!string.IsNullOrEmpty(DatabasePathTextBox.Text))
-            {
-                var dir = Path.GetDirectoryName(DatabasePathTextBox.Text);
-                if (Directory.Exists(dir))
-                {
-                    dialog.InitialDirectory = dir;
-                }
-            }
-
-            if (dialog.ShowDialog() == true)
-            {
-                DatabasePathTextBox.Text = dialog.FileName;
             }
         }
 

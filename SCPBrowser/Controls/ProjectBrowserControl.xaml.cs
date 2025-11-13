@@ -13,23 +13,23 @@ using SCPBrowser.Services;
 
 namespace SCPBrowser
 {
-    public partial class DBBrowserControl : UserControl
+    public partial class ProjectBrowserControl : UserControl
     {
         private ReferenceDataService _referenceService;
         private GoSlimDatabase _goSlimDatabase;
         private GoAnnotationDatabase _goAnnotations;
         private TranscriptomicDatabase _transcriptomicData;
 
-        public DBBrowserControl()
+        public ProjectBrowserControl()
         {
             InitializeComponent();
             _referenceService = new ReferenceDataService();
-            Console.WriteLine("DBBrowserControl initialized");
+            Console.WriteLine("ProjectBrowserControl initialized");
         }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
-            Console.WriteLine("Closing DB Browser...");
+            Console.WriteLine("Closing Project Browser...");
 
             // Simply hide this control - no need to reference DBBrowserOverlay
             this.Visibility = Visibility.Collapsed;

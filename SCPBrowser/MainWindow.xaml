@@ -30,14 +30,18 @@
             </MenuItem>
             <MenuItem Header="_Import">
                 <MenuItem Header="_Parquet File..." 
-                  x:Name="ImportParquetMenuItem"
-                  Click="ImportParquet_Click"
-                  IsEnabled="False"/>
+              x:Name="ImportParquetMenuItem"
+              Click="ImportParquet_Click"
+              IsEnabled="False"/>
                 <Separator/>
                 <MenuItem Header="_Omic Profile (Transcriptomic)..." 
-                  Click="ImportOmicProfile_Click"/>
+              x:Name="ImportOmicProfileMenuItem"
+              Click="ImportOmicProfile_Click"
+              IsEnabled="False"/>
                 <MenuItem Header="_GO Annotations..." 
-                  Click="CompileGoAnnotations_Click"/>
+              x:Name="ImportGoAnnotationsMenuItem"
+              Click="CompileGoAnnotations_Click"
+              IsEnabled="False"/>
             </MenuItem>
             <MenuItem Header="_Utils">
                 <MenuItem Header="_Settings" Click="Settings_Click"/>
@@ -179,10 +183,10 @@
                                    Visibility="Collapsed"
                                    Panel.ZIndex="2"/>
 
-            <!-- DB Browser Dialog -->
-            <local:DBBrowserControl x:Name="DBBrowserDialog"
-                                    Visibility="Collapsed"
-                                    Panel.ZIndex="2"/>
+            <!-- Project Browser Dialog -->
+            <local:ProjectBrowserControl x:Name="ProjectBrowserDialog"
+                        Visibility="Collapsed"
+                        Panel.ZIndex="2"/>
 
             <!-- Loading Overlay -->
             <local:LoadingOverlay x:Name="LoadingOverlay" 

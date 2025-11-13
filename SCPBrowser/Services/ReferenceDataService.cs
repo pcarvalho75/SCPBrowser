@@ -9,75 +9,12 @@ using SCPBrowser.GOTools;
 namespace SCPBrowser.Services
 {
     /// <summary>
-    /// Unified service for managing all reference data in a single SQLite database
-    /// Handles cell type profiles (transcriptomic data), GO terms, and GO annotations
+    /// Service for managing reference data (GO annotations and transcriptomic data)
+    /// within the project database. No longer creates separate databases - works with
+    /// the unified project database created by ProjectDataService.
     /// </summary>
     public class ReferenceDataService
     {
-        public async Task CreateDatabaseAsync(string outputPath)
-        {
-            if (File.Exists(outputPath))
-                File.Delete(outputPath);
-
-            var connectionString = $"Data Source={outputPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-                await CreateSchemaAsync(connection);
-            }
-        }
-
-        private async Task CreateSchemaAsync(SqliteConnection connection)
-        {
-            using (var command = connection.CreateCommand())
-            {
-                command.CommandText = @"
-            -- Cell type profiles table (aggregated gene expression by cell type)
-            CREATE TABLE IF NOT EXISTS cell_type_profiles (
-                cell_type TEXT NOT NULL,
-                gene_name TEXT NOT NULL,
-                median_expression REAL NOT NULL,
-                mean_expression REAL NOT NULL,
-                percent_expressing REAL NOT NULL,
-                PRIMARY KEY (cell_type, gene_name)
-            ) WITHOUT ROWID;
-
-            -- Cell type metadata table
-            CREATE TABLE IF NOT EXISTS cell_type_metadata (
-                cell_type TEXT PRIMARY KEY,
-                cell_count INTEGER NOT NULL,
-                genes_expressed INTEGER NOT NULL,
-                age_range TEXT,
-                batch_info TEXT
-            );
-
-            -- GO terms (GO Slim)
-            CREATE TABLE IF NOT EXISTS go_terms (
-                go_id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                namespace TEXT NOT NULL,
-                definition TEXT          -- ✅ ADDED: Store GO term definitions
-            );
-
-            -- Protein to GO term annotations
-            CREATE TABLE IF NOT EXISTS protein_go_annotations (
-                protein_id TEXT NOT NULL,
-                go_term_id TEXT NOT NULL,
-                PRIMARY KEY (protein_id, go_term_id)
-            );
-
-            -- Indexes
-            CREATE INDEX IF NOT EXISTS idx_cell_type_profiles_cell_type ON cell_type_profiles(cell_type);
-            CREATE INDEX IF NOT EXISTS idx_cell_type_profiles_gene ON cell_type_profiles(gene_name);
-            CREATE INDEX IF NOT EXISTS idx_protein_go ON protein_go_annotations(protein_id);
-            CREATE INDEX IF NOT EXISTS idx_go_protein ON protein_go_annotations(go_term_id);
-        ";
-
-                await command.ExecuteNonQueryAsync();
-            }
-        }
-
         // ==================== TRANSCRIPTOMIC DATA (CELL TYPE PROFILES) ====================
 
         /// <summary>
@@ -108,7 +45,7 @@ namespace SCPBrowser.Services
         }
 
         /// <summary>
-        /// Writes cell type profiles to the database (NEW: much faster than individual cells!)
+        /// Writes cell type profiles to the database
         /// </summary>
         public async Task WriteTranscriptomicDataAsync(
             string databasePath,
@@ -122,9 +59,7 @@ namespace SCPBrowser.Services
             {
                 await connection.OpenAsync();
 
-                // Ensure tables exist
-                progress?.ReportMessage("Creating database schema...");
-                await CreateSchemaAsync(connection);
+                // Tables are created by ProjectDataService, no need to ensure here
 
                 // Clear existing data if requested
                 if (clearExistingData)
@@ -154,7 +89,7 @@ namespace SCPBrowser.Services
                     await command.ExecuteNonQueryAsync();
                 }
 
-                // Write cell type profiles (NEW - much faster than individual cells!)
+                // Write cell type profiles
                 await WriteCellTypeProfilesAsync(connection, parsedData.CellTypeProfiles, progress);
 
                 // Write cell type metadata
@@ -206,10 +141,10 @@ namespace SCPBrowser.Services
                                 var gene = batch[j];
                                 var paramPrefix = $"@p{j}_";
 
-                                valuesClauses.Add($"({paramPrefix}cell_type, {paramPrefix}gene, {paramPrefix}median, {paramPrefix}mean, {paramPrefix}percent)");
+                                valuesClauses.Add($"({paramPrefix}cell_type, {paramPrefix}gene_name, {paramPrefix}median, {paramPrefix}mean, {paramPrefix}percent)");
 
                                 parameters.Add(new SqliteParameter($"{paramPrefix}cell_type", profile.CellType));
-                                parameters.Add(new SqliteParameter($"{paramPrefix}gene", gene));
+                                parameters.Add(new SqliteParameter($"{paramPrefix}gene_name", gene));
                                 parameters.Add(new SqliteParameter($"{paramPrefix}median", profile.MedianExpression[gene]));
                                 parameters.Add(new SqliteParameter($"{paramPrefix}mean", profile.MeanExpression[gene]));
                                 parameters.Add(new SqliteParameter($"{paramPrefix}percent", profile.PercentExpressing[gene]));
@@ -229,7 +164,8 @@ namespace SCPBrowser.Services
                     }
 
                     recordsWritten += batch.Count;
-                    if (recordsWritten % 5000 == 0 || recordsWritten == genes.Count)
+
+                    if (recordsWritten % 10000 == 0 || recordsWritten == totalRecords || i + batchSize >= genes.Count)
                     {
                         progress?.ReportProgress($"  {profile.CellType}: {recordsWritten} / {totalRecords} total genes written");
                     }
@@ -286,12 +222,12 @@ namespace SCPBrowser.Services
         }
 
         /// <summary>
-        /// Loads cell type profiles from the database (NEW: much faster than individual cells!)
+        /// Loads cell type profiles from the database
         /// </summary>
         public async Task<TranscriptomicDatabase> LoadTranscriptomicDataAsync(string databasePath, IProgressReporter progress = null)
         {
             if (!File.Exists(databasePath))
-                throw new FileNotFoundException("Reference database not found", databasePath);
+                throw new FileNotFoundException("Database not found", databasePath);
 
             var database = new TranscriptomicDatabase();
             var connectionString = $"Data Source={databasePath};Mode=ReadOnly";
@@ -327,47 +263,47 @@ namespace SCPBrowser.Services
                         }
                     }
                 }
-                progress?.ReportProgress($"Loaded metadata for {database.CellTypeMetadata.Count} cell types");
+
+                progress?.ReportMessage($"Loading cell type profiles for {database.CellTypeMetadata.Count} cell types...");
 
                 // Load cell type profiles
-                progress?.ReportMessage("Loading cell type gene expression profiles...");
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
                         SELECT cell_type, gene_name, median_expression, mean_expression, percent_expressing
                         FROM cell_type_profiles
-                        ORDER BY cell_type
+                        ORDER BY cell_type, gene_name
                     ";
-
-                    string currentCellType = null;
-                    CellTypeProfile currentProfile = null;
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
+                        string currentCellType = null;
+                        CellTypeProfile currentProfile = null;
                         int recordCount = 0;
 
                         while (await reader.ReadAsync())
                         {
                             var cellType = reader.GetString(0);
                             var geneName = reader.GetString(1);
-                            var medianExpression = reader.GetDouble(2);
-                            var meanExpression = reader.GetDouble(3);
-                            var percentExpressing = reader.GetDouble(4);
+                            var medianExpression = reader.GetFloat(2);
+                            var meanExpression = reader.GetFloat(3);
+                            var percentExpressing = reader.GetFloat(4);
 
-                            // Check if we're starting a new cell type
+                            // Start a new profile if cell type changed
                             if (cellType != currentCellType)
                             {
-                                // Save the previous profile if it exists
                                 if (currentProfile != null)
                                 {
                                     database.CellTypeProfiles[currentCellType] = currentProfile;
                                 }
 
-                                // Start a new profile
                                 currentCellType = cellType;
                                 currentProfile = new CellTypeProfile
                                 {
                                     CellType = cellType,
+                                    MedianExpression = new Dictionary<string, float>(),
+                                    MeanExpression = new Dictionary<string, float>(),
+                                    PercentExpressing = new Dictionary<string, float>(),
                                     CellCount = database.CellTypeMetadata.ContainsKey(cellType)
                                         ? database.CellTypeMetadata[cellType].CellCount
                                         : 0
@@ -432,15 +368,12 @@ namespace SCPBrowser.Services
             }
         }
 
-
-
-
         public async Task WriteGoAnnotationsAsync(
-      string databasePath,
-      GoSlimDatabase goSlimDatabase,
-      GoAnnotationDatabase annotationDatabase,
-      bool clearExistingData = true,
-      IProgressReporter progress = null)
+            string databasePath,
+            GoSlimDatabase goSlimDatabase,
+            GoAnnotationDatabase annotationDatabase,
+            bool clearExistingData = true,
+            IProgressReporter progress = null)
         {
             progress?.ReportMessage("Writing to Database");
             progress?.ReportProgress("Opening database connection...");
@@ -451,8 +384,7 @@ namespace SCPBrowser.Services
             {
                 await connection.OpenAsync();
 
-                // Ensure tables exist
-                await CreateSchemaAsync(connection);
+                // Tables are created by ProjectDataService, no need to ensure here
 
                 // Clear existing GO data if requested
                 if (clearExistingData)
@@ -461,9 +393,9 @@ namespace SCPBrowser.Services
                     using (var command = connection.CreateCommand())
                     {
                         command.CommandText = @"
-                    DELETE FROM protein_go_annotations;
-                    DELETE FROM go_terms;
-                ";
+                            DELETE FROM protein_go_annotations;
+                            DELETE FROM go_terms;
+                        ";
                         await command.ExecuteNonQueryAsync();
                     }
                 }
@@ -479,9 +411,9 @@ namespace SCPBrowser.Services
                         using (var command = connection.CreateCommand())
                         {
                             command.CommandText = @"
-                        INSERT INTO go_terms (go_id, name, namespace, definition)
-                        VALUES (@goId, @name, @namespace, @definition)
-                    ";
+                                INSERT INTO go_terms (go_id, name, namespace, definition)
+                                VALUES (@goId, @name, @namespace, @definition)
+                            ";
                             command.Parameters.AddWithValue("@goId", term.Id);
                             command.Parameters.AddWithValue("@name", term.Name);
                             command.Parameters.AddWithValue("@namespace", term.Namespace);
@@ -502,38 +434,7 @@ namespace SCPBrowser.Services
                 progress?.ReportProgress("Writing protein annotations...");
 
                 // Write protein annotations
-                using (var transaction = connection.BeginTransaction())
-                {
-                    int annotationCount = 0;
-                    int totalAnnotations = annotationDatabase.ProteinToGoTerms.Sum(p => p.Value.Count);
-
-                    foreach (var proteinAnnotation in annotationDatabase.ProteinToGoTerms)
-                    {
-                        var proteinId = proteinAnnotation.Key;
-                        foreach (var goTermId in proteinAnnotation.Value)
-                        {
-                            using (var command = connection.CreateCommand())
-                            {
-                                command.CommandText = @"
-                            INSERT INTO protein_go_annotations (protein_id, go_term_id)
-                            VALUES (@proteinId, @goTermId)
-                        ";
-                                command.Parameters.AddWithValue("@proteinId", proteinId);
-                                command.Parameters.AddWithValue("@goTermId", goTermId);
-
-                                await command.ExecuteNonQueryAsync();
-                            }
-
-                            annotationCount++;
-                            if (annotationCount % 5000 == 0)
-                            {
-                                var percentage = annotationCount * 100.0 / totalAnnotations;
-                                progress?.ReportProgress($"Writing annotations... {annotationCount:N0} / {totalAnnotations:N0} ({percentage:F1}%)");
-                            }
-                        }
-                    }
-                    await transaction.CommitAsync();
-                }
+                await InsertProteinAnnotationsAsync(connection, annotationDatabase);
 
                 progress?.ReportProgress("Creating indexes...");
 
@@ -541,73 +442,14 @@ namespace SCPBrowser.Services
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                CREATE INDEX IF NOT EXISTS idx_protein_go ON protein_go_annotations(protein_id);
-                CREATE INDEX IF NOT EXISTS idx_go_protein ON protein_go_annotations(go_term_id);
-            ";
+                        CREATE INDEX IF NOT EXISTS idx_protein_go ON protein_go_annotations(protein_id);
+                        CREATE INDEX IF NOT EXISTS idx_go_protein ON protein_go_annotations(go_term_id);
+                    ";
                     await command.ExecuteNonQueryAsync();
                 }
 
                 progress?.ReportProgress($"Database write complete!");
-
-                // ✅ NEW: Explicitly close the connection
-                await connection.CloseAsync();
             }
-
-            // ✅ NEW: Force garbage collection to release file handles
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-
-            progress?.ReportProgress("Connection closed successfully");
-        }
-
-
-        private async Task InsertGoTermsAsync(SqliteConnection connection, GoSlimDatabase goSlimDatabase)
-        {
-            const int batchSize = 500;
-            var terms = goSlimDatabase.Terms.Values.ToList();
-
-            Console.WriteLine($"Inserting {terms.Count:N0} GO terms...");
-
-            for (int i = 0; i < terms.Count; i += batchSize)
-            {
-                var batch = terms.Skip(i).Take(batchSize).ToList();
-
-                using (var transaction = connection.BeginTransaction())
-                {
-                    using (var command = connection.CreateCommand())
-                    {
-                        var valuesClauses = new List<string>();
-                        var parameters = new List<SqliteParameter>();
-
-                        for (int j = 0; j < batch.Count; j++)
-                        {
-                            var term = batch[j];
-                            var paramPrefix = $"@p{j}_";
-
-                            // ✅ UPDATED: Include definition in batch insert
-                            valuesClauses.Add($"({paramPrefix}go_id, {paramPrefix}name, {paramPrefix}namespace, {paramPrefix}definition)");
-
-                            parameters.Add(new SqliteParameter($"{paramPrefix}go_id", term.Id));
-                            parameters.Add(new SqliteParameter($"{paramPrefix}name", term.Name ?? string.Empty));
-                            parameters.Add(new SqliteParameter($"{paramPrefix}namespace", term.Namespace ?? string.Empty));
-                            parameters.Add(new SqliteParameter($"{paramPrefix}definition",
-                                term.Definition ?? (object)DBNull.Value));  // ✅ ADDED: Include definition
-                        }
-
-                        command.CommandText = $@"
-                    INSERT OR IGNORE INTO go_terms (go_id, name, namespace, definition)
-                    VALUES {string.Join(", ", valuesClauses)}
-                ";
-
-                        command.Parameters.AddRange(parameters.ToArray());
-                        await command.ExecuteNonQueryAsync();
-                    }
-
-                    await transaction.CommitAsync();
-                }
-            }
-
-            Console.WriteLine("GO terms insertion complete.");
         }
 
         private async Task InsertProteinAnnotationsAsync(SqliteConnection connection, GoAnnotationDatabase annotationDatabase)
@@ -671,14 +513,13 @@ namespace SCPBrowser.Services
             Console.WriteLine("Protein-GO annotations insertion complete.");
         }
 
-
         /// <summary>
         /// Loads GO annotations from the database
         /// </summary>
         public async Task<(GoSlimDatabase goSlimDatabase, GoAnnotationDatabase annotationDatabase)> LoadGoAnnotationsAsync(string databasePath)
         {
             if (!File.Exists(databasePath))
-                throw new FileNotFoundException("Reference database not found", databasePath);
+                throw new FileNotFoundException("Database not found", databasePath);
 
             var goSlimDatabase = new GoSlimDatabase();
             var annotationDatabase = new GoAnnotationDatabase();
@@ -691,7 +532,6 @@ namespace SCPBrowser.Services
                 // Load GO terms with definitions
                 using (var command = connection.CreateCommand())
                 {
-                    // ✅ UPDATED: Now reads definition column
                     command.CommandText = "SELECT go_id, name, namespace, definition FROM go_terms";
 
                     using (var reader = await command.ExecuteReaderAsync())
@@ -708,7 +548,7 @@ namespace SCPBrowser.Services
                                 Id = goId,
                                 Name = name,
                                 Namespace = namespace_,
-                                Definition = definition  // ✅ ADDED: Load definition
+                                Definition = definition
                             };
                         }
                     }

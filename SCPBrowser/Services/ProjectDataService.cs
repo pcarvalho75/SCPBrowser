@@ -61,6 +61,8 @@ namespace SCPBrowser.Services
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = @"
+            -- ==================== PROJECT TABLES ====================
+            
             -- Project metadata
             CREATE TABLE IF NOT EXISTS project_info (
                 project_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +124,45 @@ namespace SCPBrowser.Services
                 FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
             );
 
-            -- Indices
+            -- ==================== REFERENCE DATA TABLES ====================
+            
+            -- Cell type profiles (transcriptomic reference data)
+            CREATE TABLE IF NOT EXISTS cell_type_profiles (
+                cell_type TEXT NOT NULL,
+                gene_name TEXT NOT NULL,
+                median_expression REAL NOT NULL,
+                mean_expression REAL NOT NULL,
+                percent_expressing REAL NOT NULL,
+                PRIMARY KEY (cell_type, gene_name)
+            ) WITHOUT ROWID;
+
+            -- Cell type metadata
+            CREATE TABLE IF NOT EXISTS cell_type_metadata (
+                cell_type TEXT PRIMARY KEY,
+                cell_count INTEGER NOT NULL,
+                genes_expressed INTEGER NOT NULL,
+                age_range TEXT,
+                batch_info TEXT
+            );
+
+            -- GO terms (GO Slim)
+            CREATE TABLE IF NOT EXISTS go_terms (
+                go_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                namespace TEXT NOT NULL,
+                definition TEXT
+            );
+
+            -- Protein to GO term annotations
+            CREATE TABLE IF NOT EXISTS protein_go_annotations (
+                protein_id TEXT NOT NULL,
+                go_term_id TEXT NOT NULL,
+                PRIMARY KEY (protein_id, go_term_id)
+            );
+
+            -- ==================== INDICES ====================
+            
+            -- Project data indices
             CREATE INDEX IF NOT EXISTS idx_parquet_imports_plate ON parquet_imports(plate_id);
             CREATE INDEX IF NOT EXISTS idx_parquet_imports_filename ON parquet_imports(file_name);
             CREATE INDEX IF NOT EXISTS idx_raw_files_import ON raw_files(import_id);
@@ -130,6 +170,12 @@ namespace SCPBrowser.Services
             CREATE INDEX IF NOT EXISTS idx_raw_files_condition ON raw_files(biological_condition);
             CREATE INDEX IF NOT EXISTS idx_protein_quant_protein ON protein_quant_summary(protein_id);
             CREATE INDEX IF NOT EXISTS idx_protein_quant_rawfile ON protein_quant_summary(raw_file_id);
+            
+            -- Reference data indices
+            CREATE INDEX IF NOT EXISTS idx_cell_type_profiles_cell_type ON cell_type_profiles(cell_type);
+            CREATE INDEX IF NOT EXISTS idx_cell_type_profiles_gene ON cell_type_profiles(gene_name);
+            CREATE INDEX IF NOT EXISTS idx_protein_go ON protein_go_annotations(protein_id);
+            CREATE INDEX IF NOT EXISTS idx_go_protein ON protein_go_annotations(go_term_id);
         ";
                 await command.ExecuteNonQueryAsync();
             }

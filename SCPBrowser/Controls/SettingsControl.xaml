@@ -8,7 +8,6 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
@@ -73,41 +72,8 @@
                 </StackPanel>
             </GroupBox>
 
-            <!-- Database Settings Group -->
-            <GroupBox Grid.Row="2" Style="{StaticResource ModernGroupBox}">
-                <GroupBox.Header>
-                    <TextBlock Text="Reference Database" 
-                               Style="{StaticResource SubheaderText}"/>
-                </GroupBox.Header>
-                <StackPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" 
-                                   Text="Database Path:" 
-                                   Style="{StaticResource LabelText}"/>
-                        <TextBox Grid.Column="1" 
-                                 x:Name="DatabasePathTextBox"
-                                 VerticalAlignment="Center"
-                                 Margin="0,0,10,0"
-                                 IsReadOnly="True"/>
-                        <Button Grid.Column="2" 
-                                Content="Browse..."
-                                Click="BrowseDatabasePath_Click"
-                                Style="{StaticResource SecondaryButton}"/>
-                    </Grid>
-                    <TextBlock Margin="220,5,0,0"
-                               TextWrapping="Wrap"
-                               Style="{StaticResource HelpText}"
-                               Text="Place your reference_data.db file in this location. Use Tools menu to convert transcriptomic data or compile GO annotations."/>
-                </StackPanel>
-            </GroupBox>
-
             <!-- Action Buttons and Status -->
-            <Grid Grid.Row="3" VerticalAlignment="Top" Margin="0,10,0,0">
+            <Grid Grid.Row="2" VerticalAlignment="Top" Margin="0,10,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>

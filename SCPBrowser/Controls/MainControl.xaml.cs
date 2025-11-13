@@ -44,8 +44,15 @@ namespace SCPBrowser
                 return;
             }
 
-            // Use the database path from settings
-            var databasePath = Settings.Default.ReferenceDatabasePath;
+            // Get the project database path (contains both project and reference data)
+            var mainWindow = Window.GetWindow(this) as MainWindow;
+            if (mainWindow == null || !mainWindow.HasOpenProject)
+            {
+                _cellTypePredictions = null;
+                return;
+            }
+
+            var databasePath = mainWindow.ProjectReferenceDatabasePath;
 
             if (File.Exists(databasePath))
             {
@@ -76,7 +83,6 @@ namespace SCPBrowser
             }
         }
 
-        // Replace the LoadGoEnrichmentAsync method in MainControl.xaml.cs with this updated version:
 
         private async System.Threading.Tasks.Task LoadGoEnrichmentAsync()
         {
@@ -98,8 +104,15 @@ namespace SCPBrowser
                 return;
             }
 
-            // Use the database path from settings
-            var databasePath = Settings.Default.ReferenceDatabasePath;
+            // Get the project database path (contains both project and reference data)
+            var mainWindow = Window.GetWindow(this) as MainWindow;
+            if (mainWindow == null || !mainWindow.HasOpenProject)
+            {
+                _goEnrichmentResults = null;
+                return;
+            }
+
+            var databasePath = mainWindow.ProjectReferenceDatabasePath;
 
             if (File.Exists(databasePath))
             {

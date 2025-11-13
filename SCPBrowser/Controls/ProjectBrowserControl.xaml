@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="SCPBrowser.DBBrowserControl"
+﻿<UserControl x:Class="SCPBrowser.ProjectBrowserControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
@@ -17,7 +17,7 @@
                 Background="#2563eb" 
                 Padding="15,10">
             <Grid>
-                <TextBlock Text="Database Browser" 
+                <TextBlock Text="Project Browser"
                            FontSize="18" 
                            FontWeight="SemiBold" 
                            Foreground="White"

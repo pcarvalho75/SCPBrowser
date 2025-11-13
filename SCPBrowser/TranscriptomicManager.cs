@@ -42,6 +42,8 @@ namespace SCPBrowser
             return _predictor.PredictCellType(proteinAbundances);
         }
 
+        // In SCPBrowser/TranscriptomicManager.cs
+
         public Dictionary<string, CellTypePredictionResult> PredictCellTypesForAllRuns(ProteomicsData proteomicsData)
         {
             if (!IsLoaded)
@@ -49,7 +51,16 @@ namespace SCPBrowser
 
             var predictions = new Dictionary<string, CellTypePredictionResult>();
 
-            foreach (var runName in proteomicsData.RawFileNames)
+            // --- ADD THIS NULL CHECK ---
+            // If there's no proteomics data, just return an empty prediction list.
+            // This prevents the crash when a project is opened with no data.
+            if (proteomicsData == null || proteomicsData.RawFileNames == null)
+            {
+                return predictions;
+            }
+            // --- END OF NULL CHECK ---
+
+            foreach (var runName in proteomicsData.RawFileNames) // This line was crashing
             {
                 var prediction = PredictCellTypeForRun(proteomicsData, runName);
                 predictions[runName] = prediction;

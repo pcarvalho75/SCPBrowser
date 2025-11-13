@@ -376,6 +376,35 @@ namespace SCPBrowser.Services
             }
         }
 
+        // In SCPBrowser/Services/ProjectDataService.cs
+
+        /// <summary>
+        /// Gets the filename of the most recently imported parquet file.
+        /// </summary>
+        public async Task<string> GetLastImportedParquetFileAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                        SELECT file_name 
+                        FROM parquet_imports 
+                        ORDER BY import_timestamp DESC 
+                        LIMIT 1";
+
+                    var result = await command.ExecuteScalarAsync();
+                    return result?.ToString();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets all raw files, optionally filtered by plate or condition
+        /// </summary>
+
         /// <summary>
         /// Checks if a parquet file has already been imported
         /// </summary>

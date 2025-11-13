@@ -78,6 +78,8 @@ namespace SCPBrowser
             }
         }
 
+        // In SCPBrowser/MainWindow.xaml.cs
+
         private async Task OpenProjectAsync(string projectDbPath)
         {
             try
@@ -112,6 +114,40 @@ namespace SCPBrowser
 
                 UpdateWindowTitle(projectInfo.ProjectName);
 
+                // --- NEW LOGIC TO LOAD DATA ---
+                LoadingOverlay.SetProgress("Finding associated data...");
+
+                // 1. Find the last imported parquet file from the database
+                string lastImportedFile = await _projectService.GetLastImportedParquetFileAsync();
+                string parquetPath = null;
+
+                if (!string.IsNullOrEmpty(lastImportedFile))
+                {
+                    // 2. Construct the full path to that file
+                    string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
+                    parquetPath = Path.Combine(projectDirectory, "imports", lastImportedFile);
+
+                    if (!File.Exists(parquetPath))
+                    {
+                        LoadingOverlay.SetProgress($"Data file {lastImportedFile} not found. Please re-import.");
+                        parquetPath = null; // Set to null so main control shows a helpful message
+                    }
+                    else
+                    {
+                        LoadingOverlay.SetProgress($"Loading data from {lastImportedFile}...");
+                    }
+                }
+                else
+                {
+                    LoadingOverlay.SetProgress("No data imported yet. Please import a Parquet file.");
+                }
+
+                // 3. Tell MainControlTab to load this file
+                // This will trigger LoadDataAsync, which in turn fires the DataLoaded event.
+                // Our PREVIOUS fix will then catch this event and populate the other tabs.
+                await MainControlTab.LoadDataFromProject(parquetPath);
+                // --- END NEW LOGIC ---
+
                 LoadingOverlay.Hide();
 
                 Console.WriteLine($"Project opened: {projectInfo.ProjectName}");
@@ -121,7 +157,13 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 LoadingOverlay.Hide();
-                throw;
+                CloseProject(); // Reset the UI if opening fails
+                MessageBox.Show(
+                    $"Error opening project:\n\n{ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                // Do not re-throw, just show the error to the user.
             }
         }
 

@@ -167,6 +167,37 @@ namespace SCPBrowser
             await LoadDataAsync();
         }
 
+        // In SCPBrowser/Controls/MainControl.xaml.cs
+
+        public async Task LoadDataFromProject(string parquetFilePath)
+        {
+            if (string.IsNullOrEmpty(parquetFilePath))
+            {
+                StatusText.Text = "Project open. Please import a Parquet file to see data.";
+                ReloadButton.IsEnabled = false;
+                // DO NOT attempt to load reference data, _currentData is null.
+                return;
+            }
+
+            if (!File.Exists(parquetFilePath))
+            {
+                StatusText.Text = $"Error: Associated data file not found at {parquetFilePath}.";
+                ReloadButton.IsEnabled = false; // Can't reload if file is missing
+                // DO NOT attempt to load reference data, _currentData is null.
+                return;
+            }
+
+            _currentFilePath = parquetFilePath;
+            _currentFileDirectory = Path.GetDirectoryName(parquetFilePath);
+
+            // Now call the existing data loading logic.
+            // LoadDataAsync() will correctly populate _currentData
+            // and THEN call the analysis methods itself.
+            await LoadDataAsync();
+        }
+
+
+
         private async void ReloadButton_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(_currentFilePath))

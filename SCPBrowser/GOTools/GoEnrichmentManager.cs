@@ -46,6 +46,8 @@ namespace SCPBrowser.GOTools
             _analyzer = new GoEnrichmentAnalyzer(_goSlimDatabase, _annotationDatabase);
         }
 
+        // In SCPBrowser/GOTools/GoEnrichmentManager.cs
+
         public Dictionary<string, RunGoEnrichmentResult> EnrichAllRuns(
             ProteomicsData proteomicsData,
             double pValueThreshold = 0.05,
@@ -55,6 +57,14 @@ namespace SCPBrowser.GOTools
                 throw new InvalidOperationException("GO databases not loaded");
 
             var results = new Dictionary<string, RunGoEnrichmentResult>();
+
+            // --- ADD THIS NULL CHECK ---
+            // If there's no proteomics data, just return an empty results list.
+            if (proteomicsData == null || proteomicsData.RawFileNames == null)
+            {
+                return results;
+            }
+            // --- END OF NULL CHECK ---
 
             foreach (var runName in proteomicsData.RawFileNames)
             {

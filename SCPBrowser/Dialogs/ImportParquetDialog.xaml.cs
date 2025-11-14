@@ -781,7 +781,34 @@ namespace SCPBrowser
                 string originalTitle = this.Title;
                 this.Title = "Importing... Please wait";
 
-                // Calculate file hash
+                // Generate new filename based on plate name
+                string originalFileName = Path.GetFileName(_selectedParquetPath);
+                string newFileName = $"{SelectedPlate.PlateName}.parquet";
+                string importsPath = Path.Combine(_projectDirectory, "imports");
+                string newFilePath = Path.Combine(importsPath, newFileName);
+
+                // Rename the file if the new name is different
+                if (!originalFileName.Equals(newFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Check if target filename already exists
+                    if (File.Exists(newFilePath))
+                    {
+                        MessageBox.Show(
+                            $"A file named '{newFileName}' already exists in the imports folder.\n\n" +
+                            $"This plate may have already been imported.",
+                            "File Already Exists",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
+
+                    // Rename the file
+                    File.Move(_selectedParquetPath, newFilePath);
+                    _selectedParquetPath = newFilePath;
+                    Console.WriteLine($"Renamed parquet file: {originalFileName} -> {newFileName}");
+                }
+
+                // Calculate file hash from the (possibly renamed) file
                 string fileHash = _projectService.CalculateFileHash(_selectedParquetPath);
                 string fileName = Path.GetFileName(_selectedParquetPath);
 

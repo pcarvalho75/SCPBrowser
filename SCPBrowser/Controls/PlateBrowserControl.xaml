@@ -1,0 +1,375 @@
+﻿<!--
+PlateBrowserControl.xaml
+Child control for browsing plate data and raw files
+Location: SCPBrowser/Controls/PlateBrowserControl.xaml
+-->
+<UserControl x:Class="SCPBrowser.PlateBrowserControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="900"
+             Background="White">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Plate Summary Panel -->
+        <Border Grid.Row="0"
+                Background="#f1f5f9"
+                Padding="15"
+                BorderBrush="#cbd5e1"
+                BorderThickness="0,0,0,1">
+            <StackPanel>
+                <TextBlock Text="Plate Database Statistics" 
+                           FontSize="15" 
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,10"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Total Plates -->
+                    <Border Grid.Column="0" 
+                            Background="White" 
+                            CornerRadius="4" 
+                            Padding="10" 
+                            Margin="0,0,5,0"
+                            BorderBrush="#e2e8f0"
+                            BorderThickness="1">
+                        <Border.ToolTip>
+                            <ToolTip>
+                                <TextBlock TextWrapping="Wrap" MaxWidth="300">
+                                    <Bold>Total Plates</Bold>
+                                    <LineBreak/>
+                                    Number of plates in the project. Each plate represents a physical sample preparation unit for MS analysis.
+                                </TextBlock>
+                            </ToolTip>
+                        </Border.ToolTip>
+                        <StackPanel>
+                            <TextBlock Text="Total Plates" 
+                                       FontSize="11" 
+                                       Foreground="#64748b"/>
+                            <TextBlock x:Name="TotalPlatesText" 
+                                       Text="0" 
+                                       FontSize="20" 
+                                       FontWeight="Bold"
+                                       Foreground="#2563eb"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Total Raw Files -->
+                    <Border Grid.Column="1" 
+                            Background="White" 
+                            CornerRadius="4" 
+                            Padding="10" 
+                            Margin="0,0,5,0"
+                            BorderBrush="#e2e8f0"
+                            BorderThickness="1">
+                        <Border.ToolTip>
+                            <ToolTip>
+                                <TextBlock TextWrapping="Wrap" MaxWidth="300">
+                                    <Bold>Total Raw Files</Bold>
+                                    <LineBreak/>
+                                    Total number of MS raw files across all plates. Each raw file represents one sample or well.
+                                </TextBlock>
+                            </ToolTip>
+                        </Border.ToolTip>
+                        <StackPanel>
+                            <TextBlock Text="Total Raw Files" 
+                                       FontSize="11" 
+                                       Foreground="#64748b"/>
+                            <TextBlock x:Name="TotalRawFilesText" 
+                                       Text="0" 
+                                       FontSize="20" 
+                                       FontWeight="Bold"
+                                       Foreground="#10b981"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Unique Conditions -->
+                    <Border Grid.Column="2" 
+                            Background="White" 
+                            CornerRadius="4" 
+                            Padding="10"
+                            BorderBrush="#e2e8f0"
+                            BorderThickness="1">
+                        <Border.ToolTip>
+                            <ToolTip>
+                                <TextBlock TextWrapping="Wrap" MaxWidth="300">
+                                    <Bold>Biological Conditions</Bold>
+                                    <LineBreak/>
+                                    Number of distinct biological conditions across all raw files. Conditions represent different experimental groups or sample types.
+                                </TextBlock>
+                            </ToolTip>
+                        </Border.ToolTip>
+                        <StackPanel>
+                            <TextBlock Text="Biological Conditions" 
+                                       FontSize="11" 
+                                       Foreground="#64748b"/>
+                            <TextBlock x:Name="TotalConditionsText" 
+                                       Text="0" 
+                                       FontSize="20" 
+                                       FontWeight="Bold"
+                                       Foreground="#f59e0b"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- Plate and Raw Files View -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: Plate List -->
+            <Border Grid.Column="0" 
+                    BorderBrush="#cbd5e1" 
+                    BorderThickness="0,0,1,0"
+                    Padding="10">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="Plates" 
+                               FontSize="14" 
+                               FontWeight="SemiBold"
+                               Margin="5,5,5,10"/>
+                    <ListBox x:Name="PlateListBox"
+                             SelectionChanged="PlateListBox_SelectionChanged"
+                             BorderThickness="0"
+                             Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="White"
+                                        BorderBrush="#e2e8f0"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Padding="10"
+                                        Margin="0,2">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0"
+                                                   Text="{Binding PlateName}" 
+                                                   FontWeight="SemiBold"
+                                                   FontSize="13"/>
+                                        <TextBlock Grid.Row="1"
+                                                   Text="{Binding RunDate}"
+                                                   FontSize="11"
+                                                   Foreground="#64748b"
+                                                   Margin="0,2,0,0"/>
+                                        <TextBlock Grid.Row="2"
+                                                   FontSize="10"
+                                                   Foreground="#94a3b8"
+                                                   Margin="0,2,0,0">
+                                            <Run Text="{Binding FileCount, StringFormat='{}{0} files'}"/>
+                                        </TextBlock>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <GridSplitter Grid.Column="1" 
+                          Width="5" 
+                          HorizontalAlignment="Center" 
+                          VerticalAlignment="Stretch"
+                          Background="#e2e8f0"/>
+
+            <!-- Right: Raw Files for Selected Plate -->
+            <Border Grid.Column="2" 
+                    Padding="15">
+                <DockPanel>
+                    <!-- Header Section -->
+                    <Border DockPanel.Dock="Top"
+                            Background="#f8fafc"
+                            BorderBrush="#e2e8f0"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="15"
+                            Margin="0,0,0,15">
+                        <StackPanel>
+                            <TextBlock x:Name="RawFilesHeaderText"
+                                       Text="Select a plate to view raw files" 
+                                       FontSize="14" 
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,5"/>
+                            <TextBlock x:Name="PlateDetailsText"
+                                       FontSize="11"
+                                       Foreground="#64748b"
+                                       TextWrapping="Wrap"
+                                       Visibility="Collapsed"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Statistics Bar (shown when plate selected) -->
+                    <Border DockPanel.Dock="Bottom"
+                            x:Name="SelectedPlateStatsPanel"
+                            Background="#f1f5f9"
+                            BorderBrush="#cbd5e1"
+                            BorderThickness="0,1,0,0"
+                            Padding="15,10"
+                            Margin="0,15,0,0"
+                            Visibility="Collapsed">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0"
+                                       Text="Selected Plate Summary:"
+                                       FontWeight="SemiBold"
+                                       FontSize="12"
+                                       Margin="0,0,15,0"
+                                       VerticalAlignment="Center"/>
+
+                            <StackPanel Grid.Column="1" 
+                                        Orientation="Horizontal">
+                                <TextBlock FontSize="11" Margin="0,0,20,0">
+                                    <Run Text="Raw Files: " Foreground="#64748b"/>
+                                    <Run x:Name="SelectedPlateRawFilesText" Text="0" FontWeight="SemiBold"/>
+                                </TextBlock>
+                                <TextBlock FontSize="11" Margin="0,0,20,0">
+                                    <Run Text="Total Proteins: " Foreground="#64748b"/>
+                                    <Run x:Name="SelectedPlateProteinsText" Text="0" FontWeight="SemiBold"/>
+                                </TextBlock>
+                                <TextBlock FontSize="11" Margin="0,0,20,0">
+                                    <Run Text="Total Peptides: " Foreground="#64748b"/>
+                                    <Run x:Name="SelectedPlatePeptidesText" Text="0" FontWeight="SemiBold"/>
+                                </TextBlock>
+                                <TextBlock FontSize="11">
+                                    <Run Text="Total TIC: " Foreground="#64748b"/>
+                                    <Run x:Name="SelectedPlateTICText" Text="0" FontWeight="SemiBold" Foreground="#10b981"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <DataGrid x:Name="RawFilesGrid"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              CanUserReorderColumns="True"
+                              CanUserResizeRows="False"
+                              CanUserSortColumns="True"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal"
+                              AlternatingRowBackground="#f9fafb"
+                              RowBackground="White"
+                              BorderThickness="1"
+                              BorderBrush="#e2e8f0">
+                        <DataGrid.ColumnHeaderStyle>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="#f1f5f9"/>
+                                <Setter Property="Foreground" Value="#334155"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter Property="Padding" Value="10,8"/>
+                                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                <Setter Property="BorderBrush" Value="#cbd5e1"/>
+                            </Style>
+                        </DataGrid.ColumnHeaderStyle>
+                        <DataGrid.Columns>
+                            <!-- Raw File ID -->
+                            <DataGridTextColumn Header="ID" 
+                                                Binding="{Binding RawFileId}" 
+                                                Width="60">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Padding" Value="8"/>
+                                        <Setter Property="FontSize" Value="11"/>
+                                        <Setter Property="Foreground" Value="#64748b"/>
+                                        <Setter Property="TextAlignment" Value="Right"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Raw File Name -->
+                            <DataGridTextColumn Header="Raw File Name" 
+                                                Binding="{Binding RawFileName}" 
+                                                Width="*"
+                                                MinWidth="250">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Padding" Value="8"/>
+                                        <Setter Property="FontFamily" Value="Consolas"/>
+                                        <Setter Property="FontSize" Value="12"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Biological Condition -->
+                            <DataGridTextColumn Header="Biological Condition" 
+                                                Binding="{Binding BiologicalCondition}" 
+                                                Width="180">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Padding" Value="8"/>
+                                        <Setter Property="FontSize" Value="12"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                        <Setter Property="Foreground" Value="#2563eb"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Protein Count -->
+                            <DataGridTextColumn Header="Proteins" 
+                                                Binding="{Binding ProteinCount, StringFormat=N0}" 
+                                                Width="100">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Padding" Value="8"/>
+                                        <Setter Property="FontSize" Value="12"/>
+                                        <Setter Property="TextAlignment" Value="Right"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Peptide Count -->
+                            <DataGridTextColumn Header="Peptides" 
+                                                Binding="{Binding PeptideCount, StringFormat=N0}" 
+                                                Width="100">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Padding" Value="8"/>
+                                        <Setter Property="FontSize" Value="12"/>
+                                        <Setter Property="TextAlignment" Value="Right"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <!-- Total Ion Current -->
+                            <DataGridTextColumn Header="Total Ion Current" 
+                                                Binding="{Binding TotalIonCurrent, StringFormat=N0}" 
+                                                Width="140">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Padding" Value="8"/>
+                                        <Setter Property="FontSize" Value="12"/>
+                                        <Setter Property="TextAlignment" Value="Right"/>
+                                        <Setter Property="Foreground" Value="#10b981"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

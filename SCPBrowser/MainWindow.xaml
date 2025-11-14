@@ -303,10 +303,10 @@
                                    Visibility="Collapsed"
                                    Panel.ZIndex="2"/>
 
-            <!-- Project Browser Dialog -->
-            <local:ProjectBrowserControl x:Name="ProjectBrowserDialog"
-                        Visibility="Collapsed"
-                        Panel.ZIndex="2"/>
+            <!-- Project Browser Dialog - NEW VERSION -->
+            <local:ProjectBrowser2 x:Name="ProjectBrowserDialog"
+            Visibility="Collapsed"
+            Panel.ZIndex="2"/>
 
             <!-- Loading Overlay -->
             <local:LoadingOverlay x:Name="LoadingOverlay" 

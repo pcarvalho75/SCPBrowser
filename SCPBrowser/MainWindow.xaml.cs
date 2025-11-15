@@ -542,6 +542,81 @@ namespace SCPBrowser
             // When MainControlTab finishes loading, populate other tabs with the same data
             PeptideTicTab.UpdateChart(MainControlTab.GetCurrentData());
             ProteinMatrixTab.UpdateMatrix(MainControlTab.GetCurrentData());
+
+            // Set image base directory
+            PeptideTicTab.SetImageBaseDirectory(MainControlTab.GetCurrentFileDirectory());
+
+            // Enable cell type classification if transcriptomic database is loaded
+            bool cellTypeAvailable = MainControlTab.IsTranscriptomicDatabaseLoaded();
+            PeptideTicTab.EnableCellTypeClassification(cellTypeAvailable);
+
+            // Pass GO enrichment results to PeptideTicTab
+            var goResults = MainControlTab.GetGoEnrichmentResults();
+            var goColorMap = MainControlTab.GetGoTermColorMap();
+            PeptideTicTab.SetGoEnrichmentResults(goResults, goColorMap);
+
+            Console.WriteLine($"GO enrichment results passed: {goResults?.Count ?? 0} runs");
+
+            // Wire up the event handler for cell type predictions
+            PeptideTicTab.CellTypePredictionsRequested -= PeptideTicTab_CellTypePredictionsRequested;
+            PeptideTicTab.CellTypePredictionsRequested += PeptideTicTab_CellTypePredictionsRequested;
+
+            Console.WriteLine($"Cell type classification enabled: {cellTypeAvailable}");
+        }
+
+        private async void PeptideTicTab_CellTypePredictionsRequested(object sender, EventArgs e)
+        {
+            try
+            {
+                Console.WriteLine("Cell type predictions requested");
+
+                LoadingOverlay.SetMessage("Computing Cell Type Classifications");
+                LoadingOverlay.SetProgress("Analyzing protein expression patterns...");
+                LoadingOverlay.Show();
+
+                var proteomicsData = MainControlTab.GetCurrentData();
+                if (proteomicsData == null)
+                {
+                    LoadingOverlay.Hide();
+                    MessageBox.Show("No data loaded.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Get the most recent import ID
+                int? importId = await _parquetService.GetMostRecentImportIdAsync();
+                if (!importId.HasValue)
+                {
+                    LoadingOverlay.Hide();
+                    MessageBox.Show("No import data found.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Create progress reporter
+                var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
+
+                // Get predictions from MainControl (which uses CellTypeClassificationManager)
+                var predictions = await MainControlTab.GetCellTypePredictionsAsync(
+                    proteomicsData,
+                    _projectReferenceDatabasePath,
+                    importId.Value,
+                    progressReporter);
+
+                // Get color map
+                var colorMap = MainControlTab.GetCellTypeColorMap();
+
+                // Pass predictions to PeptideTicTab
+                PeptideTicTab.SetCellTypePredictions(predictions, colorMap);
+
+                LoadingOverlay.Hide();
+
+                Console.WriteLine($"Cell type predictions computed: {predictions.Count} runs classified");
+            }
+            catch (Exception ex)
+            {
+                LoadingOverlay.Hide();
+                MessageBox.Show($"Error computing cell type predictions:\n\n{ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         // ==================== LOADING OVERLAY PROGRESS REPORTER ====================

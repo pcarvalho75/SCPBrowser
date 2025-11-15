@@ -76,6 +76,8 @@ namespace SCPBrowser.Services
 
         public Dictionary<string, string> ProteinToGeneMap { get; set; } = new(); // protein group → gene names
         public List<string> RawFileNames { get; set; } = new();
+
+        public Dictionary<string, string> BiologicalConditionPerFile { get; set; } = new();
     }
 
     public class ColumnMapping
@@ -719,6 +721,49 @@ namespace SCPBrowser.Services
             await BulkInsertProteinQuantAsync(proteinStats);
 
             progress?.Report("Protein quantification complete!");
+        }
+
+        /// <summary>
+        /// Loads biological conditions from the database and populates them into ProteomicsData
+        /// </summary>
+        public async Task PopulateBiologicalConditionsAsync(ProteomicsData data)
+        {
+            if (string.IsNullOrEmpty(_projectDbPath))
+            {
+                Console.WriteLine("No project database path - skipping biological condition population");
+                return;
+            }
+
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                SELECT raw_file_name, biological_condition 
+                FROM raw_files";
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            string rawFileName = reader.GetString(0);
+                            string bioCondition = reader.IsDBNull(1) ? null : reader.GetString(1);
+
+                            // Only populate if this raw file exists in our data
+                            if (data.RawFileNames.Contains(rawFileName))
+                            {
+                                data.BiologicalConditionPerFile[rawFileName] = bioCondition;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Console.WriteLine($"Populated biological conditions for {data.BiologicalConditionPerFile.Count} raw files");
         }
 
         /// <summary>

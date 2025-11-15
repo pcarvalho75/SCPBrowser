@@ -22,6 +22,7 @@ namespace SCPBrowser
         private Dictionary<string, CellTypePredictionResult> _cellTypePredictions;
         private readonly GoEnrichmentManager _goEnrichmentManager;
         private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
+        private string _projectDatabasePath;
 
         public MainControl()
         {
@@ -166,10 +167,11 @@ namespace SCPBrowser
             await LoadDataAsync();
         }
 
-        // In SCPBrowser/Controls/MainControl.xaml.cs
 
-        public async Task LoadDataFromProject(string parquetFilePath)
+        public async Task LoadDataFromProject(string parquetFilePath, string databasePath)
         {
+            _projectDatabasePath = databasePath; // Store it
+
             if (string.IsNullOrEmpty(parquetFilePath))
             {
                 // No data has been imported yet

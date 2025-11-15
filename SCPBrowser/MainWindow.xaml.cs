@@ -32,6 +32,8 @@ namespace SCPBrowser
 
             // Load recent projects
             LoadRecentProjectsUI();
+
+            Console.Clear();
         }
 
         // ==================== PROJECT MANAGEMENT ====================

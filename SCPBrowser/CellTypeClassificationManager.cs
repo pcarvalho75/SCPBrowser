@@ -351,6 +351,10 @@ namespace SCPBrowser
             Console.WriteLine("All cell type classifications deleted");
         }
 
+        // ================================================================
+        // === FULLY CORRECTED DIAGNOSTIC METHOD IS BELOW ===
+        // ================================================================
+
         /// <summary>
         /// Comprehensive diagnostic to analyze protein-to-gene mapping quality
         /// </summary>
@@ -362,11 +366,9 @@ namespace SCPBrowser
             Console.WriteLine($"Run: {runName}");
             Console.WriteLine($"========================================");
 
-            if (!proteomicsData.ProteinQuantMatrix.ContainsKey(runName))
-            {
-                Console.WriteLine($"ERROR: Run not found in proteomics data");
-                return;
-            }
+            // --- INCORRECT 'if' BLOCK REMOVED ---
+            // The check 'proteomicsData.ProteinQuantMatrix.ContainsKey(runName)'
+            // was incorrect because the dictionary keys are protein names, not run names.
 
             // Step 1: Get all proteins for this run
             var proteinsInRun = proteomicsData.ProteinQuantMatrix.Keys
@@ -476,7 +478,17 @@ namespace SCPBrowser
             Console.WriteLine($"  Total genes in transcriptomic DB: {allTranscriptomicGenes.Count}");
             Console.WriteLine($"  Proteomics genes that MATCH transcriptomics: {matchedGenes.Count}");
             Console.WriteLine($"  Proteomics genes that DON'T MATCH: {extractedGenes.Count - matchedGenes.Count}");
-            Console.WriteLine($"  Match rate: {(matchedGenes.Count * 100.0 / extractedGenes.Count):F1}%");
+
+            // Added safety check for divide-by-zero
+            if (extractedGenes.Count > 0)
+            {
+                Console.WriteLine($"  Match rate: {(matchedGenes.Count * 100.0 / extractedGenes.Count):F1}%");
+            }
+            else
+            {
+                Console.WriteLine($"  Match rate: N/A (0 genes extracted)");
+            }
+
 
             if (matchedGenes.Count > 0)
             {
@@ -495,9 +507,10 @@ namespace SCPBrowser
             Console.WriteLine($"Step 5: Marker gene analysis");
             foreach (var cellType in _database.CellTypeProfiles.Keys)
             {
-                if (_cellTypeMarkers != null && _cellTypeMarkers.ContainsKey(cellType))
+                // FIX: Access CellTypeMarkers via the _predictor object
+                if (_predictor.CellTypeMarkers != null && _predictor.CellTypeMarkers.ContainsKey(cellType))
                 {
-                    var markers = _cellTypeMarkers[cellType];
+                    var markers = _predictor.CellTypeMarkers[cellType];
                     int overlap = matchedGenes.Count(g => markers.Contains(g));
                     Console.WriteLine($"  {cellType}: {markers.Count} markers, {overlap} detected in this run");
                 }

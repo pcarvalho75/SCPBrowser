@@ -321,10 +321,10 @@ namespace SCPBrowser
         }
 
         public async Task<Dictionary<string, CellTypePredictionResult>> GetCellTypePredictionsAsync(
-    ProteomicsData proteomicsData,
-    string projectDatabasePath,
-    int importId,
-    IProgressReporter progressReporter)
+            ProteomicsData proteomicsData,
+            string projectDatabasePath,
+            int importId,
+            IProgressReporter progressReporter)
         {
             var predictions = await _cellTypeClassificationManager.GetOrComputePredictionsAsync(
                 proteomicsData,
@@ -334,6 +334,15 @@ namespace SCPBrowser
 
             // Store in memory for future use
             _cellTypePredictions = predictions;
+
+            // =================================================================
+            // === ADD THESE TWO LINES TO CALL THE DEBUG METHOD ===
+            var firstRunName = proteomicsData.RawFileNames.FirstOrDefault();
+            if (firstRunName != null)
+            {
+                _cellTypeClassificationManager.DiagnoseProteinGeneMapping(proteomicsData, firstRunName);
+            }
+            // =================================================================
 
             return predictions;
         }

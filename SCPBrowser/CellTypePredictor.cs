@@ -21,7 +21,7 @@ namespace SCPBrowser
         /// </summary>
         /// <param name="database">Database containing cell type profiles (not individual cells)</param>
         /// <param name="markerSpecificityThreshold">Minimum specificity score for a gene to be considered a marker (default: 0.5)</param>
-        public CellTypePredictor(TranscriptomicDatabase database, double markerSpecificityThreshold = 0.5)
+        public CellTypePredictor(TranscriptomicDatabase database, double markerSpecificityThreshold = 0.2)
         {
             _database = database ?? throw new ArgumentNullException(nameof(database));
 
@@ -116,7 +116,7 @@ namespace SCPBrowser
                         // Optional: Also check that gene is expressed in a good fraction of cells
                         // This makes markers more robust
                         if (profile.PercentExpressing.TryGetValue(gene, out double percentExpressing) &&
-                            percentExpressing >= 0.05) 
+                            percentExpressing >= 0.2) 
                         {
                             passedPercent++;
                             markers[cellType].Add(gene);

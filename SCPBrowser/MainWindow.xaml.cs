@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -14,7 +15,10 @@ namespace SCPBrowser
     {
         // Project management fields
         private string _currentProjectPath;
-        private ProjectDataService _projectService;
+        private ProjectDatabaseService _projectDatabaseService;
+        private ParquetDataService _parquetService;
+        private PlateService _plateService;
+        private CellTypeClassificationService _cellTypeService;
         private bool _hasOpenProject = false;
         private string _projectReferenceDatabasePath;
 
@@ -83,8 +87,6 @@ namespace SCPBrowser
             }
         }
 
-        // In SCPBrowser/MainWindow.xaml.cs
-
         private async Task OpenProjectAsync(string projectDbPath)
         {
             try
@@ -94,13 +96,18 @@ namespace SCPBrowser
                 LoadingOverlay.Show();
 
                 _currentProjectPath = projectDbPath;
-                _projectService = new ProjectDataService(projectDbPath);
+
+                // Initialize all services
+                _projectDatabaseService = new ProjectDatabaseService(projectDbPath);
+                _parquetService = new ParquetDataService(projectDbPath);
+                _plateService = new PlateService(projectDbPath);
+                _cellTypeService = new CellTypeClassificationService(projectDbPath);
 
                 // Ensure new tables exist (migration for existing projects)
-                await _projectService.EnsureCellTypeClassificationsTableExistsAsync();
+                await _projectDatabaseService.EnsureCellTypeClassificationsTableExistsAsync();
 
                 // Load project info
-                var projectInfo = await _projectService.GetProjectInfoAsync();
+                var projectInfo = await _projectDatabaseService.GetProjectInfoAsync();
 
                 if (projectInfo == null)
                 {
@@ -126,7 +133,7 @@ namespace SCPBrowser
                 // Find and load the last imported parquet file
                 LoadingOverlay.SetProgress("Finding associated data...");
 
-                string lastImportedFile = await _projectService.GetLastImportedParquetFileAsync();
+                string lastImportedFile = await _parquetService.GetLastImportedParquetFileAsync();
                 string parquetPath = null;
 
                 if (!string.IsNullOrEmpty(lastImportedFile))
@@ -195,14 +202,14 @@ namespace SCPBrowser
 
             try
             {
-                int? importId = await _projectService.GetMostRecentImportIdAsync();
+                int? importId = await _parquetService.GetMostRecentImportIdAsync();
                 if (!importId.HasValue)
                 {
                     MessageBox.Show("No data imported.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
-                await _projectService.DeleteAllCellTypeClassificationsAsync(_currentProjectPath, importId.Value);
+                await _cellTypeService.DeleteAllCellTypeClassificationsAsync(importId.Value);
 
                 MessageBox.Show(
                     "Cell type classifications cleared successfully.\n\n" +
@@ -215,24 +222,6 @@ namespace SCPBrowser
             {
                 MessageBox.Show($"Error clearing classifications:\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
-        }
-
-        private void LoadRecentProjectsUI()
-        {
-            var recentProjects = GetRecentProjects();
-
-            if (recentProjects.Count > 0)
-            {
-                RecentProjectsList.ItemsSource = recentProjects;
-                NoRecentProjectsText.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                RecentProjectsList.ItemsSource = null;
-                NoRecentProjectsText.Visibility = Visibility.Visible;
-            }
-
-            Console.WriteLine($"Loaded {recentProjects.Count} recent projects for display");
         }
 
         private void CloseProject_Click(object sender, RoutedEventArgs e)
@@ -252,7 +241,10 @@ namespace SCPBrowser
         private void CloseProject()
         {
             _currentProjectPath = null;
-            _projectService = null;
+            _projectDatabaseService = null;
+            _parquetService = null;
+            _plateService = null;
+            _cellTypeService = null;
             _hasOpenProject = false;
             _projectReferenceDatabasePath = null;
 
@@ -266,12 +258,6 @@ namespace SCPBrowser
             ClearCellTypeClassificationsMenuItem.IsEnabled = false;
 
             ProjectBrowserMenuItem.IsEnabled = false;
-
-            // Clear tabs (future implementation)
-            // MainControlTab.ClearData();
-            // PeptideTicTab.ClearData();
-            // ProteinMatrixTab.ClearData();
-            // GoEnrichmentTab.ClearData();
 
             UpdateWindowTitle();
 
@@ -292,7 +278,7 @@ namespace SCPBrowser
 
         private void ImportParquet_Click(object sender, RoutedEventArgs e)
         {
-            if (!_hasOpenProject || _projectService == null)
+            if (!_hasOpenProject || _parquetService == null)
             {
                 MessageBox.Show(
                     "Please open or create a project first.",
@@ -304,7 +290,9 @@ namespace SCPBrowser
 
             string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
 
-            var dialog = new ImportParquetDialog(_projectService, projectDirectory)
+            // Temporarily create ProjectDataService for ImportParquetDialog (it still uses the old service)
+            var tempProjectService = new ProjectDataService(_currentProjectPath);
+            var dialog = new ImportParquetDialog(tempProjectService, projectDirectory)
             {
                 Owner = this
             };
@@ -316,8 +304,6 @@ namespace SCPBrowser
                     "Import Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
-
-                // TODO: Refresh project data display
             }
         }
 
@@ -357,7 +343,7 @@ namespace SCPBrowser
         private async void ImportOmicProfile_Click(object sender, RoutedEventArgs e)
         {
             // Project check - menu item is disabled when no project is open
-            if (!_hasOpenProject || _projectService == null)
+            if (!_hasOpenProject || _projectDatabaseService == null)
             {
                 MessageBox.Show(
                     "Please open or create a project first.\n\nOmic profile import requires an active project.",
@@ -388,7 +374,7 @@ namespace SCPBrowser
             {
                 Filter = "TSV files (*.tsv)|*.tsv|Text files (*.txt)|*.txt|All files (*.*)|*.*",
                 Title = "Select Cell Metadata TSV File",
-                InitialDirectory = Path.GetDirectoryName(expressionFilePath)
+                InitialDirectory = projectDirectory
             };
 
             if (metadataDialog.ShowDialog() != true)
@@ -396,55 +382,32 @@ namespace SCPBrowser
 
             string metadataFilePath = metadataDialog.FileName;
 
-            // Use the project database directly (unified database)
-            string referenceDatabasePath = _projectReferenceDatabasePath;
-
-            // Confirm the import
-            var result = MessageBox.Show(
-                $"Import transcriptomic data to project database?\n\n" +
-                $"Expression Matrix: {Path.GetFileName(expressionFilePath)}\n" +
-                $"Cell Metadata: {Path.GetFileName(metadataFilePath)}\n\n" +
-                $"Target Database: {Path.GetFileName(referenceDatabasePath)}\n" +
-                $"Location: {Path.GetDirectoryName(referenceDatabasePath)}",
-                "Confirm Import",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-
-            if (result != MessageBoxResult.Yes)
-                return;
-
-            var progressReporter = new UIProgressReporter(LoadingOverlay);
-
             try
             {
                 LoadingOverlay.SetMessage("Importing Transcriptomic Data");
-                LoadingOverlay.SetProgress("Parsing TSV files...");
                 LoadingOverlay.Show();
 
-                var parser = new TranscriptomicTsvParser();
-                var parsedData = await parser.ParseTranscriptomicDataAsync(
+                var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
+
+                // The reference database is the project database itself
+                string referenceDatabasePath = _projectReferenceDatabasePath;
+
+                await TranscriptomicConverterUtility.ConvertTsvToSqliteAsync(
                     expressionFilePath,
                     metadataFilePath,
-                    progressReporter);
-
-                var referenceService = new ReferenceDataService();
-
-                // Write transcriptomic data to the project database
-                // (database already exists from project creation)
-                progressReporter.ReportProgress("Writing to project database...");
-                await referenceService.WriteTranscriptomicDataAsync(
                     referenceDatabasePath,
-                    parsedData,
-                    true,  // overwrite existing data
                     progressReporter);
 
                 LoadingOverlay.Hide();
 
+                var referenceService = new ReferenceDataService();
+                var loadedDatabase = await referenceService.LoadTranscriptomicDataAsync(referenceDatabasePath);
+
                 MessageBox.Show(
                     $"Transcriptomic data imported successfully!\n\n" +
-                    $"Cell Types: {parsedData.CellTypeProfiles.Count:N0}\n" +
-                    $"Total Cells: {parsedData.CellTypeMetadata.Sum(m => m.CellCount):N0}\n" +
-                    $"Total Genes: {parsedData.CellTypeProfiles.FirstOrDefault()?.MedianExpression.Count ?? 0:N0}\n\n" +
+                    $"Cell Types: {loadedDatabase.TotalCellTypes}\n" +
+                    $"Total Cells: {loadedDatabase.TotalCells:N0}\n" +
+                    $"Unique Genes: {loadedDatabase.TotalGenes:N0}\n\n" +
                     $"Database: {Path.GetFileName(referenceDatabasePath)}",
                     "Import Complete",
                     MessageBoxButton.OK,
@@ -467,7 +430,7 @@ namespace SCPBrowser
         private async void CompileGoAnnotations_Click(object sender, RoutedEventArgs e)
         {
             // Project check - menu item is disabled when no project is open
-            if (!_hasOpenProject || _projectService == null)
+            if (!_hasOpenProject || _projectDatabaseService == null)
             {
                 MessageBox.Show(
                     "Please open or create a project first.\n\nGO annotations import requires an active project.",
@@ -489,47 +452,36 @@ namespace SCPBrowser
             var gafDialog = new OpenFileDialog
             {
                 Filter = "GAF files (*.gaf)|*.gaf|All files (*.*)|*.*",
-                Title = "Select GOA GAF File"
+                Title = "Select UniProt GAF Annotation File"
             };
 
             if (gafDialog.ShowDialog() != true)
                 return;
 
-            // Use the project database directly (unified database)
-            string referenceDatabasePath = _projectReferenceDatabasePath;
-
-            // Confirm the import
-            var result = MessageBox.Show(
-                $"Compile GO annotations to project database?\n\n" +
-                $"GO Slim OBO: {Path.GetFileName(oboDialog.FileName)}\n" +
-                $"GOA GAF: {Path.GetFileName(gafDialog.FileName)}\n\n" +
-                $"Target Database: {Path.GetFileName(referenceDatabasePath)}\n" +
-                $"Location: {Path.GetDirectoryName(referenceDatabasePath)}",
-                "Confirm Compilation",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-
-            if (result != MessageBoxResult.Yes)
-                return;
-
-            var progressReporter = new UIProgressReporter(LoadingOverlay);
-
             try
             {
                 LoadingOverlay.SetMessage("Compiling GO Annotations");
-                LoadingOverlay.SetProgress("Initializing...");
                 LoadingOverlay.Show();
 
+                var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
+
+                // Step 1: Compile annotations using GoAnnotationCompiler
+                progressReporter.ReportMessage("Compiling GO Annotations");
                 var compiler = new GoAnnotationCompiler();
                 var compiledDatabase = await compiler.CompileAnnotationsAsync(
                     oboDialog.FileName,
                     gafDialog.FileName,
                     progressReporter);
 
+                // Step 2: Parse GO Slim for term definitions
+                progressReporter.ReportMessage("Parsing GO Slim");
                 var goSlimParser = new GoSlimParser();
                 var goSlimDatabase = await goSlimParser.ParseOboFileAsync(oboDialog.FileName);
 
+                // Step 3: Write to unified project database
+                progressReporter.ReportMessage("Writing to Database");
                 var referenceService = new ReferenceDataService();
+                string referenceDatabasePath = _projectReferenceDatabasePath;
 
                 // Write to project database (already exists, no need to create)
                 await referenceService.WriteGoAnnotationsAsync(
@@ -570,139 +522,27 @@ namespace SCPBrowser
             }
         }
 
-        // ==================== TAB CONTROL HANDLERS ====================
+        // ==================== TAB CONTROL ====================
 
         private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            // Tab switching logic - can be implemented later as needed
+            // Future: Handle tab switching logic if needed
         }
 
         private void MainControlTab_DataLoaded(object sender, EventArgs e)
         {
-            Console.WriteLine("MainControlTab_DataLoaded event fired");
-
-            WelcomeScreen.Visibility = Visibility.Collapsed;
-            MainTabControl.Visibility = Visibility.Visible;
-
-            // Get the loaded data from MainControlTab
-            var data = MainControlTab.GetCurrentData();
-
-            if (data == null)
-            {
-                Console.WriteLine("No data to populate other tabs");
-                return;
-            }
-
-            Console.WriteLine($"Populating tabs with data: {data.TotalRawFiles} runs, {data.TotalProteinGroups} proteins");
-
-            // Populate PeptideTicTab
-            try
-            {
-                var fileDirectory = MainControlTab.GetCurrentFileDirectory();
-                PeptideTicTab.SetImageBaseDirectory(fileDirectory);
-                PeptideTicTab.UpdateChart(data);
-
-                // Subscribe to cell type prediction requests
-                PeptideTicTab.CellTypePredictionsRequested -= PeptideTicTab_CellTypePredictionsRequested;
-                PeptideTicTab.CellTypePredictionsRequested += PeptideTicTab_CellTypePredictionsRequested;
-
-                // Set predictions if available
-                var predictions = MainControlTab.GetCellTypePredictions();
-                if (predictions != null && predictions.Count > 0)
-                {
-                    var colorMap = MainControlTab.GetCellTypeColorMap();
-                    PeptideTicTab.SetCellTypePredictions(predictions, colorMap);
-                }
-
-                // Enable cell type radio button if transcriptomic database is loaded (even without predictions)
-                bool transcriptomicLoaded = MainControlTab.IsTranscriptomicDatabaseLoaded();
-                PeptideTicTab.EnableCellTypeClassification(transcriptomicLoaded);
-
-                // Set GO enrichment if available
-                var goResults = MainControlTab.GetGoEnrichmentResults();
-                if (goResults != null && goResults.Count > 0)
-                {
-                    var goColorMap = MainControlTab.GetGoTermColorMap();
-                    PeptideTicTab.SetGoEnrichmentResults(goResults, goColorMap);
-                }
-
-                Console.WriteLine("PeptideTicTab populated successfully");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error populating PeptideTicTab: {ex.Message}");
-            }
-
-            // Populate ProteinMatrixTab
-            try
-            {
-                ProteinMatrixTab.UpdateMatrix(data);
-                Console.WriteLine("ProteinMatrixTab populated successfully");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error populating ProteinMatrixTab: {ex.Message}");
-            }
-
-            Console.WriteLine("All tabs populated from loaded data");
+            // When MainControlTab finishes loading, populate other tabs with the same data
+            PeptideTicTab.UpdateChart(MainControlTab.GetCurrentData());
+            ProteinMatrixTab.UpdateMatrix(MainControlTab.GetCurrentData());
         }
 
-        private async void PeptideTicTab_CellTypePredictionsRequested(object sender, EventArgs e)
-        {
-            try
-            {
-                // Get current import ID
-                int? importId = await _projectService.GetMostRecentImportIdAsync();
-                if (!importId.HasValue)
-                {
-                    MessageBox.Show("No parquet data has been imported.", "No Data", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
+        // ==================== LOADING OVERLAY PROGRESS REPORTER ====================
 
-                // Get current proteomics data
-                var currentData = MainControlTab.GetCurrentData();
-                if (currentData == null)
-                {
-                    MessageBox.Show("No proteomics data available.", "No Data", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                // Show loading overlay with progress
-                var progressReporter = new UIProgressReporter(LoadingOverlay);
-                LoadingOverlay.SetMessage("Cell Type Classification");
-                LoadingOverlay.Show();
-
-                // Get or compute predictions
-                var predictions = await MainControlTab.GetCellTypePredictionsAsync(
-                    currentData,
-                    _projectReferenceDatabasePath,
-                    importId.Value,
-                    progressReporter);
-
-                // Pass predictions to PeptideTicTab
-                var colorMap = MainControlTab.GetCellTypeColorMap();
-                PeptideTicTab.SetCellTypePredictions(predictions, colorMap);
-
-                LoadingOverlay.Hide();
-            }
-            catch (Exception ex)
-            {
-                LoadingOverlay.Hide();
-                MessageBox.Show(
-                    $"Error computing cell type predictions:\n\n{ex.Message}",
-                    "Prediction Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-            }
-        }
-
-        // ==================== PROGRESS REPORTER ====================
-
-        private class UIProgressReporter : IProgressReporter
+        private class LoadingOverlayProgressReporter : IProgressReporter
         {
             private readonly LoadingOverlay _loadingOverlay;
 
-            public UIProgressReporter(LoadingOverlay loadingOverlay)
+            public LoadingOverlayProgressReporter(LoadingOverlay loadingOverlay)
             {
                 _loadingOverlay = loadingOverlay;
             }
@@ -776,13 +616,22 @@ namespace SCPBrowser
             return recentProjects;
         }
 
-        private void ClearRecentProjects()
+        private void LoadRecentProjectsUI()
         {
-            if (Settings.Default.RecentProjects != null)
+            var recentProjects = GetRecentProjects();
+
+            if (recentProjects.Count > 0)
             {
-                Settings.Default.RecentProjects.Clear();
-                Settings.Default.Save();
+                RecentProjectsList.ItemsSource = recentProjects;
+                NoRecentProjectsText.Visibility = Visibility.Collapsed;
             }
+            else
+            {
+                RecentProjectsList.ItemsSource = null;
+                NoRecentProjectsText.Visibility = Visibility.Visible;
+            }
+
+            Console.WriteLine($"Loaded {recentProjects.Count} recent projects for display");
         }
 
         private void LoadParquet(object sender, RoutedEventArgs e)

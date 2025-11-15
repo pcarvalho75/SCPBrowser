@@ -2,9 +2,12 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
 using Parquet;
 using Parquet.Data;
+using SCPBrowser.Models;
 
 namespace SCPBrowser.Services
 {
@@ -86,6 +89,22 @@ namespace SCPBrowser.Services
 
     public class ParquetDataService
     {
+        private readonly string _projectDbPath;
+
+        // Constructor for database operations
+        public ParquetDataService(string projectDbPath)
+        {
+            _projectDbPath = projectDbPath;
+        }
+
+        // Parameterless constructor for file parsing only (backwards compatibility)
+        public ParquetDataService()
+        {
+            _projectDbPath = null;
+        }
+
+        // ==================== FILE PARSING METHODS ====================
+
         public async Task<List<string>> GetColumnNamesAsync(string filePath)
         {
             if (!File.Exists(filePath))
@@ -102,6 +121,35 @@ namespace SCPBrowser.Services
             }
         }
 
+        /// <summary>
+        /// Gets the most recent import ID
+        /// </summary>
+        public async Task<int?> GetMostRecentImportIdAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                SELECT import_id 
+                FROM parquet_imports 
+                ORDER BY import_timestamp DESC 
+                LIMIT 1
+            ";
+
+                    var result = await command.ExecuteScalarAsync();
+
+                    if (result == null || result == DBNull.Value)
+                        return null;
+
+                    return Convert.ToInt32(result);
+                }
+            }
+        }
 
         public async Task<ProteomicsData> LoadParquetFileAsync(string filePath, ColumnMapping mapping)
         {
@@ -242,26 +290,15 @@ namespace SCPBrowser.Services
                                         double tic = Convert.ToDouble(ticValue);
                                         ticByFile[rawFile] += tic;
 
-                                        bool isTargetProtein = false;
-                                        if (mapping.TargetProteinIdentifiers != null && mapping.TargetProteinIdentifiers.Count > 0)
+                                        if (mapping.TargetProteinIdentifiers != null &&
+                                            mapping.TargetProteinIdentifiers.Count > 0 &&
+                                            !string.IsNullOrEmpty(proteinIds))
                                         {
-                                            foreach (var targetId in mapping.TargetProteinIdentifiers)
+                                            if (mapping.TargetProteinIdentifiers.Any(target =>
+                                                proteinIds.Contains(target, StringComparison.OrdinalIgnoreCase)))
                                             {
-                                                if (string.IsNullOrWhiteSpace(targetId))
-                                                    continue;
-
-                                                if ((!string.IsNullOrEmpty(protein) && protein.Contains(targetId, StringComparison.OrdinalIgnoreCase)) ||
-                                                    (!string.IsNullOrEmpty(proteinIds) && proteinIds.Contains(targetId, StringComparison.OrdinalIgnoreCase)))
-                                                {
-                                                    isTargetProtein = true;
-                                                    break;
-                                                }
+                                                targetProteinTicByFile[rawFile] += tic;
                                             }
-                                        }
-
-                                        if (isTargetProtein)
-                                        {
-                                            targetProteinTicByFile[rawFile] += tic;
                                         }
                                     }
                                 }
@@ -271,22 +308,348 @@ namespace SCPBrowser.Services
                 }
             }
 
-            data.RawFileNames = rawFiles.OrderBy(f => f).ToList();
-
-            foreach (var file in data.RawFileNames)
-            {
-                data.ProteinCountPerFile[file] = proteinsByFile.ContainsKey(file) ? proteinsByFile[file].Count : 0;
-                data.PeptideCountPerFile[file] = peptidesByFile.ContainsKey(file) ? peptidesByFile[file].Count : 0;
-                data.TotalIonCurrentPerFile[file] = ticByFile.ContainsKey(file) ? ticByFile[file] : 0;
-
-                var totalTic = ticByFile.ContainsKey(file) ? ticByFile[file] : 0;
-                var targetTic = targetProteinTicByFile.ContainsKey(file) ? targetProteinTicByFile[file] : 0;
-                data.TargetProteinRatioPerFile[file] = totalTic > 0 ? targetTic / totalTic : 0;
-            }
-
+            data.TotalRawFiles = rawFiles.Count;
+            data.TotalProteinGroups = proteinGroups.Count;
+            data.TotalPeptides = peptides.Count;
+            data.RawFileNames = rawFiles.OrderBy(rf => rf).ToList();
             data.ProteinQuantMatrix = proteinQuantMatrix;
 
+            foreach (var rawFile in rawFiles)
+            {
+                data.ProteinCountPerFile[rawFile] = proteinsByFile[rawFile].Count;
+                data.PeptideCountPerFile[rawFile] = peptidesByFile[rawFile].Count;
+                data.TotalIonCurrentPerFile[rawFile] = ticByFile[rawFile];
+
+                if (mapping.TargetProteinIdentifiers != null && mapping.TargetProteinIdentifiers.Count > 0)
+                {
+                    double targetTic = targetProteinTicByFile.ContainsKey(rawFile) ? targetProteinTicByFile[rawFile] : 0;
+                    double totalTic = ticByFile[rawFile];
+                    data.TargetProteinRatioPerFile[rawFile] = totalTic > 0 ? (targetTic / totalTic) * 100.0 : 0;
+                }
+            }
+
             return data;
+        }
+
+        // ==================== DATABASE OPERATIONS ====================
+
+        /// <summary>
+        /// Inserts a parquet import record and returns the new import_id
+        /// </summary>
+        public async Task<int> InsertParquetImportAsync(ParquetImportInfo importInfo)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                        INSERT INTO parquet_imports 
+                        (plate_id, file_name, file_hash, import_timestamp, row_count, protein_count, cell_count, column_mapping)
+                        VALUES 
+                        (@plateId, @fileName, @fileHash, @timestamp, @rowCount, @proteinCount, @cellCount, @mapping);
+                        
+                        SELECT last_insert_rowid();
+                    ";
+
+                    command.Parameters.AddWithValue("@plateId", importInfo.PlateId);
+                    command.Parameters.AddWithValue("@fileName", importInfo.FileName);
+                    command.Parameters.AddWithValue("@fileHash", importInfo.FileHash);
+                    command.Parameters.AddWithValue("@timestamp", importInfo.ImportTimestamp.ToString("o"));
+                    command.Parameters.AddWithValue("@rowCount", importInfo.RowCount);
+                    command.Parameters.AddWithValue("@proteinCount", importInfo.ProteinCount);
+                    command.Parameters.AddWithValue("@cellCount", importInfo.CellCount);
+                    command.Parameters.AddWithValue("@mapping", importInfo.ColumnMappingJson);
+
+                    var result = await command.ExecuteScalarAsync();
+                    return Convert.ToInt32(result);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Bulk inserts raw file records associated with an import
+        /// Returns the raw files with their assigned raw_file_id values
+        /// </summary>
+        public async Task<List<RawFileInfo>> InsertRawFilesAsync(int importId, List<RawFileInfo> rawFiles)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+            var insertedFiles = new List<RawFileInfo>();
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        foreach (var rawFile in rawFiles)
+                        {
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandText = @"
+                                    INSERT INTO raw_files 
+                                    (import_id, raw_file_name, biological_condition, plate_id, protein_count, peptide_count, total_ion_current)
+                                    VALUES 
+                                    (@importId, @rawFileName, @condition, @plateId, @proteinCount, @peptideCount, @tic);
+                                    
+                                    SELECT last_insert_rowid();
+                                ";
+
+                                command.Parameters.AddWithValue("@importId", importId);
+                                command.Parameters.AddWithValue("@rawFileName", rawFile.RawFileName);
+                                command.Parameters.AddWithValue("@condition", rawFile.BiologicalCondition ?? (object)DBNull.Value);
+                                command.Parameters.AddWithValue("@plateId", rawFile.PlateId.HasValue ? rawFile.PlateId.Value : DBNull.Value);
+                                command.Parameters.AddWithValue("@proteinCount", rawFile.ProteinCount);
+                                command.Parameters.AddWithValue("@peptideCount", rawFile.PeptideCount);
+                                command.Parameters.AddWithValue("@tic", rawFile.TotalIonCurrent);
+
+                                var result = await command.ExecuteScalarAsync();
+                                int rawFileId = Convert.ToInt32(result);
+
+                                // Update the raw file object with its database ID
+                                rawFile.RawFileId = rawFileId;
+                                insertedFiles.Add(rawFile);
+                            }
+                        }
+
+                        await transaction.CommitAsync();
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync();
+                        throw;
+                    }
+                }
+            }
+
+            return insertedFiles;
+        }
+
+        /// <summary>
+        /// Gets all raw files, optionally filtered by plate or condition
+        /// </summary>
+        public async Task<List<RawFileInfo>> GetRawFilesAsync(int? plateId = null, string biologicalCondition = null)
+        {
+            var rawFiles = new List<RawFileInfo>();
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    var whereClauses = new List<string>();
+
+                    if (plateId.HasValue)
+                    {
+                        whereClauses.Add("rf.plate_id = @plateId");
+                    }
+
+                    if (!string.IsNullOrEmpty(biologicalCondition))
+                    {
+                        whereClauses.Add("rf.biological_condition = @condition");
+                    }
+
+                    var whereClause = whereClauses.Count > 0 ? "WHERE " + string.Join(" AND ", whereClauses) : "";
+
+                    command.CommandText = $@"
+                        SELECT rf.raw_file_id, rf.import_id, rf.raw_file_name, 
+                               rf.biological_condition, rf.plate_id, p.plate_name,
+                               rf.protein_count, rf.peptide_count, rf.total_ion_current
+                        FROM raw_files rf
+                        LEFT JOIN plates p ON rf.plate_id = p.plate_id
+                        {whereClause}
+                        ORDER BY rf.raw_file_name
+                    ";
+
+                    if (plateId.HasValue)
+                    {
+                        command.Parameters.AddWithValue("@plateId", plateId.Value);
+                    }
+
+                    if (!string.IsNullOrEmpty(biologicalCondition))
+                    {
+                        command.Parameters.AddWithValue("@condition", biologicalCondition);
+                    }
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            rawFiles.Add(new RawFileInfo
+                            {
+                                RawFileId = reader.GetInt32(0),
+                                ImportId = reader.GetInt32(1),
+                                RawFileName = reader.GetString(2),
+                                BiologicalCondition = reader.IsDBNull(3) ? "" : reader.GetString(3),
+                                PlateId = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                                PlateName = reader.IsDBNull(5) ? "" : reader.GetString(5),
+                                ProteinCount = reader.IsDBNull(6) ? 0 : reader.GetInt32(6),
+                                PeptideCount = reader.IsDBNull(7) ? 0 : reader.GetInt32(7),
+                                TotalIonCurrent = reader.IsDBNull(8) ? 0.0 : reader.GetDouble(8)
+                            });
+                        }
+                    }
+                }
+            }
+
+            return rawFiles;
+        }
+
+        /// <summary>
+        /// Gets all distinct biological conditions from the database
+        /// </summary>
+        public async Task<List<string>> GetBiologicalConditionsAsync()
+        {
+            var conditions = new List<string>();
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                        SELECT DISTINCT biological_condition 
+                        FROM raw_files 
+                        WHERE biological_condition IS NOT NULL 
+                          AND biological_condition != ''
+                        ORDER BY biological_condition
+                    ";
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            conditions.Add(reader.GetString(0));
+                        }
+                    }
+                }
+            }
+
+            return conditions;
+        }
+
+        /// <summary>
+        /// Checks if a parquet file has already been imported
+        /// </summary>
+        public async Task<bool> IsParquetImportedAsync(string fileName)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "SELECT COUNT(*) FROM parquet_imports WHERE file_name = @fileName";
+                    command.Parameters.AddWithValue("@fileName", fileName);
+
+                    var result = await command.ExecuteScalarAsync();
+                    return Convert.ToInt32(result) > 0;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Deletes an existing parquet import and all associated raw files
+        /// </summary>
+        public async Task DeleteParquetImportAsync(string fileName)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        // Get import_id
+                        int importId;
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = "SELECT import_id FROM parquet_imports WHERE file_name = @fileName";
+                            command.Parameters.AddWithValue("@fileName", fileName);
+                            var result = await command.ExecuteScalarAsync();
+                            if (result == null) return;
+                            importId = Convert.ToInt32(result);
+                        }
+
+                        // Delete raw files first (foreign key constraint)
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = "DELETE FROM raw_files WHERE import_id = @importId";
+                            command.Parameters.AddWithValue("@importId", importId);
+                            await command.ExecuteNonQueryAsync();
+                        }
+
+                        // Delete the import
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = "DELETE FROM parquet_imports WHERE import_id = @importId";
+                            command.Parameters.AddWithValue("@importId", importId);
+                            await command.ExecuteNonQueryAsync();
+                        }
+
+                        await transaction.CommitAsync();
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync();
+                        throw;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Calculates SHA256 hash of a file
+        /// </summary>
+        public string CalculateFileHash(string filePath)
+        {
+            using (var sha256 = SHA256.Create())
+            {
+                using (var stream = File.OpenRead(filePath))
+                {
+                    var hash = sha256.ComputeHash(stream);
+                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets the filename of the most recently imported parquet file
+        /// </summary>
+        public async Task<string> GetLastImportedParquetFileAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                        SELECT file_name 
+                        FROM parquet_imports 
+                        ORDER BY import_timestamp DESC 
+                        LIMIT 1";
+
+                    var result = await command.ExecuteScalarAsync();
+                    return result?.ToString();
+                }
+            }
         }
     }
 }

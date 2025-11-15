@@ -104,7 +104,7 @@ namespace SCPBrowser
                 }
 
                 // Create the project database
-                var projectService = new ProjectDataService(projectDbPath);
+                var projectService = new ProjectDatabaseService(projectDbPath);
                 await projectService.CreateProjectAsync(ProjectName, ProjectDescription);
 
                 DialogResult = true;

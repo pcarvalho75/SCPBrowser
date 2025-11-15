@@ -484,6 +484,39 @@ namespace SCPBrowser.Services
             }
         }
 
+        /// <summary>
+        /// Ensures the cell type classifications table exists (for existing databases)
+        /// </summary>
+        public async Task EnsureCellTypeClassificationsTableExistsAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS raw_file_cell_type_classifications (
+                    classification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    raw_file_id INTEGER NOT NULL UNIQUE,
+                    predicted_cell_type TEXT NOT NULL,
+                    composite_score REAL NOT NULL,
+                    spearman_correlation REAL NOT NULL,
+                    specificity_score REAL NOT NULL,
+                    hypergeometric_pvalue REAL NOT NULL,
+                    classified_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
+                );
+            ";
+
+                    await command.ExecuteNonQueryAsync();
+                    Console.WriteLine("Cell type classifications table ensured");
+                }
+            }
+        }
+
         public async Task SaveCellTypeClassificationsAsync(
     string projectDatabasePath,
     int importId,

@@ -94,6 +94,9 @@ namespace SCPBrowser
                 _currentProjectPath = projectDbPath;
                 _projectService = new ProjectDataService(projectDbPath);
 
+                // Ensure new tables exist (migration for existing projects)
+                await _projectService.EnsureCellTypeClassificationsTableExistsAsync();
+
                 // Load project info
                 var projectInfo = await _projectService.GetProjectInfoAsync();
 
@@ -569,6 +572,10 @@ namespace SCPBrowser
                     var colorMap = MainControlTab.GetCellTypeColorMap();
                     PeptideTicTab.SetCellTypePredictions(predictions, colorMap);
                 }
+
+                // Enable cell type radio button if transcriptomic database is loaded (even without predictions)
+                bool transcriptomicLoaded = MainControlTab.IsTranscriptomicDatabaseLoaded();
+                PeptideTicTab.EnableCellTypeClassification(transcriptomicLoaded);
 
                 // Set GO enrichment if available
                 var goResults = MainControlTab.GetGoEnrichmentResults();

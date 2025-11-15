@@ -152,6 +152,10 @@ namespace SCPBrowser.Services
 
                     for (int i = 0; i < parquetReader.RowGroupCount; i++)
                     {
+
+                        if (i % 5 == 0) // Every 5 row groups
+                            await Task.Delay(1);
+
                         using (var groupReader = parquetReader.OpenRowGroupReader(i))
                         {
                             var rawFileColumn = await groupReader.ReadColumnAsync(rawFileField);

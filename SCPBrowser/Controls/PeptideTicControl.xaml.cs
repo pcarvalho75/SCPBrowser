@@ -55,6 +55,11 @@ namespace SCPBrowser
             }
         }
 
+        public void EnableCellTypeClassification(bool isAvailable)
+        {
+            ColorByCellTypeRadio.IsEnabled = isAvailable;
+        }
+
         public void SetGoEnrichmentResults(Dictionary<string, RunGoEnrichmentResult> results, Dictionary<string, Color> colorMap)
         {
             _goEnrichmentResults = results;

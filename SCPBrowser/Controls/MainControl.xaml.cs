@@ -145,6 +145,11 @@ namespace SCPBrowser
             }
         }
 
+        public bool IsTranscriptomicDatabaseLoaded()
+        {
+            return _cellTypeClassificationManager.IsLoaded;
+        }
+
         public async void OpenDiannFile()
         {
             var dialog = new OpenFileDialog

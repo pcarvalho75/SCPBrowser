@@ -1,4 +1,6 @@
-﻿using System;
+﻿using MathNet.Numerics.Distributions;
+using MathNet.Numerics.Statistics;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -209,6 +211,11 @@ namespace SCPBrowser
         /// Calculates Spearman rank correlation between proteomics and transcriptomics
         /// Uses cell type profile median expression values (NOT individual cells)
         /// </summary>
+
+        /// <summary>
+        /// Calculates Spearman rank correlation between proteomics and transcriptomics
+        /// Uses cell type profile median expression values (NOT individual cells)
+        /// </summary>
         private double CalculateSpearmanCorrelation(Dictionary<string, double> proteinAbundances, CellTypeProfile profile)
         {
             // Find common genes between proteomics data and this cell type profile
@@ -219,22 +226,23 @@ namespace SCPBrowser
             if (commonProteins.Count < 3)
                 return 0;
 
-            // Get proteomics values and rank them
-            var proteomicsValues = commonProteins
-                .Select(p => proteinAbundances[p])
-                .ToList();
-            var proteomicsRanks = GetRanks(proteomicsValues);
+            // Get the raw values (not ranks). The library will handle ranking.
+            var proteomicsValues = commonProteins.Select(p => proteinAbundances[p]);
+            var transcriptomicsValues = commonProteins.Select(p => profile.MedianExpression[p]);
 
-            // Get transcriptomics median expression values and rank them
-            var transcriptomicsValues = commonProteins
-                .Select(p => profile.MedianExpression[p])
-                .ToList();
-            var transcriptomicsRanks = GetRanks(transcriptomicsValues);
-
-            // Calculate Pearson correlation on ranks (= Spearman correlation)
-            return CalculatePearsonCorrelation(proteomicsRanks, transcriptomicsRanks);
+            try
+            {
+                // Let the library do all the work: ranking and correlation
+                return Correlation.Spearman(proteomicsValues, transcriptomicsValues);
+            }
+            catch (Exception)
+            {
+                // This try-catch is a fragility guard. Math.NET can throw errors
+                // if the data is invalid (e.g., all identical values),
+                // so we return 0 in that case.
+                return 0;
+            }
         }
-
         /// <summary>
         /// Calculates a specificity-weighted score that prioritizes cell-type-specific genes
         /// Genes that are more specific to this cell type contribute more to the score
@@ -315,105 +323,23 @@ namespace SCPBrowser
         /// Exact calculation of hypergeometric p-value (right-tailed test)
         /// P(X >= k) where X ~ Hypergeometric(N, K, n)
         /// </summary>
+        /// <summary>
+        /// Exact calculation of hypergeometric p-value (right-tailed test)
+        /// P(X >= k) where X ~ Hypergeometric(N, K, n)
+        /// </summary>
         private double CalculateHypergeometricPValueExact(int N, int K, int n, int k)
         {
-            double pValue = 0;
+            // Create the distribution object with your parameters
+            // N = population, K = successes, n = draws
+            var hypergeometric = new Hypergeometric(N, K, n);
 
-            // Sum probabilities from k to min(n, K)
-            for (int i = k; i <= Math.Min(n, K); i++)
-            {
-                double probability = (BinomialCoefficient(K, i) * BinomialCoefficient(N - K, n - i)) /
-                                    BinomialCoefficient(N, n);
-                pValue += probability;
-            }
-
-            return Math.Min(1.0, pValue);
+            // Calculate the p-value P(X >= k).
+            // This is the Complementary Cumulative Distribution (CCDF) at k-1.
+            // CCDF(x) = P(X > x), so CCDF(k-1) = P(X > k-1) = P(X >= k)
+            return 1.0 - hypergeometric.CumulativeDistribution(k - 1);
         }
 
-        /// <summary>
-        /// Calculates binomial coefficient: "n choose k"
-        /// </summary>
-        private double BinomialCoefficient(int n, int k)
-        {
-            if (k > n || k < 0)
-                return 0;
-            if (k == 0 || k == n)
-                return 1;
-            if (k > n - k)
-                k = n - k;
 
-            double result = 1;
-            for (int i = 1; i <= k; i++)
-            {
-                result *= (n - k + i);
-                result /= i;
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// Converts values to ranks (1 = lowest, n = highest)
-        /// Handles ties by averaging ranks
-        /// </summary>
-        private List<double> GetRanks(List<double> values)
-        {
-            var indexed = values.Select((value, index) => new { value, index }).ToList();
-            var sorted = indexed.OrderBy(x => x.value).ToList();
-
-            var ranks = new double[values.Count];
-
-            int i = 0;
-            while (i < sorted.Count)
-            {
-                // Find range of tied values
-                int j = i;
-                while (j < sorted.Count && Math.Abs(sorted[j].value - sorted[i].value) < 1e-10)
-                    j++;
-
-                // Average rank for ties
-                double avgRank = (i + j + 1) / 2.0; // +1 because ranks are 1-indexed
-                for (int k = i; k < j; k++)
-                {
-                    ranks[sorted[k].index] = avgRank;
-                }
-
-                i = j;
-            }
-
-            return ranks.ToList();
-        }
-
-        /// <summary>
-        /// Calculates Pearson correlation coefficient between two lists
-        /// </summary>
-        private double CalculatePearsonCorrelation(List<double> x, List<double> y)
-        {
-            if (x.Count != y.Count || x.Count == 0)
-                return 0;
-
-            double meanX = x.Average();
-            double meanY = y.Average();
-
-            double numerator = 0;
-            double denomX = 0;
-            double denomY = 0;
-
-            for (int i = 0; i < x.Count; i++)
-            {
-                double diffX = x[i] - meanX;
-                double diffY = y[i] - meanY;
-
-                numerator += diffX * diffY;
-                denomX += diffX * diffX;
-                denomY += diffY * diffY;
-            }
-
-            if (denomX == 0 || denomY == 0)
-                return 0;
-
-            return numerator / Math.Sqrt(denomX * denomY);
-        }
     }
 
     /// <summary>

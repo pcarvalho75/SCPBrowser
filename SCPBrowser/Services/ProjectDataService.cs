@@ -376,6 +376,292 @@ namespace SCPBrowser.Services
             }
         }
 
+        private async Task CreateTablesAsync(SqliteConnection connection)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = @"
+            -- Plates table
+            CREATE TABLE IF NOT EXISTS plates (
+                plate_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plate_name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- Parquet import metadata
+            CREATE TABLE IF NOT EXISTS parquet_imports (
+                import_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                import_date TEXT NOT NULL,
+                row_count INTEGER NOT NULL,
+                protein_count INTEGER NOT NULL,
+                cell_count INTEGER NOT NULL,
+                column_mapping TEXT NOT NULL,
+                FOREIGN KEY (plate_id) REFERENCES plates(plate_id),
+                UNIQUE(file_name)
+            );
+
+            -- Raw files (biological condition stored HERE at raw file level)
+            CREATE TABLE IF NOT EXISTS raw_files (
+                raw_file_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                import_id INTEGER NOT NULL,
+                raw_file_name TEXT NOT NULL,
+                biological_condition TEXT,
+                plate_id INTEGER,
+                protein_count INTEGER,
+                peptide_count INTEGER,
+                total_ion_current REAL,
+                FOREIGN KEY (import_id) REFERENCES parquet_imports(import_id),
+                FOREIGN KEY (plate_id) REFERENCES plates(plate_id)
+            );
+
+            -- Protein quantification summary
+            CREATE TABLE IF NOT EXISTS protein_quant_summary (
+                protein_id TEXT NOT NULL,
+                raw_file_id INTEGER NOT NULL,
+                median_intensity REAL,
+                mean_intensity REAL,
+                detection_count INTEGER,
+                PRIMARY KEY (protein_id, raw_file_id),
+                FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
+            );
+
+            -- ==================== REFERENCE DATA TABLES ====================
+            
+            -- Cell type profiles (transcriptomic reference data)
+            CREATE TABLE IF NOT EXISTS cell_type_profiles (
+                cell_type TEXT NOT NULL,
+                gene_name TEXT NOT NULL,
+                median_expression REAL NOT NULL,
+                mean_expression REAL,
+                percent_expressing REAL,
+                PRIMARY KEY (cell_type, gene_name)
+            );
+
+            -- Cell type metadata
+            CREATE TABLE IF NOT EXISTS cell_type_metadata (
+                cell_type TEXT PRIMARY KEY,
+                cell_count INTEGER NOT NULL,
+                genes_expressed INTEGER NOT NULL,
+                age_range TEXT,
+                batch_info TEXT
+            );
+
+            -- GO term definitions
+            CREATE TABLE IF NOT EXISTS go_terms (
+                go_id TEXT PRIMARY KEY,
+                go_name TEXT NOT NULL,
+                go_namespace TEXT NOT NULL
+            );
+
+            -- GO annotations (gene to GO term mappings)
+            CREATE TABLE IF NOT EXISTS go_annotations (
+                gene_name TEXT NOT NULL,
+                go_id TEXT NOT NULL,
+                PRIMARY KEY (gene_name, go_id),
+                FOREIGN KEY (go_id) REFERENCES go_terms(go_id)
+            );
+
+            -- ==================== CELL TYPE CLASSIFICATIONS ====================
+            
+            -- Raw file cell type classifications
+            CREATE TABLE IF NOT EXISTS raw_file_cell_type_classifications (
+                classification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                raw_file_id INTEGER NOT NULL UNIQUE,
+                predicted_cell_type TEXT NOT NULL,
+                composite_score REAL NOT NULL,
+                spearman_correlation REAL NOT NULL,
+                specificity_score REAL NOT NULL,
+                hypergeometric_pvalue REAL NOT NULL,
+                classified_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
+            );
+        ";
+
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        public async Task SaveCellTypeClassificationsAsync(
+    string projectDatabasePath,
+    int importId,
+    Dictionary<string, CellTypePredictionResult> predictions)
+        {
+            using (var connection = new SqliteConnection($"Data Source={projectDatabasePath}"))
+            {
+                await connection.OpenAsync();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        foreach (var (runName, prediction) in predictions)
+                        {
+                            // Skip if no prediction
+                            if (prediction == null || prediction.TopCellType == null)
+                                continue;
+
+                            // Get raw_file_id for this run name
+                            int? rawFileId = null;
+                            using (var selectCmd = connection.CreateCommand())
+                            {
+                                selectCmd.CommandText = @"
+                            SELECT raw_file_id 
+                            FROM raw_files 
+                            WHERE raw_file_name = @runName AND import_id = @importId
+                        ";
+                                selectCmd.Parameters.AddWithValue("@runName", runName);
+                                selectCmd.Parameters.AddWithValue("@importId", importId);
+
+                                var result = await selectCmd.ExecuteScalarAsync();
+                                if (result != null)
+                                {
+                                    rawFileId = Convert.ToInt32(result);
+                                }
+                            }
+
+                            if (!rawFileId.HasValue)
+                            {
+                                Console.WriteLine($"Warning: Could not find raw_file_id for run '{runName}'");
+                                continue;
+                            }
+
+                            // Delete existing classification if it exists
+                            using (var deleteCmd = connection.CreateCommand())
+                            {
+                                deleteCmd.CommandText = @"
+                            DELETE FROM raw_file_cell_type_classifications 
+                            WHERE raw_file_id = @rawFileId
+                        ";
+                                deleteCmd.Parameters.AddWithValue("@rawFileId", rawFileId.Value);
+                                await deleteCmd.ExecuteNonQueryAsync();
+                            }
+
+                            // Insert new classification
+                            using (var insertCmd = connection.CreateCommand())
+                            {
+                                insertCmd.CommandText = @"
+                            INSERT INTO raw_file_cell_type_classifications 
+                            (raw_file_id, predicted_cell_type, composite_score, 
+                             spearman_correlation, specificity_score, hypergeometric_pvalue, classified_at)
+                            VALUES 
+                            (@rawFileId, @cellType, @compositeScore, 
+                             @spearman, @specificity, @pvalue, @timestamp)
+                        ";
+
+                                insertCmd.Parameters.AddWithValue("@rawFileId", rawFileId.Value);
+                                insertCmd.Parameters.AddWithValue("@cellType", prediction.TopCellType);
+                                insertCmd.Parameters.AddWithValue("@compositeScore", prediction.TopScore.CompositeScore);
+                                insertCmd.Parameters.AddWithValue("@spearman", prediction.TopScore.SpearmanCorrelation);
+                                insertCmd.Parameters.AddWithValue("@specificity", prediction.TopScore.SpecificityScore);
+                                insertCmd.Parameters.AddWithValue("@pvalue", prediction.TopScore.HypergeometricPValue);
+                                insertCmd.Parameters.AddWithValue("@timestamp", DateTime.UtcNow.ToString("o"));
+
+                                await insertCmd.ExecuteNonQueryAsync();
+                            }
+                        }
+
+                        transaction.Commit();
+                    }
+                    catch (Exception ex)
+                    {
+                        transaction.Rollback();
+                        throw new Exception($"Failed to save cell type classifications: {ex.Message}", ex);
+                    }
+                }
+            }
+        }
+
+        public async Task<Dictionary<string, CellTypePredictionResult>> LoadCellTypeClassificationsAsync(
+    string projectDatabasePath,
+    int importId)
+        {
+            var predictions = new Dictionary<string, CellTypePredictionResult>();
+
+            using (var connection = new SqliteConnection($"Data Source={projectDatabasePath}"))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                SELECT 
+                    rf.raw_file_name,
+                    c.predicted_cell_type,
+                    c.composite_score,
+                    c.spearman_correlation,
+                    c.specificity_score,
+                    c.hypergeometric_pvalue
+                FROM raw_file_cell_type_classifications c
+                JOIN raw_files rf ON c.raw_file_id = rf.raw_file_id
+                WHERE rf.import_id = @importId
+            ";
+                    command.Parameters.AddWithValue("@importId", importId);
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var runName = reader.GetString(0);
+                            var cellType = reader.GetString(1);
+                            var compositeScore = reader.GetDouble(2);
+                            var spearmanCorr = reader.GetDouble(3);
+                            var specificityScore = reader.GetDouble(4);
+                            var pValue = reader.GetDouble(5);
+
+                            var topScore = new CellTypeScore
+                            {
+                                SpearmanCorrelation = spearmanCorr,
+                                SpecificityScore = specificityScore,
+                                HypergeometricPValue = pValue,
+                                CompositeScore = compositeScore
+                            };
+
+                            var result = new CellTypePredictionResult
+                            {
+                                TopCellType = cellType,
+                                TopScore = topScore,
+                                Scores = new Dictionary<string, CellTypeScore>
+                        {
+                            { cellType, topScore }
+                        }
+                            };
+
+                            predictions[runName] = result;
+                        }
+                    }
+                }
+            }
+
+            return predictions;
+        }
+
+        public async Task DeleteAllCellTypeClassificationsAsync(string projectDatabasePath, int importId)
+        {
+            using (var connection = new SqliteConnection($"Data Source={projectDatabasePath}"))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                DELETE FROM raw_file_cell_type_classifications 
+                WHERE raw_file_id IN (
+                    SELECT raw_file_id 
+                    FROM raw_files 
+                    WHERE import_id = @importId
+                )
+            ";
+                    command.Parameters.AddWithValue("@importId", importId);
+
+                    int deletedCount = await command.ExecuteNonQueryAsync();
+                    Console.WriteLine($"Deleted {deletedCount} cell type classifications for import {importId}");
+                }
+            }
+        }
+
         // In SCPBrowser/Services/ProjectDataService.cs
 
         /// <summary>
@@ -819,6 +1105,36 @@ namespace SCPBrowser.Services
                     command.Parameters.AddWithValue("@rawFileId", rawFileId);
                     command.Parameters.AddWithValue("@condition", biologicalCondition ?? "");
                     await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets the most recent import ID
+        /// </summary>
+        public async Task<int?> GetMostRecentImportIdAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                SELECT import_id 
+                FROM parquet_imports 
+                ORDER BY import_timestamp DESC 
+                LIMIT 1
+            ";
+
+                    var result = await command.ExecuteScalarAsync();
+
+                    if (result == null || result == DBNull.Value)
+                        return null;
+
+                    return Convert.ToInt32(result);
                 }
             }
         }

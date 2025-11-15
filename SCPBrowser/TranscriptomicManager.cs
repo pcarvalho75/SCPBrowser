@@ -1,209 +1,213 @@
-﻿using SCPBrowser.Services;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
+﻿// DEPRECATED - Merged into CellTypeClassificationManager
+// Keep for reference until migration is complete and tested
+// TODO: Delete this file once confirmed working
 
-namespace SCPBrowser
-{
-    public class TranscriptomicManager
-    {
-        private TranscriptomicDatabase _database;
-        private CellTypePredictor _predictor;
-        private readonly ReferenceDataService _referenceService;
+//using SCPBrowser.Services;
+//using System;
+//using System.Collections.Generic;
+//using System.IO;
+//using System.Linq;
+//using System.Threading.Tasks;
 
-        public bool IsLoaded => _database != null && _predictor != null;
-        public TranscriptomicDatabase Database => _database;
+//namespace SCPBrowser
+//{
+//    public class TranscriptomicManager
+//    {
+//        private TranscriptomicDatabase _database;
+//        private CellTypePredictor _predictor;
+//        private readonly ReferenceDataService _referenceService;
 
-        public TranscriptomicManager()
-        {
-            _referenceService = new ReferenceDataService();
-        }
+//        public bool IsLoaded => _database != null && _predictor != null;
+//        public TranscriptomicDatabase Database => _database;
 
-        public async Task LoadDatabaseAsync(string databasePath)
-        {
-            if (!File.Exists(databasePath))
-                throw new FileNotFoundException("Reference database not found", databasePath);
+//        public TranscriptomicManager()
+//        {
+//            _referenceService = new ReferenceDataService();
+//        }
 
-            _database = await _referenceService.LoadTranscriptomicDataAsync(databasePath);
-            _predictor = new CellTypePredictor(_database);
-        }
+//        public async Task LoadDatabaseAsync(string databasePath)
+//        {
+//            if (!File.Exists(databasePath))
+//                throw new FileNotFoundException("Reference database not found", databasePath);
 
-        public CellTypePredictionResult PredictCellTypeForRun(ProteomicsData proteomicsData, string runName)
-        {
-            if (!IsLoaded)
-                throw new InvalidOperationException("Transcriptomic database not loaded");
+//            _database = await _referenceService.LoadTranscriptomicDataAsync(databasePath);
+//            _predictor = new CellTypePredictor(_database);
+//        }
 
-            if (proteomicsData == null || string.IsNullOrEmpty(runName))
-                return new CellTypePredictionResult();
+//        public CellTypePredictionResult PredictCellTypeForRun(ProteomicsData proteomicsData, string runName)
+//        {
+//            if (!IsLoaded)
+//                throw new InvalidOperationException("Transcriptomic database not loaded");
 
-            var proteinAbundances = ExtractProteinAbundances(proteomicsData, runName);
-            return _predictor.PredictCellType(proteinAbundances);
-        }
+//            if (proteomicsData == null || string.IsNullOrEmpty(runName))
+//                return new CellTypePredictionResult();
 
-        // In SCPBrowser/TranscriptomicManager.cs
+//            var proteinAbundances = ExtractProteinAbundances(proteomicsData, runName);
+//            return _predictor.PredictCellType(proteinAbundances);
+//        }
 
-        public Dictionary<string, CellTypePredictionResult> PredictCellTypesForAllRuns(ProteomicsData proteomicsData)
-        {
-            if (!IsLoaded)
-                throw new InvalidOperationException("Transcriptomic database not loaded");
+//        // In SCPBrowser/TranscriptomicManager.cs
 
-            var predictions = new Dictionary<string, CellTypePredictionResult>();
+//        public Dictionary<string, CellTypePredictionResult> PredictCellTypesForAllRuns(ProteomicsData proteomicsData)
+//        {
+//            if (!IsLoaded)
+//                throw new InvalidOperationException("Transcriptomic database not loaded");
 
-            // --- ADD THIS NULL CHECK ---
-            // If there's no proteomics data, just return an empty prediction list.
-            // This prevents the crash when a project is opened with no data.
-            if (proteomicsData == null || proteomicsData.RawFileNames == null)
-            {
-                return predictions;
-            }
-            // --- END OF NULL CHECK ---
+//            var predictions = new Dictionary<string, CellTypePredictionResult>();
 
-            foreach (var runName in proteomicsData.RawFileNames) // This line was crashing
-            {
-                var prediction = PredictCellTypeForRun(proteomicsData, runName);
-                predictions[runName] = prediction;
-            }
+//            // --- ADD THIS NULL CHECK ---
+//            // If there's no proteomics data, just return an empty prediction list.
+//            // This prevents the crash when a project is opened with no data.
+//            if (proteomicsData == null || proteomicsData.RawFileNames == null)
+//            {
+//                return predictions;
+//            }
+//            // --- END OF NULL CHECK ---
 
-            return predictions;
-        }
+//            foreach (var runName in proteomicsData.RawFileNames) // This line was crashing
+//            {
+//                var prediction = PredictCellTypeForRun(proteomicsData, runName);
+//                predictions[runName] = prediction;
+//            }
 
-        private Dictionary<string, double> ExtractProteinAbundances(ProteomicsData proteomicsData, string runName)
-        {
-            var abundances = new Dictionary<string, double>();
+//            return predictions;
+//        }
 
-            foreach (var proteinGroup in proteomicsData.ProteinQuantMatrix.Keys)
-            {
-                if (proteomicsData.ProteinQuantMatrix[proteinGroup].ContainsKey(runName))
-                {
-                    double abundance = proteomicsData.ProteinQuantMatrix[proteinGroup][runName];
+//        private Dictionary<string, double> ExtractProteinAbundances(ProteomicsData proteomicsData, string runName)
+//        {
+//            var abundances = new Dictionary<string, double>();
 
-                    if (abundance > 0)
-                    {
-                        var proteinNames = ExtractProteinNames(proteinGroup);
-                        foreach (var proteinName in proteinNames)
-                        {
-                            if (!abundances.ContainsKey(proteinName))
-                            {
-                                abundances[proteinName] = abundance;
-                            }
-                            else
-                            {
-                                abundances[proteinName] = Math.Max(abundances[proteinName], abundance);
-                            }
-                        }
-                    }
-                }
-            }
+//            foreach (var proteinGroup in proteomicsData.ProteinQuantMatrix.Keys)
+//            {
+//                if (proteomicsData.ProteinQuantMatrix[proteinGroup].ContainsKey(runName))
+//                {
+//                    double abundance = proteomicsData.ProteinQuantMatrix[proteinGroup][runName];
 
-            return abundances;
-        }
+//                    if (abundance > 0)
+//                    {
+//                        var proteinNames = ExtractProteinNames(proteinGroup);
+//                        foreach (var proteinName in proteinNames)
+//                        {
+//                            if (!abundances.ContainsKey(proteinName))
+//                            {
+//                                abundances[proteinName] = abundance;
+//                            }
+//                            else
+//                            {
+//                                abundances[proteinName] = Math.Max(abundances[proteinName], abundance);
+//                            }
+//                        }
+//                    }
+//                }
+//            }
 
-        private List<string> ExtractProteinNames(string proteinGroup)
-        {
-            var names = new List<string>();
+//            return abundances;
+//        }
 
-            var parts = proteinGroup.Split(';', ',');
-            foreach (var part in parts)
-            {
-                var trimmed = part.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
-                {
-                    var geneName = ExtractGeneName(trimmed);
-                    if (!string.IsNullOrEmpty(geneName))
-                    {
-                        names.Add(geneName);
-                    }
-                }
-            }
+//        private List<string> ExtractProteinNames(string proteinGroup)
+//        {
+//            var names = new List<string>();
 
-            return names;
-        }
+//            var parts = proteinGroup.Split(';', ',');
+//            foreach (var part in parts)
+//            {
+//                var trimmed = part.Trim();
+//                if (!string.IsNullOrEmpty(trimmed))
+//                {
+//                    var geneName = ExtractGeneName(trimmed);
+//                    if (!string.IsNullOrEmpty(geneName))
+//                    {
+//                        names.Add(geneName);
+//                    }
+//                }
+//            }
 
-        private string ExtractGeneName(string proteinIdentifier)
-        {
-            if (string.IsNullOrEmpty(proteinIdentifier))
-                return null;
+//            return names;
+//        }
 
-            if (proteinIdentifier.Contains("_"))
-            {
-                var parts = proteinIdentifier.Split('_');
-                if (parts.Length > 0)
-                    return parts[0];
-            }
+//        private string ExtractGeneName(string proteinIdentifier)
+//        {
+//            if (string.IsNullOrEmpty(proteinIdentifier))
+//                return null;
 
-            if (proteinIdentifier.Contains("|"))
-            {
-                var parts = proteinIdentifier.Split('|');
-                if (parts.Length >= 2)
-                    return parts[1];
-            }
+//            if (proteinIdentifier.Contains("_"))
+//            {
+//                var parts = proteinIdentifier.Split('_');
+//                if (parts.Length > 0)
+//                    return parts[0];
+//            }
 
-            return proteinIdentifier;
-        }
+//            if (proteinIdentifier.Contains("|"))
+//            {
+//                var parts = proteinIdentifier.Split('|');
+//                if (parts.Length >= 2)
+//                    return parts[1];
+//            }
 
-        public Dictionary<string, System.Windows.Media.Color> GenerateCellTypeColorMap()
-        {
-            if (!IsLoaded)
-                return new Dictionary<string, System.Windows.Media.Color>();
+//            return proteinIdentifier;
+//        }
 
-            // FIX: Use CellTypeProfiles.Keys instead of CellTypeIndex.Keys
-            var cellTypes = _database.CellTypeProfiles.Keys.OrderBy(ct => ct).ToList();
-            var colorMap = new Dictionary<string, System.Windows.Media.Color>();
+//        public Dictionary<string, System.Windows.Media.Color> GenerateCellTypeColorMap()
+//        {
+//            if (!IsLoaded)
+//                return new Dictionary<string, System.Windows.Media.Color>();
 
-            for (int i = 0; i < cellTypes.Count; i++)
-            {
-                colorMap[cellTypes[i]] = GetDistinctColor(i, cellTypes.Count);
-            }
+//            // FIX: Use CellTypeProfiles.Keys instead of CellTypeIndex.Keys
+//            var cellTypes = _database.CellTypeProfiles.Keys.OrderBy(ct => ct).ToList();
+//            var colorMap = new Dictionary<string, System.Windows.Media.Color>();
 
-            return colorMap;
-        }
+//            for (int i = 0; i < cellTypes.Count; i++)
+//            {
+//                colorMap[cellTypes[i]] = GetDistinctColor(i, cellTypes.Count);
+//            }
 
-        private System.Windows.Media.Color GetDistinctColor(int index, int total)
-        {
-            double hue = (double)index / total * 360.0;
-            return HsvToRgb(hue, 0.7, 0.9);
-        }
+//            return colorMap;
+//        }
 
-        private System.Windows.Media.Color HsvToRgb(double h, double s, double v)
-        {
-            double c = v * s;
-            double x = c * (1 - Math.Abs((h / 60.0) % 2 - 1));
-            double m = v - c;
+//        private System.Windows.Media.Color GetDistinctColor(int index, int total)
+//        {
+//            double hue = (double)index / total * 360.0;
+//            return HsvToRgb(hue, 0.7, 0.9);
+//        }
 
-            double r, g, b;
+//        private System.Windows.Media.Color HsvToRgb(double h, double s, double v)
+//        {
+//            double c = v * s;
+//            double x = c * (1 - Math.Abs((h / 60.0) % 2 - 1));
+//            double m = v - c;
 
-            if (h < 60)
-            {
-                r = c; g = x; b = 0;
-            }
-            else if (h < 120)
-            {
-                r = x; g = c; b = 0;
-            }
-            else if (h < 180)
-            {
-                r = 0; g = c; b = x;
-            }
-            else if (h < 240)
-            {
-                r = 0; g = x; b = c;
-            }
-            else if (h < 300)
-            {
-                r = x; g = 0; b = c;
-            }
-            else
-            {
-                r = c; g = 0; b = x;
-            }
+//            double r, g, b;
 
-            return System.Windows.Media.Color.FromRgb(
-                (byte)((r + m) * 255),
-                (byte)((g + m) * 255),
-                (byte)((b + m) * 255)
-            );
-        }
-    }
-}
+//            if (h < 60)
+//            {
+//                r = c; g = x; b = 0;
+//            }
+//            else if (h < 120)
+//            {
+//                r = x; g = c; b = 0;
+//            }
+//            else if (h < 180)
+//            {
+//                r = 0; g = c; b = x;
+//            }
+//            else if (h < 240)
+//            {
+//                r = 0; g = x; b = c;
+//            }
+//            else if (h < 300)
+//            {
+//                r = x; g = 0; b = c;
+//            }
+//            else
+//            {
+//                r = c; g = 0; b = x;
+//            }
+
+//            return System.Windows.Media.Color.FromRgb(
+//                (byte)((r + m) * 255),
+//                (byte)((g + m) * 255),
+//                (byte)((b + m) * 255)
+//            );
+//        }
+//    }
+//}

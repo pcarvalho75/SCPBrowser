@@ -558,6 +558,10 @@ namespace SCPBrowser
                 PeptideTicTab.SetImageBaseDirectory(fileDirectory);
                 PeptideTicTab.UpdateChart(data);
 
+                // Subscribe to cell type prediction requests
+                PeptideTicTab.CellTypePredictionsRequested -= PeptideTicTab_CellTypePredictionsRequested;
+                PeptideTicTab.CellTypePredictionsRequested += PeptideTicTab_CellTypePredictionsRequested;
+
                 // Set predictions if available
                 var predictions = MainControlTab.GetCellTypePredictions();
                 if (predictions != null && predictions.Count > 0)
@@ -593,6 +597,55 @@ namespace SCPBrowser
             }
 
             Console.WriteLine("All tabs populated from loaded data");
+        }
+
+        private async void PeptideTicTab_CellTypePredictionsRequested(object sender, EventArgs e)
+        {
+            try
+            {
+                // Get current import ID
+                int? importId = await _projectService.GetMostRecentImportIdAsync();
+                if (!importId.HasValue)
+                {
+                    MessageBox.Show("No parquet data has been imported.", "No Data", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Get current proteomics data
+                var currentData = MainControlTab.GetCurrentData();
+                if (currentData == null)
+                {
+                    MessageBox.Show("No proteomics data available.", "No Data", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Show loading overlay with progress
+                var progressReporter = new UIProgressReporter(LoadingOverlay);
+                LoadingOverlay.SetMessage("Cell Type Classification");
+                LoadingOverlay.Show();
+
+                // Get or compute predictions
+                var predictions = await MainControlTab.GetCellTypePredictionsAsync(
+                    currentData,
+                    _projectReferenceDatabasePath,
+                    importId.Value,
+                    progressReporter);
+
+                // Pass predictions to PeptideTicTab
+                var colorMap = MainControlTab.GetCellTypeColorMap();
+                PeptideTicTab.SetCellTypePredictions(predictions, colorMap);
+
+                LoadingOverlay.Hide();
+            }
+            catch (Exception ex)
+            {
+                LoadingOverlay.Hide();
+                MessageBox.Show(
+                    $"Error computing cell type predictions:\n\n{ex.Message}",
+                    "Prediction Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
 
         // ==================== PROGRESS REPORTER ====================

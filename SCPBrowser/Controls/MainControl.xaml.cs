@@ -15,7 +15,7 @@ namespace SCPBrowser
         public event EventHandler DataLoaded;
 
         private readonly ParquetDataService _dataService;
-        private readonly TranscriptomicManager _transcriptomicManager;
+        private readonly CellTypeClassificationManager _cellTypeClassificationManager;
         private ProteomicsData _currentData;
         private string _currentFilePath;
         private string _currentFileDirectory;
@@ -27,20 +27,16 @@ namespace SCPBrowser
         {
             InitializeComponent();
             _dataService = new ParquetDataService();
-            _transcriptomicManager = new TranscriptomicManager();
+            _cellTypeClassificationManager = new CellTypeClassificationManager();
             _goEnrichmentManager = new GoEnrichmentManager();
         }
 
 
         private async System.Threading.Tasks.Task LoadTranscriptomicReferenceAsync()
         {
-            if (_transcriptomicManager.IsLoaded)
+            if (_cellTypeClassificationManager.IsLoaded)
             {
-                StatusText.Text = "Predicting cell types...";
-                _cellTypePredictions = _transcriptomicManager.PredictCellTypesForAllRuns(_currentData);
-
-                int predictedCount = _cellTypePredictions.Count(kvp => kvp.Value.TopCellType != null);
-                StatusText.Text += $" | Cell type predictions: {predictedCount}/{_currentData.TotalRawFiles}";
+                // Already loaded, nothing to do
                 return;
             }
 
@@ -59,22 +55,20 @@ namespace SCPBrowser
                 try
                 {
                     StatusText.Text = "Loading transcriptomic reference database...";
-                    await _transcriptomicManager.LoadDatabaseAsync(databasePath);
+                    await _cellTypeClassificationManager.LoadDatabaseAsync(databasePath);
 
-                    var db = _transcriptomicManager.Database;
+                    var db = _cellTypeClassificationManager.Database;
                     StatusText.Text = $"Reference loaded: {db.TotalGenes:N0} genes, {db.TotalCells:N0} cells, {db.TotalCellTypes} cell types";
-
-                    StatusText.Text = "Predicting cell types...";
-                    _cellTypePredictions = _transcriptomicManager.PredictCellTypesForAllRuns(_currentData);
-
-                    int predictedCount = _cellTypePredictions.Count(kvp => kvp.Value.TopCellType != null);
-                    StatusText.Text += $" | Predictions: {predictedCount}/{_currentData.TotalRawFiles}";
                 }
                 catch (Exception ex)
                 {
                     MessageBox.Show($"Could not load transcriptomic reference: {ex.Message}\n\nContinuing without cell type predictions.",
-                        "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        "Reference Load Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+
                     _cellTypePredictions = null;
+                    StatusText.Text = "Transcriptomic reference not available";
                 }
             }
             else
@@ -321,6 +315,24 @@ namespace SCPBrowser
             }
         }
 
+        public async Task<Dictionary<string, CellTypePredictionResult>> GetCellTypePredictionsAsync(
+    ProteomicsData proteomicsData,
+    string projectDatabasePath,
+    int importId,
+    IProgressReporter progressReporter)
+        {
+            var predictions = await _cellTypeClassificationManager.GetOrComputePredictionsAsync(
+                proteomicsData,
+                projectDatabasePath,
+                importId,
+                progressReporter);
+
+            // Store in memory for future use
+            _cellTypePredictions = predictions;
+
+            return predictions;
+        }
+
         private void UpdateChart(ProteomicsData data)
         {
             ProteinChart.Plot.Clear();
@@ -378,8 +390,8 @@ namespace SCPBrowser
 
         public Dictionary<string, System.Windows.Media.Color> GetCellTypeColorMap()
         {
-            return _transcriptomicManager.IsLoaded
-                ? _transcriptomicManager.GenerateCellTypeColorMap()
+            return _cellTypeClassificationManager.IsLoaded
+                ? _cellTypeClassificationManager.GenerateCellTypeColorMap()
                 : new Dictionary<string, System.Windows.Media.Color>();
         }
 

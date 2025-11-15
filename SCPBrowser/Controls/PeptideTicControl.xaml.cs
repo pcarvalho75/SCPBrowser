@@ -18,6 +18,8 @@ namespace SCPBrowser
         private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
         private Dictionary<string, Color> _goTermColorMap;
         private List<DataPoint> _currentSelectedPoints = new List<DataPoint>();
+        // Add this new event
+        public event EventHandler CellTypePredictionsRequested;
 
         public PeptideTicControl()
         {
@@ -66,10 +68,22 @@ namespace SCPBrowser
             }
         }
 
-        private void ColorMode_Changed(object sender, RoutedEventArgs e)
+        private async void ColorMode_Changed(object sender, RoutedEventArgs e)
         {
             if (!_isInitialized || ColorByCellTypeRadio == null)
                 return;
+
+            // If user selected "Color by Cell Type" but we don't have predictions yet
+            if (ColorByCellTypeRadio.IsChecked == true &&
+                (_cellTypePredictions == null || _cellTypePredictions.Count == 0))
+            {
+                // Request predictions from MainWindow
+                CellTypePredictionsRequested?.Invoke(this, EventArgs.Empty);
+
+                // The MainWindow will handle the event, get predictions, and call SetCellTypePredictions()
+                // which will then call RefreshChart()
+                return;
+            }
 
             if (_currentData != null)
             {

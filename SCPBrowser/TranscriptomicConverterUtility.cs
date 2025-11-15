@@ -26,9 +26,9 @@ namespace SCPBrowser
                     metadataTsvPath,
                     progress);
 
-                // Create the database using ProjectDataService since it has the schema
+                // Create the database using ProjectDatabaseService since it has the schema
                 progress?.ReportMessage("Creating SQLite database...");
-                var projectService = new ProjectDataService(outputDatabasePath);
+                var projectService = new ProjectDatabaseService(outputDatabasePath);
                 await projectService.CreateProjectAsync(
                     "Transcriptomic Reference Data",
                     "Standalone transcriptomic reference database");

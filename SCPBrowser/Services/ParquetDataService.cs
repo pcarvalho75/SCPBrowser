@@ -768,6 +768,56 @@ namespace SCPBrowser.Services
             }
         }
 
+        /// <summary>
+        /// Updates biological condition for a raw file
+        /// </summary>
+        public async Task UpdateRawFileConditionAsync(int rawFileId, string biologicalCondition)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                UPDATE raw_files 
+                SET biological_condition = @condition
+                WHERE raw_file_id = @rawFileId
+            ";
+                    command.Parameters.AddWithValue("@rawFileId", rawFileId);
+                    command.Parameters.AddWithValue("@condition", biologicalCondition ?? "");
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Updates plate assignment for a raw file
+        /// </summary>
+        public async Task UpdateRawFilePlateAsync(int rawFileId, int? plateId)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                UPDATE raw_files 
+                SET plate_id = @plateId
+                WHERE raw_file_id = @rawFileId
+            ";
+                    command.Parameters.AddWithValue("@rawFileId", rawFileId);
+                    command.Parameters.AddWithValue("@plateId", plateId.HasValue ? plateId.Value : DBNull.Value);
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
         // Helper class for protein statistics
         private class ProteinQuantSummary
         {

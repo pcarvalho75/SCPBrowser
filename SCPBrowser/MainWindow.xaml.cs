@@ -556,6 +556,7 @@ namespace SCPBrowser
             var currentData = MainControlTab.GetCurrentData();
             PeptideTicTab.EnableBioConditionClassification(currentData != null && currentData.BiologicalConditionPerFile.Count > 0);
 
+            PeptideTicTab.SetGoEnrichmentResults(goResults, goColorMap);
 
             Console.WriteLine($"GO enrichment results passed: {goResults?.Count ?? 0} runs");
 

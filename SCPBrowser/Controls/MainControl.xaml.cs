@@ -274,6 +274,15 @@ namespace SCPBrowser
 
                 _currentData = await _dataService.LoadParquetFileAsync(_currentFilePath, mapping);
 
+                _currentData = await _dataService.LoadParquetFileAsync(_currentFilePath, mapping);
+
+                // Populate biological conditions from database if available
+                if (!string.IsNullOrEmpty(_projectDatabasePath))
+                {
+                    var dataServiceWithDb = new ParquetDataService(_projectDatabasePath);
+                    await dataServiceWithDb.PopulateBiologicalConditionsAsync(_currentData);
+                }
+
                 TotalRunsText.Text = _currentData.TotalRawFiles.ToString();
                 TotalProteinsText.Text = _currentData.TotalProteinGroups.ToString();
                 TotalPeptidesText.Text = _currentData.TotalPeptides.ToString();

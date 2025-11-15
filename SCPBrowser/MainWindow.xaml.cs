@@ -163,7 +163,7 @@ namespace SCPBrowser
 
                 // Load data into MainControlTab
                 // This will trigger the DataLoaded event which populates other tabs
-                await MainControlTab.LoadDataFromProject(parquetPath);
+                await MainControlTab.LoadDataFromProject(parquetPath, _projectReferenceDatabasePath);
 
                 LoadingOverlay.Hide();
 

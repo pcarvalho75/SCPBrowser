@@ -43,8 +43,9 @@
                          Checked="ColorMode_Changed"
                          IsEnabled="False"/>
 
-            <RadioButton x:Name="ColorByGoTermRadio"
-                         Content="GO Term"
+
+            <RadioButton x:Name="ColorByBioConditionRadio"
+                         Content="Biological Condition"
                          GroupName="ColorMode"
                          Margin="0,0,20,0"
                          VerticalAlignment="Center"

@@ -18,6 +18,7 @@ namespace SCPBrowser
         public bool IsSelected { get; set; }
         public string PredictedCellType { get; set; }
         public CellTypeScore PredictionScore { get; set; }
+        public string BiologicalCondition { get; set; }
     }
 
     public class SelectedPointData

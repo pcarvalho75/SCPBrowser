@@ -18,6 +18,11 @@ namespace SCPBrowser
         public Dictionary<string, Color> CellTypeColorMap { get; set; }
         public Dictionary<string, RunGoEnrichmentResult> GoEnrichmentResults { get; set; }
         public Dictionary<string, Color> GoTermColorMap { get; set; }
+
+        // ADD THESE THREE NEW PROPERTIES
+        public bool UseBioConditionColoring { get; set; } = false;
+        public Dictionary<string, string> BioConditionPerFile { get; set; }
+        public Dictionary<string, Color> BioConditionColorMap { get; set; }
     }
 
     public class PlotSelectionChangedEventArgs : EventArgs
@@ -172,18 +177,26 @@ namespace SCPBrowser
             double maxRatio = trypsinRatios.Any() ? trypsinRatios.Max() : 0.05;
             if (maxRatio < 0.01) maxRatio = 0.05;
 
+            // *** NEW LOGIC HERE ***
             if (options.UseCellTypeColoring && options.CellTypePredictions != null)
             {
                 _dataPoints = DrawDataPointsWithCellTypes(PlotCanvas, rawFiles, peptideCounts, ticValues,
                     proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.CellTypePredictions, options.CellTypeColorMap);
                 DrawCellTypeLegend(PlotCanvas, canvasWidth, canvasHeight, options.CellTypeColorMap);
             }
-            else
+            else if (options.UseBioConditionColoring && options.BioConditionPerFile != null)
+            {
+                _dataPoints = DrawDataPointsWithBioConditions(PlotCanvas, rawFiles, peptideCounts, ticValues,
+                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.BioConditionPerFile, options.BioConditionColorMap);
+                DrawBioConditionLegend(PlotCanvas, canvasWidth, canvasHeight, options.BioConditionColorMap);
+            }
+            else // Default: Color by Target Protein Ratio
             {
                 _dataPoints = _plotRenderer.DrawDataPoints(PlotCanvas, rawFiles, peptideCounts, ticValues,
                     proteinCounts, trypsinRatios, canvasWidth, canvasHeight);
                 _plotRenderer.DrawColorLegend(PlotCanvas, canvasWidth, canvasHeight, maxRatio);
             }
+            // *** END OF NEW LOGIC ***
 
             if (_selectionManager.PolygonPointsData.Count > 0)
             {
@@ -295,6 +308,116 @@ namespace SCPBrowser
                 var label = new TextBlock
                 {
                     Text = cellType.Key,
+                    FontSize = 10,
+                    Foreground = new SolidColorBrush(Colors.Black)
+                };
+                Canvas.SetLeft(label, legendX + boxSize + 5);
+                Canvas.SetTop(label, legendY - 2);
+                canvas.Children.Add(label);
+
+                legendY += spacing;
+            }
+        }
+
+        private List<DataPoint> DrawDataPointsWithBioConditions(Canvas canvas, List<string> rawFiles, List<int> peptideCounts,
+            List<double> ticValues, List<int> proteinCounts, List<double> trypsinRatios,
+            double canvasWidth, double canvasHeight, Dictionary<string, string> bioConditions,
+            Dictionary<string, Color> colorMap)
+        {
+            var dataPoints = new List<DataPoint>();
+            const double MarkerSize = 8;
+            var unassignedColor = Color.FromRgb(200, 200, 200); // Gray for unassigned
+
+            for (int i = 0; i < rawFiles.Count; i++)
+            {
+                if (ticValues[i] <= 0)
+                    continue;
+
+                Point screenPos = _plotRenderer.DataToScreen(peptideCounts[i], ticValues[i], canvasWidth, canvasHeight);
+
+                Color markerColor = unassignedColor;
+                string condition = null;
+
+                if (bioConditions != null && bioConditions.TryGetValue(rawFiles[i], out condition) && !string.IsNullOrEmpty(condition))
+                {
+                    if (colorMap != null && colorMap.ContainsKey(condition))
+                    {
+                        markerColor = colorMap[condition];
+                    }
+                }
+
+                var ellipse = new System.Windows.Shapes.Ellipse
+                {
+                    Width = MarkerSize,
+                    Height = MarkerSize,
+                    Fill = new SolidColorBrush(markerColor),
+                    Stroke = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
+                    StrokeThickness = 1
+                };
+
+                Canvas.SetLeft(ellipse, screenPos.X - MarkerSize / 2);
+                Canvas.SetTop(ellipse, screenPos.Y - MarkerSize / 2);
+                canvas.Children.Add(ellipse);
+
+                dataPoints.Add(new DataPoint
+                {
+                    RunName = rawFiles[i],
+                    PeptideCount = peptideCounts[i],
+                    TicValue = ticValues[i],
+                    ProteinCount = proteinCounts[i],
+                    TrypsinRatio = trypsinRatios[i],
+                    XScreen = screenPos.X,
+                    YScreen = screenPos.Y,
+                    Visual = ellipse,
+                    BaseColor = markerColor,
+                    IsSelected = false,
+                    BiologicalCondition = condition // Store the condition
+                });
+            }
+
+            return dataPoints;
+        }
+
+        private void DrawBioConditionLegend(Canvas canvas, double canvasWidth, double canvasHeight, Dictionary<string, Color> colorMap)
+        {
+            if (colorMap == null || colorMap.Count == 0)
+                return;
+
+            double legendX = canvasWidth - 110;
+            double legendY = 20;
+            double boxSize = 12;
+            double spacing = 18;
+
+            var titleText = new TextBlock
+            {
+                Text = "Biological Condition",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Colors.Black)
+            };
+            Canvas.SetLeft(titleText, legendX);
+            Canvas.SetTop(titleText, legendY);
+            canvas.Children.Add(titleText);
+
+            legendY += 20;
+
+            foreach (var condition in colorMap.OrderBy(kvp => kvp.Key))
+            {
+                var rect = new System.Windows.Shapes.Rectangle
+                {
+                    Width = boxSize,
+                    Height = boxSize,
+                    Fill = new SolidColorBrush(condition.Value),
+                    Stroke = new SolidColorBrush(Colors.Black),
+                    StrokeThickness = 1
+                };
+                Canvas.SetLeft(rect, legendX);
+                Canvas.SetTop(rect, legendY);
+                canvas.Children.Add(rect);
+
+                var label = new TextBlock
+                {
+                    Text = condition.Key,
                     FontSize = 10,
                     Foreground = new SolidColorBrush(Colors.Black)
                 };
@@ -500,6 +623,11 @@ namespace SCPBrowser
                                 $"TIC: {point.TicValue:E2}\n" +
                                 $"Protein Groups: {point.ProteinCount:N0}\n" +
                                 $"Trypsin Ratio: {point.TrypsinRatio * 100:F2}%";
+
+            if (!string.IsNullOrEmpty(point.BiologicalCondition))
+            {
+                tooltipText += $"\nCondition: {point.BiologicalCondition}";
+            }
 
             if (!string.IsNullOrEmpty(point.PredictedCellType))
             {

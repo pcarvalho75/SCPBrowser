@@ -553,7 +553,9 @@ namespace SCPBrowser
             // Pass GO enrichment results to PeptideTicTab
             var goResults = MainControlTab.GetGoEnrichmentResults();
             var goColorMap = MainControlTab.GetGoTermColorMap();
-            PeptideTicTab.SetGoEnrichmentResults(goResults, goColorMap);
+            var currentData = MainControlTab.GetCurrentData();
+            PeptideTicTab.EnableBioConditionClassification(currentData != null && currentData.BiologicalConditionPerFile.Count > 0);
+
 
             Console.WriteLine($"GO enrichment results passed: {goResults?.Count ?? 0} runs");
 

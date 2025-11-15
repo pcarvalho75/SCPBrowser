@@ -64,13 +64,62 @@ namespace SCPBrowser
         {
             _goEnrichmentResults = results;
             _goTermColorMap = colorMap;
-            ColorByGoTermRadio.IsEnabled = results != null && results.Count > 0;
+            ColorByBioConditionRadio.IsEnabled = results != null && results.Count > 0;
 
             // Update GO tab if we have selected points
             if (_currentSelectedPoints.Count > 0)
             {
                 GoEnrichmentTab.UpdateGoEnrichment(_currentSelectedPoints, _goEnrichmentResults);
             }
+        }
+
+        private Dictionary<string, Color> GenerateBioConditionColorMap()
+        {
+            if (_currentData == null || _currentData.BiologicalConditionPerFile.Count == 0)
+                return new Dictionary<string, Color>();
+
+            var uniqueConditions = _currentData.BiologicalConditionPerFile.Values
+                .Where(c => !string.IsNullOrEmpty(c))
+                .Distinct()
+                .OrderBy(c => c)
+                .ToList();
+
+            var colorMap = new Dictionary<string, Color>();
+            for (int i = 0; i < uniqueConditions.Count; i++)
+            {
+                // Simple hue-based color generation
+                double hue = (double)i / uniqueConditions.Count * 360.0;
+                colorMap[uniqueConditions[i]] = HsvToRgb(hue, 0.7, 0.9);
+            }
+            return colorMap;
+        }
+
+        // Helper to convert HSV to
+        private Color HsvToRgb(double h, double s, double v)
+        {
+            double c = v * s;
+            double x = c * (1 - Math.Abs((h / 60.0) % 2 - 1));
+            double m = v - c;
+
+            double r, g, b;
+
+            if (h < 60) { r = c; g = x; b = 0; }
+            else if (h < 120) { r = x; g = c; b = 0; }
+            else if (h < 180) { r = 0; g = c; b = x; }
+            else if (h < 240) { r = 0; g = x; b = c; }
+            else if (h < 300) { r = x; g = 0; b = c; }
+            else { r = c; g = 0; b = x; }
+
+            return Color.FromRgb(
+                (byte)((r + m) * 255),
+                (byte)((g + m) * 255),
+                (byte)((b + m) * 255)
+            );
+        }
+
+        public void EnableBioConditionClassification(bool isAvailable)
+        {
+            ColorByBioConditionRadio.IsEnabled = isAvailable;
         }
 
         private async void ColorMode_Changed(object sender, RoutedEventArgs e)
@@ -114,20 +163,31 @@ namespace SCPBrowser
                 CellTypePredictions = _cellTypePredictions,
                 CellTypeColorMap = _cellTypeColorMap,
                 GoEnrichmentResults = _goEnrichmentResults,
-                GoTermColorMap = _goTermColorMap
+                GoTermColorMap = _goTermColorMap,
+
+                // Populate our new properties
+                UseBioConditionColoring = ColorByBioConditionRadio.IsChecked == true,
+                BioConditionPerFile = _currentData.BiologicalConditionPerFile,
+                BioConditionColorMap = GenerateBioConditionColorMap() // Call our new method
             };
 
             ScatterPlot.UpdatePlot(_currentData, options);
 
-            UpdatePlotHeader(_currentData.PeptideCountPerFile.Count, options.UseCellTypeColoring);
+            // Pass the whole options object to UpdatePlotHeader
+            UpdatePlotHeader(_currentData.PeptideCountPerFile.Count, options);
         }
 
-        private void UpdatePlotHeader(int fileCount, bool useCellTypeColoring)
+        private void UpdatePlotHeader(int fileCount, ScatterPlotOptions options)
         {
-            if (useCellTypeColoring && _cellTypePredictions != null)
+            if (options.UseCellTypeColoring && _cellTypePredictions != null)
             {
                 int predictedCount = _cellTypePredictions.Count(p => p.Value.TopCellType != null);
                 PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({fileCount} files, {predictedCount} with cell type predictions)";
+            }
+            else if (options.UseBioConditionColoring && _currentData.BiologicalConditionPerFile.Count > 0)
+            {
+                int conditionCount = _currentData.BiologicalConditionPerFile.Values.Where(c => !string.IsNullOrEmpty(c)).Distinct().Count();
+                PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({fileCount} files, {conditionCount} biological conditions)";
             }
             else
             {

@@ -14,6 +14,8 @@ namespace SCPBrowser
         private readonly Dictionary<string, double> _geneSpecificity;
         private readonly Dictionary<string, HashSet<string>> _cellTypeMarkers;
 
+        public Dictionary<string, HashSet<string>> CellTypeMarkers => _cellTypeMarkers;
+
         /// <summary>
         /// Creates a new CellTypePredictor using aggregated cell type profiles
         /// </summary>
@@ -82,19 +84,20 @@ namespace SCPBrowser
             return specificity;
         }
 
-        /// <summary>
-        /// Identifies marker genes for each cell type based on:
-        /// 1. High specificity (gene is not widely expressed across all cell types)
-        /// 2. High expression in this cell type (median expression > 0)
-        /// 3. High prevalence (expressed in many cells of this type - PercentExpressing)
-        /// </summary>
         private Dictionary<string, HashSet<string>> DefineCellTypeMarkers(double specificityThreshold)
         {
             var markers = new Dictionary<string, HashSet<string>>();
 
+            //Console.WriteLine($"[DEBUG-MARKERS] Starting marker definition with threshold: {specificityThreshold}");
+            //Console.WriteLine($"[DEBUG-MARKERS] Total cell types: {_database.CellTypeProfiles.Count}");
+            //Console.WriteLine($"[DEBUG-MARKERS] Total genes in specificity map: {_geneSpecificity.Count}");
+
             foreach (var (cellType, profile) in _database.CellTypeProfiles)
             {
                 markers[cellType] = new HashSet<string>();
+                int candidateGenes = 0;
+                int passedSpecificity = 0;
+                int passedPercent = 0;
 
                 // Consider genes that are both specific and well-expressed in this cell type
                 foreach (var (gene, medianExpression) in profile.MedianExpression)
@@ -102,15 +105,20 @@ namespace SCPBrowser
                     if (medianExpression <= 0)
                         continue;
 
+                    candidateGenes++;
+
                     // Check if gene is specific enough
                     if (_geneSpecificity.TryGetValue(gene, out double specificity) &&
                         specificity >= specificityThreshold)
                     {
+                        passedSpecificity++;
+
                         // Optional: Also check that gene is expressed in a good fraction of cells
                         // This makes markers more robust
                         if (profile.PercentExpressing.TryGetValue(gene, out double percentExpressing) &&
-                            percentExpressing >= 0.2) // At least 20% of cells express it
+                            percentExpressing >= 0.05) 
                         {
+                            passedPercent++;
                             markers[cellType].Add(gene);
                         }
                         else if (!profile.PercentExpressing.ContainsKey(gene))
@@ -271,10 +279,14 @@ namespace SCPBrowser
         /// Calculates hypergeometric p-value for marker enrichment
         /// Tests: "Is the overlap between detected proteins and cell type markers statistically significant?"
         /// </summary>
+
         private double CalculateHypergeometricPValue(List<string> detectedProteins, string cellType)
         {
             if (!_cellTypeMarkers.ContainsKey(cellType))
+            {
+                Console.WriteLine($"[DEBUG-HYPER] No markers defined for cell type: {cellType}");
                 return 1.0;
+            }
 
             // N = total genes in universe (all genes across all cell types)
             int N = _geneSpecificity.Count;
@@ -288,8 +300,13 @@ namespace SCPBrowser
             // k = overlap (how many detected proteins are markers for this cell type)
             int k = detectedProteins.Count(p => _cellTypeMarkers[cellType].Contains(p));
 
+            //Console.WriteLine($"[DEBUG-HYPER] CellType: {cellType}, N={N}, K={K}, n={n}, k={k}");
+
             if (K == 0 || n == 0)
+            {
+                Console.WriteLine($"[DEBUG-HYPER] Returning 1.0 because K={K} or n={n}");
                 return 1.0;
+            }
 
             return CalculateHypergeometricPValueExact(N, K, n, k);
         }

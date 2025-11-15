@@ -146,6 +146,15 @@ namespace SCPBrowser
                 return new CellTypePredictionResult();
 
             var proteinAbundances = ExtractProteinAbundances(proteomicsData, runName);
+
+            ////// ADD THIS DEBUG OUTPUT
+            //if (_database.CellTypeProfiles.Count > 0)
+            //{
+            //    var firstCellType = _database.CellTypeProfiles.First();
+            //    Console.WriteLine($"[DEBUG] Transcriptomic DB - First cell type: {firstCellType.Key}");
+            //    Console.WriteLine($"[DEBUG] Sample gene names: {string.Join(", ", firstCellType.Value.MedianExpression.Keys.Take(10))}");
+            //}
+
             return _predictor.PredictCellType(proteinAbundances);
         }
 
@@ -170,9 +179,7 @@ namespace SCPBrowser
             return colorMap;
         }
 
-        /// <summary>
-        /// Extracts protein abundances for a specific run from proteomics data
-        /// </summary>
+
         private Dictionary<string, double> ExtractProteinAbundances(ProteomicsData proteomicsData, string runName)
         {
             var abundances = new Dictionary<string, double>();
@@ -185,20 +192,63 @@ namespace SCPBrowser
 
                     if (abundance > 0)
                     {
-                        var proteinNames = ExtractProteinNames(proteinGroup);
-                        foreach (var proteinName in proteinNames)
+                        // Try to get gene name from the mapping first
+                        if (proteomicsData.ProteinToGeneMap.TryGetValue(proteinGroup, out string genesString))
                         {
-                            if (!abundances.ContainsKey(proteinName))
+                            // genesString is like "RPL4_HUMAN" or "RPL4_HUMAN;ACTB_HUMAN"
+                            var geneEntries = genesString.Split(';');
+                            foreach (var geneEntry in geneEntries)
                             {
-                                abundances[proteinName] = abundance;
+                                var trimmed = geneEntry.Trim();
+                                if (string.IsNullOrEmpty(trimmed))
+                                    continue;
+
+                                // Extract gene name (remove _HUMAN, _MOUSE, etc.)
+                                string geneName = trimmed;
+                                if (trimmed.Contains('_'))
+                                {
+                                    geneName = trimmed.Substring(0, trimmed.IndexOf('_'));
+                                }
+
+                                if (!string.IsNullOrEmpty(geneName))
+                                {
+                                    if (!abundances.ContainsKey(geneName))
+                                    {
+                                        abundances[geneName] = abundance;
+                                    }
+                                    else
+                                    {
+                                        abundances[geneName] = Math.Max(abundances[geneName], abundance);
+                                    }
+                                }
                             }
-                            else
+                        }
+                        else
+                        {
+                            // Fallback: use old method if no gene mapping available
+                            var proteinNames = ExtractProteinNames(proteinGroup);
+                            foreach (var proteinName in proteinNames)
                             {
-                                abundances[proteinName] = Math.Max(abundances[proteinName], abundance);
+                                if (!abundances.ContainsKey(proteinName))
+                                {
+                                    abundances[proteinName] = abundance;
+                                }
+                                else
+                                {
+                                    abundances[proteinName] = Math.Max(abundances[proteinName], abundance);
+                                }
                             }
                         }
                     }
                 }
+            }
+
+            // DEBUG OUTPUT
+            Console.WriteLine($"[DEBUG] Run: {runName}");
+            Console.WriteLine($"[DEBUG] Extracted {abundances.Count} unique gene names from proteomics");
+            if (abundances.Count > 0)
+            {
+                Console.WriteLine($"[DEBUG] Sample gene names: {string.Join(", ", abundances.Keys.Take(10))}");
             }
 
             return abundances;
@@ -299,6 +349,162 @@ namespace SCPBrowser
             await projectDataService.DeleteAllCellTypeClassificationsAsync(projectDatabasePath, importId);
             ClearCache();
             Console.WriteLine("All cell type classifications deleted");
+        }
+
+        /// <summary>
+        /// Comprehensive diagnostic to analyze protein-to-gene mapping quality
+        /// </summary>
+        public void DiagnoseProteinGeneMapping(ProteomicsData proteomicsData, string runName)
+        {
+            Console.WriteLine($"");
+            Console.WriteLine($"========================================");
+            Console.WriteLine($"PROTEIN-TO-GENE MAPPING DIAGNOSTIC");
+            Console.WriteLine($"Run: {runName}");
+            Console.WriteLine($"========================================");
+
+            if (!proteomicsData.ProteinQuantMatrix.ContainsKey(runName))
+            {
+                Console.WriteLine($"ERROR: Run not found in proteomics data");
+                return;
+            }
+
+            // Step 1: Get all proteins for this run
+            var proteinsInRun = proteomicsData.ProteinQuantMatrix.Keys
+                .Where(protein => proteomicsData.ProteinQuantMatrix[protein].ContainsKey(runName))
+                .ToList();
+
+            Console.WriteLine($"");
+            Console.WriteLine($"Step 1: Proteins detected in proteomics");
+            Console.WriteLine($"  Total proteins: {proteinsInRun.Count}");
+
+            // Step 2: Check how many have gene mappings
+            int proteinsWithMappings = 0;
+            int proteinsWithoutMappings = 0;
+            List<string> sampleUnmapped = new List<string>();
+
+            foreach (var protein in proteinsInRun)
+            {
+                if (proteomicsData.ProteinToGeneMap.ContainsKey(protein))
+                {
+                    proteinsWithMappings++;
+                }
+                else
+                {
+                    proteinsWithoutMappings++;
+                    if (sampleUnmapped.Count < 5)
+                        sampleUnmapped.Add(protein);
+                }
+            }
+
+            Console.WriteLine($"");
+            Console.WriteLine($"Step 2: Gene mapping availability");
+            Console.WriteLine($"  Proteins WITH gene mappings: {proteinsWithMappings}");
+            Console.WriteLine($"  Proteins WITHOUT mappings: {proteinsWithoutMappings}");
+            if (sampleUnmapped.Count > 0)
+            {
+                Console.WriteLine($"  Sample unmapped proteins: {string.Join(", ", sampleUnmapped)}");
+            }
+
+            // Step 3: Extract all gene names
+            var extractedGenes = new Dictionary<string, string>(); // gene -> source protein
+            foreach (var protein in proteinsInRun)
+            {
+                if (proteomicsData.ProteinToGeneMap.TryGetValue(protein, out string genesString))
+                {
+                    var geneEntries = genesString.Split(';');
+                    foreach (var geneEntry in geneEntries)
+                    {
+                        var trimmed = geneEntry.Trim();
+                        if (string.IsNullOrEmpty(trimmed))
+                            continue;
+
+                        string geneName = trimmed;
+                        if (trimmed.Contains('_'))
+                        {
+                            geneName = trimmed.Substring(0, trimmed.IndexOf('_'));
+                        }
+
+                        if (!string.IsNullOrEmpty(geneName))
+                        {
+                            if (!extractedGenes.ContainsKey(geneName))
+                                extractedGenes[geneName] = protein;
+                        }
+                    }
+                }
+            }
+
+            Console.WriteLine($"");
+            Console.WriteLine($"Step 3: Gene name extraction");
+            Console.WriteLine($"  Total unique genes extracted: {extractedGenes.Count}");
+            Console.WriteLine($"  Sample genes: {string.Join(", ", extractedGenes.Keys.Take(10))}");
+
+            // Step 4: Check how many exist in transcriptomic database
+            if (!IsLoaded)
+            {
+                Console.WriteLine($"");
+                Console.WriteLine($"ERROR: Transcriptomic database not loaded");
+                return;
+            }
+
+            var allTranscriptomicGenes = new HashSet<string>();
+            foreach (var profile in _database.CellTypeProfiles.Values)
+            {
+                foreach (var gene in profile.MedianExpression.Keys)
+                {
+                    allTranscriptomicGenes.Add(gene);
+                }
+            }
+
+            var matchedGenes = new List<string>();
+            var unmatchedGenes = new List<string>();
+
+            foreach (var gene in extractedGenes.Keys)
+            {
+                if (allTranscriptomicGenes.Contains(gene))
+                {
+                    matchedGenes.Add(gene);
+                }
+                else
+                {
+                    if (unmatchedGenes.Count < 20) // Keep more samples of unmatched
+                        unmatchedGenes.Add(gene);
+                }
+            }
+
+            Console.WriteLine($"");
+            Console.WriteLine($"Step 4: Transcriptomic database matching");
+            Console.WriteLine($"  Total genes in transcriptomic DB: {allTranscriptomicGenes.Count}");
+            Console.WriteLine($"  Proteomics genes that MATCH transcriptomics: {matchedGenes.Count}");
+            Console.WriteLine($"  Proteomics genes that DON'T MATCH: {extractedGenes.Count - matchedGenes.Count}");
+            Console.WriteLine($"  Match rate: {(matchedGenes.Count * 100.0 / extractedGenes.Count):F1}%");
+
+            if (matchedGenes.Count > 0)
+            {
+                Console.WriteLine($"");
+                Console.WriteLine($"  Sample MATCHED genes: {string.Join(", ", matchedGenes.Take(15))}");
+            }
+
+            if (unmatchedGenes.Count > 0)
+            {
+                Console.WriteLine($"");
+                Console.WriteLine($"  Sample UNMATCHED genes: {string.Join(", ", unmatchedGenes)}");
+            }
+
+            // Step 5: Check marker overlap
+            Console.WriteLine($"");
+            Console.WriteLine($"Step 5: Marker gene analysis");
+            foreach (var cellType in _database.CellTypeProfiles.Keys)
+            {
+                if (_cellTypeMarkers != null && _cellTypeMarkers.ContainsKey(cellType))
+                {
+                    var markers = _cellTypeMarkers[cellType];
+                    int overlap = matchedGenes.Count(g => markers.Contains(g));
+                    Console.WriteLine($"  {cellType}: {markers.Count} markers, {overlap} detected in this run");
+                }
+            }
+
+            Console.WriteLine($"========================================");
+            Console.WriteLine($"");
         }
     }
 }

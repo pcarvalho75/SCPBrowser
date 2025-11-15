@@ -55,6 +55,11 @@
                   x:Name="ProjectBrowserMenuItem"
                   Click="ProjectBrowser_Click"
                   IsEnabled="False"/>
+                <Separator/>
+                <MenuItem Header="_Clear Cell Type Classifications" 
+              x:Name="ClearCellTypeClassificationsMenuItem"
+              Click="ClearCellTypeClassifications_Click"
+              IsEnabled="False"/>
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Click="About_Click"/>

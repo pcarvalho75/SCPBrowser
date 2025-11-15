@@ -117,6 +117,7 @@ namespace SCPBrowser
                 ImportOmicProfileMenuItem.IsEnabled = true;
                 ImportGoAnnotationsMenuItem.IsEnabled = true;
                 CloseProjectMenuItem.IsEnabled = true;
+                ClearCellTypeClassificationsMenuItem.IsEnabled = true;
 
                 UpdateWindowTitle(projectInfo.ProjectName);
 
@@ -177,6 +178,43 @@ namespace SCPBrowser
             }
         }
 
+        private async void ClearCellTypeClassifications_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show(
+                "This will delete all saved cell type classifications.\n\n" +
+                "Classifications will be recomputed next time you use the 'Color by Cell Type' feature.\n\n" +
+                "Continue?",
+                "Clear Classifications",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
+                return;
+
+            try
+            {
+                int? importId = await _projectService.GetMostRecentImportIdAsync();
+                if (!importId.HasValue)
+                {
+                    MessageBox.Show("No data imported.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                await _projectService.DeleteAllCellTypeClassificationsAsync(_currentProjectPath, importId.Value);
+
+                MessageBox.Show(
+                    "Cell type classifications cleared successfully.\n\n" +
+                    "Click 'Color by Cell Type' to recompute.",
+                    "Success",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error clearing classifications:\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void LoadRecentProjectsUI()
         {
             var recentProjects = GetRecentProjects();
@@ -223,6 +261,7 @@ namespace SCPBrowser
             ImportOmicProfileMenuItem.IsEnabled = false;
             ImportGoAnnotationsMenuItem.IsEnabled = false;
             CloseProjectMenuItem.IsEnabled = false;
+            ClearCellTypeClassificationsMenuItem.IsEnabled = false;
 
             ProjectBrowserMenuItem.IsEnabled = false;
 

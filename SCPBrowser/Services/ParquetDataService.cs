@@ -70,6 +70,8 @@ namespace SCPBrowser.Services
         public Dictionary<string, double> TotalIonCurrentPerFile { get; set; } = new();
         public Dictionary<string, double> TargetProteinRatioPerFile { get; set; } = new();
         public Dictionary<string, Dictionary<string, double>> ProteinQuantMatrix { get; set; } = new();
+
+        public Dictionary<string, string> ProteinToGeneMap { get; set; } = new(); // protein group → gene names
         public List<string> RawFileNames { get; set; } = new();
     }
 
@@ -99,6 +101,7 @@ namespace SCPBrowser.Services
                 }
             }
         }
+
 
         public async Task<ProteomicsData> LoadParquetFileAsync(string filePath, ColumnMapping mapping)
         {
@@ -140,6 +143,8 @@ namespace SCPBrowser.Services
                         f.Name.Equals(mapping.TotalIonCurrentColumn, StringComparison.Ordinal));
                     var proteinIdsField = dataFields.FirstOrDefault(f =>
                         f.Name.Equals("Protein.Ids", StringComparison.Ordinal));
+                    var genesField = dataFields.FirstOrDefault(f =>
+                        f.Name.Equals("Genes", StringComparison.Ordinal));
 
                     if (rawFileField == null)
                         throw new InvalidOperationException($"Column '{mapping.RawFileColumn}' not found");
@@ -152,10 +157,6 @@ namespace SCPBrowser.Services
 
                     for (int i = 0; i < parquetReader.RowGroupCount; i++)
                     {
-
-                        if (i % 5 == 0) // Every 5 row groups
-                            await Task.Delay(1);
-
                         using (var groupReader = parquetReader.OpenRowGroupReader(i))
                         {
                             var rawFileColumn = await groupReader.ReadColumnAsync(rawFileField);
@@ -170,6 +171,13 @@ namespace SCPBrowser.Services
                                 proteinIdsData = proteinIdsColumn.Data as Array;
                             }
 
+                            Array genesData = null;
+                            if (genesField != null)
+                            {
+                                var genesColumn = await groupReader.ReadColumnAsync(genesField);
+                                genesData = genesColumn.Data as Array;
+                            }
+
                             var rawFileData = rawFileColumn.Data as Array;
                             var proteinData = proteinColumn.Data as Array;
                             var peptideData = peptideColumn.Data as Array;
@@ -182,6 +190,7 @@ namespace SCPBrowser.Services
                                 var peptide = peptideData.GetValue(row)?.ToString();
                                 var ticValue = ticData.GetValue(row);
                                 var proteinIds = proteinIdsData?.GetValue(row)?.ToString();
+                                var genes = genesData?.GetValue(row)?.ToString();
 
                                 if (!string.IsNullOrEmpty(rawFile))
                                 {
@@ -203,6 +212,12 @@ namespace SCPBrowser.Services
                                     {
                                         proteinGroups.Add(protein);
                                         proteinsByFile[rawFile].Add(protein);
+
+                                        // Store protein-to-gene mapping
+                                        if (!string.IsNullOrEmpty(genes) && !data.ProteinToGeneMap.ContainsKey(protein))
+                                        {
+                                            data.ProteinToGeneMap[protein] = genes;
+                                        }
 
                                         if (!proteinQuantMatrix.ContainsKey(protein))
                                             proteinQuantMatrix[protein] = new Dictionary<string, double>();
@@ -235,15 +250,8 @@ namespace SCPBrowser.Services
                                                 if (string.IsNullOrWhiteSpace(targetId))
                                                     continue;
 
-                                                if (!string.IsNullOrEmpty(protein) &&
-                                                    protein.IndexOf(targetId.Trim(), StringComparison.OrdinalIgnoreCase) >= 0)
-                                                {
-                                                    isTargetProtein = true;
-                                                    break;
-                                                }
-
-                                                if (!isTargetProtein && !string.IsNullOrEmpty(proteinIds) &&
-                                                    proteinIds.IndexOf(targetId.Trim(), StringComparison.OrdinalIgnoreCase) >= 0)
+                                                if ((!string.IsNullOrEmpty(protein) && protein.Contains(targetId, StringComparison.OrdinalIgnoreCase)) ||
+                                                    (!string.IsNullOrEmpty(proteinIds) && proteinIds.Contains(targetId, StringComparison.OrdinalIgnoreCase)))
                                                 {
                                                     isTargetProtein = true;
                                                     break;
@@ -263,24 +271,20 @@ namespace SCPBrowser.Services
                 }
             }
 
-            data.TotalRawFiles = rawFiles.Count;
-            data.TotalProteinGroups = proteinGroups.Count;
-            data.TotalPeptides = peptides.Count;
-            data.ProteinCountPerFile = proteinsByFile
-                .OrderByDescending(kvp => kvp.Value.Count)
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Count);
-            data.PeptideCountPerFile = peptidesByFile
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Count);
-            data.TotalIonCurrentPerFile = ticByFile;
-            data.ProteinQuantMatrix = proteinQuantMatrix;
             data.RawFileNames = rawFiles.OrderBy(f => f).ToList();
 
-            foreach (var rawFile in rawFiles)
+            foreach (var file in data.RawFileNames)
             {
-                double totalTic = ticByFile[rawFile];
-                double targetTic = targetProteinTicByFile[rawFile];
-                data.TargetProteinRatioPerFile[rawFile] = totalTic > 0 ? targetTic / totalTic : 0;
+                data.ProteinCountPerFile[file] = proteinsByFile.ContainsKey(file) ? proteinsByFile[file].Count : 0;
+                data.PeptideCountPerFile[file] = peptidesByFile.ContainsKey(file) ? peptidesByFile[file].Count : 0;
+                data.TotalIonCurrentPerFile[file] = ticByFile.ContainsKey(file) ? ticByFile[file] : 0;
+
+                var totalTic = ticByFile.ContainsKey(file) ? ticByFile[file] : 0;
+                var targetTic = targetProteinTicByFile.ContainsKey(file) ? targetProteinTicByFile[file] : 0;
+                data.TargetProteinRatioPerFile[file] = totalTic > 0 ? targetTic / totalTic : 0;
             }
+
+            data.ProteinQuantMatrix = proteinQuantMatrix;
 
             return data;
         }

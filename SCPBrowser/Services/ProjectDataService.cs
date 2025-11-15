@@ -573,23 +573,30 @@ namespace SCPBrowser.Services
                             }
 
                             // Insert new classification
+                            // Insert new classification
                             using (var insertCmd = connection.CreateCommand())
                             {
                                 insertCmd.CommandText = @"
-                            INSERT INTO raw_file_cell_type_classifications 
-                            (raw_file_id, predicted_cell_type, composite_score, 
-                             spearman_correlation, specificity_score, hypergeometric_pvalue, classified_at)
-                            VALUES 
-                            (@rawFileId, @cellType, @compositeScore, 
-                             @spearman, @specificity, @pvalue, @timestamp)
-                        ";
+                                INSERT INTO raw_file_cell_type_classifications 
+                                (raw_file_id, predicted_cell_type, composite_score, 
+                                 spearman_correlation, specificity_score, hypergeometric_pvalue, classified_at)
+                                VALUES 
+                                (@rawFileId, @cellType, @compositeScore, 
+                                 @spearman, @specificity, @pvalue, @timestamp)
+    ";
+
+                                // Replace NaN with 0.0
+                                double compositeScore = double.IsNaN(prediction.TopScore.CompositeScore) ? 0.0 : prediction.TopScore.CompositeScore;
+                                double spearman = double.IsNaN(prediction.TopScore.SpearmanCorrelation) ? 0.0 : prediction.TopScore.SpearmanCorrelation;
+                                double specificity = double.IsNaN(prediction.TopScore.SpecificityScore) ? 0.0 : prediction.TopScore.SpecificityScore;
+                                double pvalue = double.IsNaN(prediction.TopScore.HypergeometricPValue) ? 1.0 : prediction.TopScore.HypergeometricPValue;
 
                                 insertCmd.Parameters.AddWithValue("@rawFileId", rawFileId.Value);
                                 insertCmd.Parameters.AddWithValue("@cellType", prediction.TopCellType);
-                                insertCmd.Parameters.AddWithValue("@compositeScore", prediction.TopScore.CompositeScore);
-                                insertCmd.Parameters.AddWithValue("@spearman", prediction.TopScore.SpearmanCorrelation);
-                                insertCmd.Parameters.AddWithValue("@specificity", prediction.TopScore.SpecificityScore);
-                                insertCmd.Parameters.AddWithValue("@pvalue", prediction.TopScore.HypergeometricPValue);
+                                insertCmd.Parameters.AddWithValue("@compositeScore", compositeScore);
+                                insertCmd.Parameters.AddWithValue("@spearman", spearman);
+                                insertCmd.Parameters.AddWithValue("@specificity", specificity);
+                                insertCmd.Parameters.AddWithValue("@pvalue", pvalue);
                                 insertCmd.Parameters.AddWithValue("@timestamp", DateTime.UtcNow.ToString("o"));
 
                                 await insertCmd.ExecuteNonQueryAsync();

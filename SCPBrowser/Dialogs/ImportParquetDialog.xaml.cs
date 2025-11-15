@@ -15,7 +15,8 @@ namespace SCPBrowser
 {
     public partial class ImportParquetDialog : Window, INotifyPropertyChanged
     {
-        private readonly ProjectDataService _projectService;
+        private readonly ParquetDataService _parquetService;
+        private readonly PlateService _plateService;
         private readonly string _projectDirectory;
         private string _selectedParquetPath;
         private string _currentFilter = string.Empty;
@@ -70,12 +71,13 @@ namespace SCPBrowser
 
         public event PropertyChangedEventHandler PropertyChanged;
 
-        public ImportParquetDialog(ProjectDataService projectService, string projectDirectory)
+        public ImportParquetDialog(ParquetDataService parquetService, PlateService plateService, string projectDirectory)
         {
             InitializeComponent();
             DataContext = this;
 
-            _projectService = projectService;
+            _parquetService = parquetService;
+            _plateService = plateService;
             _projectDirectory = projectDirectory;
 
             RawFiles = new ObservableCollection<RawFileInfo>();
@@ -96,7 +98,7 @@ namespace SCPBrowser
             try
             {
                 // Load plates
-                var plates = await _projectService.GetPlatesAsync();
+                var plates = await _plateService.GetPlatesAsync();
                 Plates.Clear();
                 foreach (var plate in plates)
                 {
@@ -110,7 +112,7 @@ namespace SCPBrowser
 
                 // Load existing biological conditions from database
                 Console.WriteLine("Loading existing biological conditions from database...");
-                var existingConditions = await _projectService.GetBiologicalConditionsAsync();
+                var existingConditions = await _parquetService.GetBiologicalConditionsAsync();
 
                 ConditionNames.Clear();
                 foreach (var condition in existingConditions)
@@ -135,7 +137,7 @@ namespace SCPBrowser
         {
             try
             {
-                var plates = await _projectService.GetPlatesAsync();
+                var plates = await _plateService.GetPlatesAsync();
                 Plates.Clear();
                 foreach (var plate in plates)
                 {
@@ -258,7 +260,7 @@ namespace SCPBrowser
                 }
 
                 // Check if already imported in database
-                bool alreadyImported = await _projectService.IsParquetImportedAsync(fileName);
+                bool alreadyImported = await _parquetService.IsParquetImportedAsync(fileName);
                 if (alreadyImported)
                 {
                     var result = MessageBox.Show(
@@ -270,7 +272,7 @@ namespace SCPBrowser
 
                     if (result == MessageBoxResult.Yes)
                     {
-                        await _projectService.DeleteParquetImportAsync(fileName);
+                        await _parquetService.DeleteParquetImportAsync(fileName);
                     }
                     else
                     {
@@ -434,7 +436,7 @@ namespace SCPBrowser
         {
             try
             {
-                int plateId = await _projectService.CreatePlateAsync(plateInfo);
+                int plateId = await _plateService.CreatePlateAsync(plateInfo);
                 plateInfo.PlateId = plateId;
 
                 Plates.Add(plateInfo);
@@ -809,7 +811,7 @@ namespace SCPBrowser
                 }
 
                 // Calculate file hash from the (possibly renamed) file
-                string fileHash = _projectService.CalculateFileHash(_selectedParquetPath);
+                string fileHash = _parquetService.CalculateFileHash(_selectedParquetPath);
                 string fileName = Path.GetFileName(_selectedParquetPath);
 
                 // Create column mapping JSON
@@ -838,7 +840,7 @@ namespace SCPBrowser
                     ColumnMappingJson = mappingJson
                 };
 
-                int importId = await _projectService.InsertParquetImportAsync(importInfo);
+                int importId = await _parquetService.InsertParquetImportAsync(importInfo);
                 Console.WriteLine($"Import record created with ID: {importId}");
 
                 // STEP 2: Insert raw file records
@@ -851,7 +853,7 @@ namespace SCPBrowser
                     rawFile.PlateId = SelectedPlate.PlateId;
                 }
 
-                var insertedRawFiles = await _projectService.InsertRawFilesAsync(importId, RawFiles.ToList());
+                var insertedRawFiles = await _parquetService.InsertRawFilesAsync(importId, RawFiles.ToList());
                 Console.WriteLine($"Raw file records inserted successfully");
 
                 // STEP 3: Extract and store protein quantification data
@@ -867,7 +869,7 @@ namespace SCPBrowser
                     });
                 });
 
-                await _projectService.ExtractAndStoreProteinQuantAsync(
+                await _parquetService.ExtractAndStoreProteinQuantAsync(
                     _selectedParquetPath,
                     importId,
                     insertedRawFiles,

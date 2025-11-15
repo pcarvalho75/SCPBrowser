@@ -14,7 +14,8 @@ namespace SCPBrowser
 {
     public partial class PlateBrowserControl : UserControl
     {
-        private ProjectDataService _projectService;
+        private PlateService _plateService;
+        private ParquetDataService _parquetService;
         private System.Collections.Generic.List<PlateInfo> _plates;
 
         public PlateBrowserControl()
@@ -26,17 +27,21 @@ namespace SCPBrowser
         /// <summary>
         /// Loads plate data from the database and populates the UI
         /// </summary>
+        /// <summary>
+        /// Loads plate data from the database and populates the UI
+        /// </summary>
         public async Task LoadDataAsync(string databasePath)
         {
             try
             {
                 Console.WriteLine($"PlateBrowserControl: Loading plate data from {databasePath}");
 
-                // Initialize ProjectDataService with the database path
-                _projectService = new ProjectDataService(databasePath);
+                // Initialize services with the database path
+                _plateService = new PlateService(databasePath);
+                _parquetService = new ParquetDataService(databasePath);
 
                 // Load plates
-                _plates = await _projectService.GetPlatesAsync();
+                _plates = await _plateService.GetPlatesAsync();
 
                 // Populate the UI
                 await PopulatePlateUIAsync();
@@ -55,8 +60,8 @@ namespace SCPBrowser
             // Update summary statistics
             TotalPlatesText.Text = _plates.Count.ToString("N0");
 
-            // Get all raw files to calculate totals
-            var allRawFiles = await _projectService.GetRawFilesAsync();
+            // Get all raw files to calculate totals using ParquetDataService
+            var allRawFiles = await _parquetService.GetRawFilesAsync();
             TotalRawFilesText.Text = allRawFiles.Count.ToString("N0");
 
             // Count unique biological conditions
@@ -105,8 +110,8 @@ namespace SCPBrowser
                 PlateDetailsText.Visibility = Visibility.Collapsed;
             }
 
-            // Get raw files for this plate
-            var rawFiles = await _projectService.GetRawFilesAsync(plateId: plate.PlateId);
+            // Get raw files for this plate using ParquetDataService
+            var rawFiles = await _parquetService.GetRawFilesAsync(plateId: plate.PlateId);
 
             // Bind to DataGrid
             RawFilesGrid.ItemsSource = rawFiles;

@@ -46,10 +46,10 @@ namespace SCPBrowser
         /// Gets cell type predictions from cache, database, or computes them if needed
         /// </summary>
         public async Task<Dictionary<string, CellTypePredictionResult>> GetOrComputePredictionsAsync(
-     ProteomicsData proteomicsData,
-     string projectDatabasePath,
-     int importId,
-     IProgressReporter progressReporter = null)
+            ProteomicsData proteomicsData,
+            string projectDatabasePath,
+            int importId,
+            IProgressReporter progressReporter = null)
         {
             if (proteomicsData == null)
                 throw new ArgumentNullException(nameof(proteomicsData));
@@ -70,10 +70,8 @@ namespace SCPBrowser
             // 3. Try to load from database
             progressReporter?.ReportMessage("Checking for existing cell type classifications...");
 
-            var projectDataService = new ProjectDataService(projectDatabasePath);
-            var existingPredictions = await projectDataService.LoadCellTypeClassificationsAsync(
-                projectDatabasePath,
-                importId);
+            var cellTypeService = new CellTypeClassificationService(projectDatabasePath);
+            var existingPredictions = await cellTypeService.LoadCellTypeClassificationsAsync(importId);
 
             if (existingPredictions.Count > 0 && existingPredictions.Count == proteomicsData.TotalRawFiles)
             {
@@ -90,10 +88,7 @@ namespace SCPBrowser
             // 5. Save to database
             progressReporter?.ReportMessage("Saving classifications to database...");
 
-            await projectDataService.SaveCellTypeClassificationsAsync(
-                projectDatabasePath,
-                importId,
-                predictions);
+            await cellTypeService.SaveCellTypeClassificationsAsync(importId, predictions);
 
             Console.WriteLine($"Saved {predictions.Count} cell type classifications to database");
 
@@ -343,10 +338,13 @@ namespace SCPBrowser
         /// <summary>
         /// Deletes all classifications from database and clears cache
         /// </summary>
+        /// <summary>
+        /// Deletes all classifications from database and clears cache
+        /// </summary>
         public async Task DeleteAllClassificationsAsync(string projectDatabasePath, int importId)
         {
-            var projectDataService = new ProjectDataService(projectDatabasePath);
-            await projectDataService.DeleteAllCellTypeClassificationsAsync(projectDatabasePath, importId);
+            var cellTypeService = new CellTypeClassificationService(projectDatabasePath);
+            await cellTypeService.DeleteAllCellTypeClassificationsAsync(importId);
             ClearCache();
             Console.WriteLine("All cell type classifications deleted");
         }

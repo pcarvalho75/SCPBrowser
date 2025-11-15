@@ -651,5 +651,131 @@ namespace SCPBrowser.Services
                 }
             }
         }
+
+        /// <summary>
+        /// Extracts protein quantification data from parquet and stores summary statistics
+        /// </summary>
+        public async Task ExtractAndStoreProteinQuantAsync(
+            string parquetPath,
+            int importId,
+            List<RawFileInfo> rawFiles,
+            IProgress<string> progress = null)
+        {
+            progress?.Report("Loading parquet file...");
+
+            // Load parquet data
+            var mapping = new ColumnMapping
+            {
+                RawFileColumn = "Run",
+                ProteinGroupColumn = "Protein.Group",
+                PeptideColumn = "Stripped.Sequence",
+                TotalIonCurrentColumn = "Precursor.Quantity"
+            };
+
+            var data = await LoadParquetFileAsync(parquetPath, mapping);
+
+            progress?.Report($"Processing {data.ProteinQuantMatrix.Count} proteins across {data.RawFileNames.Count} files...");
+
+            // Create lookup: RawFileName -> raw_file_id
+            var rawFileIdMap = rawFiles.ToDictionary(rf => rf.RawFileName, rf => rf.RawFileId);
+
+            // Prepare protein statistics
+            var proteinStats = new List<ProteinQuantSummary>();
+
+            foreach (var protein in data.ProteinQuantMatrix.Keys)
+            {
+                foreach (var rawFileName in data.RawFileNames)
+                {
+                    if (!rawFileIdMap.ContainsKey(rawFileName))
+                        continue; // Skip if raw file not in our import
+
+                    int rawFileId = rawFileIdMap[rawFileName];
+
+                    // Get the summed intensity for this protein in this raw file
+                    double intensity = 0;
+                    if (data.ProteinQuantMatrix[protein].ContainsKey(rawFileName))
+                    {
+                        intensity = data.ProteinQuantMatrix[protein][rawFileName];
+                    }
+
+                    // Use the summed intensity as both median and mean
+                    if (intensity > 0)
+                    {
+                        proteinStats.Add(new ProteinQuantSummary
+                        {
+                            ProteinId = protein,
+                            RawFileId = rawFileId,
+                            MedianIntensity = intensity,
+                            MeanIntensity = intensity,
+                            DetectionCount = 1 // Detected in this file
+                        });
+                    }
+                }
+            }
+
+            progress?.Report($"Storing {proteinStats.Count} protein quantification records...");
+
+            // Bulk insert protein statistics
+            await BulkInsertProteinQuantAsync(proteinStats);
+
+            progress?.Report("Protein quantification complete!");
+        }
+
+        /// <summary>
+        /// Bulk inserts protein quantification summary records
+        /// </summary>
+        private async Task BulkInsertProteinQuantAsync(List<ProteinQuantSummary> proteinStats)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        foreach (var stat in proteinStats)
+                        {
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandText = @"
+                            INSERT INTO protein_quant_summary 
+                            (protein_id, raw_file_id, median_intensity, mean_intensity, detection_count)
+                            VALUES 
+                            (@proteinId, @rawFileId, @median, @mean, @count)
+                        ";
+
+                                command.Parameters.AddWithValue("@proteinId", stat.ProteinId);
+                                command.Parameters.AddWithValue("@rawFileId", stat.RawFileId);
+                                command.Parameters.AddWithValue("@median", stat.MedianIntensity);
+                                command.Parameters.AddWithValue("@mean", stat.MeanIntensity);
+                                command.Parameters.AddWithValue("@count", stat.DetectionCount);
+
+                                await command.ExecuteNonQueryAsync();
+                            }
+                        }
+
+                        await transaction.CommitAsync();
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync();
+                        throw;
+                    }
+                }
+            }
+        }
+
+        // Helper class for protein statistics
+        private class ProteinQuantSummary
+        {
+            public string ProteinId { get; set; }
+            public int RawFileId { get; set; }
+            public double MedianIntensity { get; set; }
+            public double MeanIntensity { get; set; }
+            public int DetectionCount { get; set; }
+        }
     }
 }

@@ -290,20 +290,28 @@ namespace SCPBrowser
 
             string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
 
-            // Temporarily create ProjectDataService for ImportParquetDialog (it still uses the old service)
-            var tempProjectService = new ProjectDataService(_currentProjectPath);
-            var dialog = new ImportParquetDialog(tempProjectService, projectDirectory)
+            // Pass the new specialized services to ImportParquetDialog
+            var dialog = new ImportParquetDialog(
+                _parquetService,      // For parquet operations
+                _plateService,        // For plate operations  
+                projectDirectory)
             {
                 Owner = this
             };
 
-            if (dialog.ShowDialog() == true && dialog.ImportSuccessful)
+            if (dialog.ShowDialog() == true)
             {
                 MessageBox.Show(
-                    "Parquet file import completed successfully!",
+                    "Parquet data imported successfully!",
                     "Import Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
+
+                // Refresh the UI if needed
+                if (_hasOpenProject)
+                {
+                    // Trigger any necessary UI updates here
+                }
             }
         }
 

@@ -1,0 +1,129 @@
+﻿<!--
+PlateFilterControl.xaml
+Global plate filter control - shows horizontal row of plate toggle buttons
+Location: SCPBrowser/Controls/PlateFilterControl.xaml
+-->
+<UserControl x:Class="SCPBrowser.PlateFilterControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="60" d:DesignWidth="800"
+             Background="White">
+
+    <UserControl.Resources>
+        <!-- Style for active (selected) plate buttons -->
+        <Style x:Key="PlateToggleButton" TargetType="ToggleButton">
+            <Setter Property="Background" Value="#2563eb"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="15,8"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" 
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <!-- When NOT checked (unchecked = plate disabled) -->
+                            <Trigger Property="IsChecked" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#e2e8f0"/>
+                                <Setter Property="Foreground" Value="#94a3b8"/>
+                            </Trigger>
+                            <!-- Hover effect when checked -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsChecked" Value="True"/>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="border" Property="Background" Value="#1d4ed8"/>
+                            </MultiTrigger>
+                            <!-- Hover effect when unchecked -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsChecked" Value="False"/>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="border" Property="Background" Value="#cbd5e1"/>
+                                <Setter Property="Foreground" Value="#64748b"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Border BorderBrush="#cbd5e1" 
+            BorderThickness="0,0,0,1" 
+            Padding="15,10"
+            Background="#f8fafc">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Label -->
+            <TextBlock Grid.Column="0" 
+                       Text="📊 Filter by Plate:"
+                       FontSize="13"
+                       FontWeight="SemiBold"
+                       Foreground="#334155"
+                       VerticalAlignment="Center"
+                       Margin="0,0,15,0"/>
+
+            <!-- Scrollable plate buttons -->
+            <ScrollViewer Grid.Column="1" 
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="PlateButtonsControl">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <ToggleButton Style="{StaticResource PlateToggleButton}"
+                                          IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                          Checked="PlateButton_CheckedChanged"
+                                          Unchecked="PlateButton_CheckedChanged"
+                                          ToolTip="{Binding ToolTip}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding PlateName}" 
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding FileCountText}" 
+                                               FontSize="11"
+                                               Margin="5,0,0,0"
+                                               Opacity="0.8"/>
+                                </StackPanel>
+                            </ToggleButton>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- Summary text -->
+            <TextBlock x:Name="SummaryText"
+                       Grid.Column="2"
+                       Text="All plates selected"
+                       FontSize="11"
+                       Foreground="#64748b"
+                       VerticalAlignment="Center"
+                       Margin="15,0,0,0"/>
+        </Grid>
+    </Border>
+</UserControl>

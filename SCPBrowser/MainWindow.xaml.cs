@@ -128,6 +128,11 @@ namespace SCPBrowser
                 CloseProjectMenuItem.IsEnabled = true;
                 ClearCellTypeClassificationsMenuItem.IsEnabled = true;
 
+                // Load and show plate filter control
+                LoadingOverlay.SetProgress("Loading plates...");
+                await PlateFilterControl.LoadPlatesAsync(projectDbPath);
+                PlateFilterControl.Visibility = Visibility.Visible;
+
                 UpdateWindowTitle(projectInfo.ProjectName);
 
                 // Find and load the last imported parquet file
@@ -258,6 +263,8 @@ namespace SCPBrowser
             ClearCellTypeClassificationsMenuItem.IsEnabled = false;
 
             ProjectBrowserMenuItem.IsEnabled = false;
+
+            PlateFilterControl.Visibility = Visibility.Collapsed;
 
             UpdateWindowTitle();
 

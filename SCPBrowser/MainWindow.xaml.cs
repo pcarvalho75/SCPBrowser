@@ -22,6 +22,10 @@ namespace SCPBrowser
         private bool _hasOpenProject = false;
         private string _projectReferenceDatabasePath;
 
+        // Data filtering fields
+        private ProteomicsData _originalData; // Unfiltered data from parquet file
+        private ProteomicsData _filteredData; // Filtered by selected plates
+
         // Public properties for controls to access
         public bool HasOpenProject => _hasOpenProject;
         public string ProjectReferenceDatabasePath => _projectReferenceDatabasePath;
@@ -132,6 +136,8 @@ namespace SCPBrowser
                 LoadingOverlay.SetProgress("Loading plates...");
                 await PlateFilterControl.LoadPlatesAsync(projectDbPath);
                 PlateFilterControl.Visibility = Visibility.Visible;
+                Console.WriteLine("PlateFilterControl loaded and visible");
+                PlateFilterControl.PlateSelectionChanged += PlateFilterControl_PlateSelectionChanged;
 
                 UpdateWindowTitle(projectInfo.ProjectName);
 
@@ -190,6 +196,41 @@ namespace SCPBrowser
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
+        }
+
+        private async void PlateFilterControl_PlateSelectionChanged(object sender, PlateSelectionChangedEventArgs e)
+        {
+            try
+            {
+                Console.WriteLine($"Plate selection changed: {e.SelectedPlateIds.Count} plates selected");
+
+                if (_originalData == null)
+                {
+                    Console.WriteLine("No original data available for filtering");
+                    return;
+                }
+
+                _filteredData = await FilterDataByPlatesAsync(_originalData, e.SelectedPlateIds);
+                RefreshAllTabsWithFilteredData();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error filtering data: {ex.Message}");
+                MessageBox.Show($"Error filtering data:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void RefreshAllTabsWithFilteredData()
+        {
+            if (_filteredData == null)
+                return;
+
+            Console.WriteLine($"Refreshing all tabs with filtered data: {_filteredData.TotalRawFiles} runs");
+
+            MainControlTab.UpdateChart(_filteredData);
+            PeptideTicTab.UpdateChart(_filteredData);
+            ProteinMatrixTab.UpdateMatrix(_filteredData);
         }
 
         private async void ClearCellTypeClassifications_Click(object sender, RoutedEventArgs e)
@@ -572,6 +613,113 @@ namespace SCPBrowser
             PeptideTicTab.CellTypePredictionsRequested += PeptideTicTab_CellTypePredictionsRequested;
 
             Console.WriteLine($"Cell type classification enabled: {cellTypeAvailable}");
+        }
+
+        // Add this new method to MainWindow.xaml.cs
+        // Place it after the CloseProject() method (around line 200)
+
+        /// <summary>
+        /// Filters proteomics data to only include raw files from selected plates
+        /// </summary>
+        private async Task<ProteomicsData> FilterDataByPlatesAsync(ProteomicsData originalData, List<int> selectedPlateIds)
+        {
+            if (originalData == null)
+                return null;
+
+            // If no plates selected, return empty data
+            if (selectedPlateIds.Count == 0)
+            {
+                Console.WriteLine("No plates selected - returning empty data");
+                return new ProteomicsData
+                {
+                    RawFileNames = new List<string>(),
+                    ProteinCountPerFile = new Dictionary<string, int>(),
+                    PeptideCountPerFile = new Dictionary<string, int>(),
+                    TotalIonCurrentPerFile = new Dictionary<string, double>(),
+                    TargetProteinRatioPerFile = new Dictionary<string, double>(),
+                    BiologicalConditionPerFile = new Dictionary<string, string>(),
+                    ProteinQuantMatrix = new Dictionary<string, Dictionary<string, double>>(),
+                    ProteinToGeneMap = new Dictionary<string, string>(),
+                    TotalRawFiles = 0,
+                    TotalProteinGroups = 0,
+                    TotalPeptides = 0
+                };
+            }
+
+            // Get raw files for selected plates from database
+            var allRawFilesInPlates = new HashSet<string>();
+            foreach (var plateId in selectedPlateIds)
+            {
+                var rawFiles = await _parquetService.GetRawFilesAsync(plateId: plateId);
+                foreach (var rf in rawFiles)
+                {
+                    allRawFilesInPlates.Add(rf.RawFileName);
+                }
+            }
+
+            Console.WriteLine($"Filtering data: {allRawFilesInPlates.Count} raw files in selected plates");
+
+            // Create filtered data
+            var filteredData = new ProteomicsData
+            {
+                // Filter RawFileNames
+                RawFileNames = originalData.RawFileNames
+                    .Where(rf => allRawFilesInPlates.Contains(rf))
+                    .ToList(),
+
+                // Filter ProteinCountPerFile
+                ProteinCountPerFile = originalData.ProteinCountPerFile
+                    .Where(kvp => allRawFilesInPlates.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+
+                // Filter PeptideCountPerFile
+                PeptideCountPerFile = originalData.PeptideCountPerFile
+                    .Where(kvp => allRawFilesInPlates.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+
+                // Filter TotalIonCurrentPerFile
+                TotalIonCurrentPerFile = originalData.TotalIonCurrentPerFile
+                    .Where(kvp => allRawFilesInPlates.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+
+                // Filter TargetProteinRatioPerFile
+                TargetProteinRatioPerFile = originalData.TargetProteinRatioPerFile
+                    .Where(kvp => allRawFilesInPlates.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+
+                // Filter BiologicalConditionPerFile
+                BiologicalConditionPerFile = originalData.BiologicalConditionPerFile
+                    .Where(kvp => allRawFilesInPlates.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+
+                // Filter ProteinQuantMatrix (keep only raw files in selected plates)
+                ProteinQuantMatrix = new Dictionary<string, Dictionary<string, double>>(),
+
+                // Copy ProteinToGeneMap (no filtering needed)
+                ProteinToGeneMap = new Dictionary<string, string>(originalData.ProteinToGeneMap)
+            };
+
+            // Filter ProteinQuantMatrix - only include raw files from selected plates
+            foreach (var protein in originalData.ProteinQuantMatrix.Keys)
+            {
+                var filteredRawFiles = originalData.ProteinQuantMatrix[protein]
+                    .Where(kvp => allRawFilesInPlates.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                if (filteredRawFiles.Count > 0)
+                {
+                    filteredData.ProteinQuantMatrix[protein] = filteredRawFiles;
+                }
+            }
+
+            // Update totals
+            filteredData.TotalRawFiles = filteredData.RawFileNames.Count;
+            filteredData.TotalProteinGroups = filteredData.ProteinQuantMatrix.Count;
+            filteredData.TotalPeptides = originalData.TotalPeptides; // Keep original peptide count
+
+            Console.WriteLine($"Filtered data: {filteredData.TotalRawFiles} runs, {filteredData.TotalProteinGroups} proteins");
+
+            return filteredData;
         }
 
         private async void PeptideTicTab_CellTypePredictionsRequested(object sender, EventArgs e)

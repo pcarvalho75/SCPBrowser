@@ -365,6 +365,13 @@ namespace SCPBrowser
             if (data.ProteinCountPerFile.Count == 0)
             {
                 StatusText.Text = "No data to display";
+
+                // Clear axis labels too
+                ProteinChart.Plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.NumericManual(Array.Empty<Tick>());
+                ProteinChart.Plot.Axes.Left.Label.Text = "Number of Protein Groups";
+                ProteinChart.Plot.Axes.Bottom.Label.Text = "Raw File";
+
+                ProteinChart.Refresh();
                 return;
             }
 

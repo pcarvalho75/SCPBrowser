@@ -2,6 +2,8 @@
 // Global plate filter control - manages plate selection for filtering data
 // Location: SCPBrowser/Controls/PlateFilterControl.xaml.cs
 
+using SCPBrowser.Models;
+using SCPBrowser.Services;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -10,8 +12,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using SCPBrowser.Models;
-using SCPBrowser.Services;
+using System.Windows.Controls.Primitives;
 
 namespace SCPBrowser
 {
@@ -97,6 +98,13 @@ namespace SCPBrowser
         {
             if (_isInitializing)
                 return;
+
+            // Get the toggle button and update the corresponding item's IsSelected
+            if (sender is ToggleButton button && button.DataContext is PlateFilterItem item)
+            {
+                item.IsSelected = button.IsChecked == true;
+                Console.WriteLine($"Plate '{item.PlateName}' IsSelected set to: {item.IsSelected}");
+            }
 
             UpdateSummaryText();
             RaisePlateSelectionChanged();

@@ -153,6 +153,9 @@ namespace SCPBrowser
                 GoEnrichmentTab.ClearData();
                 ClearSelectionButton.IsEnabled = false;
                 RunDetailPanel.ClearDetails();
+
+                // Clear the scatter plot too!
+                ScatterPlot.UpdatePlot(null, new ScatterPlotOptions());
                 return;
             }
 
@@ -164,16 +167,12 @@ namespace SCPBrowser
                 CellTypeColorMap = _cellTypeColorMap,
                 GoEnrichmentResults = _goEnrichmentResults,
                 GoTermColorMap = _goTermColorMap,
-
-                // Populate our new properties
                 UseBioConditionColoring = ColorByBioConditionRadio.IsChecked == true,
                 BioConditionPerFile = _currentData.BiologicalConditionPerFile,
-                BioConditionColorMap = GenerateBioConditionColorMap() // Call our new method
+                BioConditionColorMap = GenerateBioConditionColorMap()
             };
 
             ScatterPlot.UpdatePlot(_currentData, options);
-
-            // Pass the whole options object to UpdatePlotHeader
             UpdatePlotHeader(_currentData.PeptideCountPerFile.Count, options);
         }
 

@@ -98,6 +98,7 @@ namespace SCPBrowser
 
                 if (data == null || data.PeptideCountPerFile.Count == 0)
                 {
+                    Console.WriteLine($"  -> UpdatePlot: No data to display (data null: {data == null}, count: {data?.PeptideCountPerFile.Count ?? -1})");
                     return;
                 }
 

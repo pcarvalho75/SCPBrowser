@@ -587,6 +587,11 @@ namespace SCPBrowser
 
         private void MainControlTab_DataLoaded(object sender, EventArgs e)
         {
+            // Store original data for filtering
+            _originalData = MainControlTab.GetCurrentData();
+            _filteredData = _originalData; // Initially, filtered data = all data
+            Console.WriteLine($"Stored original data: {_originalData?.TotalRawFiles ?? 0} runs");
+
             // When MainControlTab finishes loading, populate other tabs with the same data
             PeptideTicTab.UpdateChart(MainControlTab.GetCurrentData());
             ProteinMatrixTab.UpdateMatrix(MainControlTab.GetCurrentData());

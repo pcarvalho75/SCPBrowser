@@ -358,7 +358,7 @@ namespace SCPBrowser
             return predictions;
         }
 
-        private void UpdateChart(ProteomicsData data)
+        public void UpdateChart(ProteomicsData data)
         {
             ProteinChart.Plot.Clear();
 

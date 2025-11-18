@@ -135,27 +135,53 @@ namespace SCPBrowser
             return markers;
         }
 
-        /// <summary>
-        /// Predicts cell type for a single cell based on its protein abundances
-        /// Compares against all cell type profiles and returns ranked scores
-        /// </summary>
-        /// <param name="proteinAbundances">Dictionary of gene/protein name -> abundance value</param>
-        /// <returns>Prediction result with scores for all cell types</returns>
         public CellTypePredictionResult PredictCellType(Dictionary<string, double> proteinAbundances)
         {
             if (proteinAbundances == null || proteinAbundances.Count == 0)
                 return new CellTypePredictionResult();
 
+            // 1. First Pass: Calculate Raw Metrics for ALL cell types
             var results = new Dictionary<string, CellTypeScore>();
-
-            // Compare against each cell type profile
             foreach (var cellType in _database.CellTypeProfiles.Keys)
             {
-                var score = CalculateComprehensiveScore(proteinAbundances, cellType);
-                results[cellType] = score;
+                // We use the helper method to get raw values (CompositeScore starts at 0)
+                results[cellType] = CalculateRawMetrics(proteinAbundances, cellType);
             }
 
-            // Order by composite score (highest first)
+            // 2. Gather populations for statistics
+            // Note: using MathNet.Numerics.Statistics for Mean() and StandardDeviation()
+            var spearmanValues = results.Values.Select(x => x.SpearmanCorrelation).ToList();
+            var specificityValues = results.Values.Select(x => x.SpecificityScore).ToList();
+            // Convert P-Value to "Enrichment Score" (1 - P) so "higher is better"
+            var enrichmentValues = results.Values.Select(x => 1.0 - x.HypergeometricPValue).ToList();
+
+            // 3. Calculate Statistics (Mean and StdDev)
+            double meanSpearman = spearmanValues.Mean();
+            double stdSpearman = spearmanValues.StandardDeviation();
+
+            double meanSpec = specificityValues.Mean();
+            double stdSpec = specificityValues.StandardDeviation();
+
+            double meanEnrich = enrichmentValues.Mean();
+            double stdEnrich = enrichmentValues.StandardDeviation();
+
+            // 4. Second Pass: Calculate Z-Scores and Final Composite Score
+            foreach (var kvp in results)
+            {
+                var score = kvp.Value;
+
+                // Calculate Z-Scores: (Value - Mean) / StdDev
+                // Guard against divide-by-zero if all scores are identical (StdDev ~ 0)
+                double zSpearman = stdSpearman > 1e-9 ? (score.SpearmanCorrelation - meanSpearman) / stdSpearman : 0;
+                double zSpecificity = stdSpec > 1e-9 ? (score.SpecificityScore - meanSpec) / stdSpec : 0;
+                double zEnrichment = stdEnrich > 1e-9 ? ((1.0 - score.HypergeometricPValue) - meanEnrich) / stdEnrich : 0;
+
+                // Final Composite Score is the average of the Z-Scores
+                // This gives equal weight to each statistical line of evidence
+                score.CompositeScore = (zSpearman + zSpecificity + zEnrichment) / 3.0;
+            }
+
+            // 5. Order by the new Z-Score based composite (Highest Z-score is best)
             var orderedResults = results
                 .OrderByDescending(kvp => kvp.Value.CompositeScore)
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
@@ -165,6 +191,45 @@ namespace SCPBrowser
                 Scores = orderedResults,
                 TopCellType = orderedResults.FirstOrDefault().Key,
                 TopScore = orderedResults.FirstOrDefault().Value
+            };
+        }
+
+        /// <summary>
+        /// Calculates the raw statistical metrics without applying weighting or normalization.
+        /// Normalization is handled in the batch context of PredictCellType.
+        /// </summary>
+        private CellTypeScore CalculateRawMetrics(Dictionary<string, double> proteinAbundances, string cellType)
+        {
+            if (!_database.CellTypeProfiles.ContainsKey(cellType))
+            {
+                return new CellTypeScore
+                {
+                    SpearmanCorrelation = 0,
+                    SpecificityScore = 0,
+                    HypergeometricPValue = 1.0,
+                    CompositeScore = 0
+                };
+            }
+
+            var profile = _database.CellTypeProfiles[cellType];
+
+            // 1. Spearman correlation
+            double spearmanCorr = CalculateSpearmanCorrelation(proteinAbundances, profile);
+
+            // 2. Specificity-weighted score (Unbounded range)
+            double specificityScore = CalculateSpecificityWeightedScore(proteinAbundances, profile);
+
+            // 3. Hypergeometric p-value (Probability 0-1)
+            double hypergeometricPValue = CalculateHypergeometricPValue(proteinAbundances.Keys.ToList(), cellType);
+
+            // Return raw values only. CompositeScore is intentionally left as 0 
+            // because it requires the population context (Z-Score) to be calculated correctly.
+            return new CellTypeScore
+            {
+                SpearmanCorrelation = spearmanCorr,
+                SpecificityScore = specificityScore,
+                HypergeometricPValue = hypergeometricPValue,
+                CompositeScore = 0
             };
         }
 

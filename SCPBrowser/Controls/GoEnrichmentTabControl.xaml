@@ -5,46 +5,61 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
              d:DesignHeight="250" d:DesignWidth="900" Background="WhiteSmoke">
-    <Grid Margin="10">
+    <Grid Margin="5">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Summary Section -->
         <Border Grid.Row="0" 
                 BorderBrush="#e2e8f0" 
                 BorderThickness="1" 
-                CornerRadius="3" 
-                Padding="10" 
-                Margin="0,0,0,10" 
+                CornerRadius="3"
+                Padding="8,5" 
+                Margin="0,0,0,5" 
                 Background="#f8fafc">
-            <StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
                 <TextBlock x:Name="SummaryText"
+                           Grid.Column="0"
                            Text="Select points to view GO enrichment analysis"
-                           TextWrapping="Wrap"
+                           TextTrimming="CharacterEllipsis"
                            FontSize="11"
                            Foreground="#334155"
-                           FontWeight="SemiBold"/>
-            </StackPanel>
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+
+                <TextBlock x:Name="StatisticsText"
+                           Grid.Column="1"
+                           Text="0 GO terms displayed"
+                           FontSize="10"
+                           Foreground="#64748b"
+                           VerticalAlignment="Center"
+                           Margin="15,0,0,0"/>
+            </Grid>
         </Border>
 
-        <!-- Namespace Filter -->
         <StackPanel Grid.Row="1" 
                     Orientation="Horizontal" 
-                    Margin="0,0,0,10">
+                    Margin="2,0,0,5">
             <TextBlock Text="Filter by GO Namespace:" 
                        VerticalAlignment="Center"
-                       Margin="0,0,10,0"
-                       FontWeight="SemiBold"/>
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       Foreground="#334155"
+                       Margin="0,0,10,0"/>
 
             <RadioButton x:Name="AllNamespacesRadio"
                          Content="All"
                          IsChecked="True"
                          GroupName="Namespace"
                          Margin="0,0,15,0"
+                         FontSize="11"
                          VerticalAlignment="Center"
                          Checked="NamespaceFilter_Changed"/>
 
@@ -52,6 +67,7 @@
                          Content="Biological Process"
                          GroupName="Namespace"
                          Margin="0,0,15,0"
+                         FontSize="11"
                          VerticalAlignment="Center"
                          Checked="NamespaceFilter_Changed"/>
 
@@ -59,6 +75,7 @@
                          Content="Molecular Function"
                          GroupName="Namespace"
                          Margin="0,0,15,0"
+                         FontSize="11"
                          VerticalAlignment="Center"
                          Checked="NamespaceFilter_Changed"/>
 
@@ -66,27 +83,13 @@
                          Content="Cellular Component"
                          GroupName="Namespace"
                          Margin="0,0,15,0"
+                         FontSize="11"
                          VerticalAlignment="Center"
                          Checked="NamespaceFilter_Changed"/>
         </StackPanel>
 
-        <!-- Statistics Bar -->
-        <Border Grid.Row="2"
-                BorderBrush="#e2e8f0" 
-                BorderThickness="1" 
-                CornerRadius="3" 
-                Padding="8" 
-                Margin="0,0,0,10" 
-                Background="#fefce8">
-            <TextBlock x:Name="StatisticsText"
-                       Text="0 GO terms displayed"
-                       FontSize="10"
-                       Foreground="#64748b"/>
-        </Border>
-
-        <!-- GO Terms Grid -->
         <DataGrid x:Name="GoTermsGrid"
-                  Grid.Row="3"
+                  Grid.Row="2"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
                   CanUserAddRows="False"
@@ -98,7 +101,9 @@
                   HeadersVisibility="All"
                   SelectionMode="Extended"
                   AlternatingRowBackground="#f9fafb"
-                  RowBackground="White">
+                  RowBackground="White"
+                  BorderThickness="1"
+                  BorderBrush="#e2e8f0">
             <DataGrid.ColumnHeaderStyle>
                 <Style TargetType="DataGridColumnHeader">
                     <Setter Property="Background" Value="#e2e8f0"/>
@@ -106,6 +111,7 @@
                     <Setter Property="Padding" Value="8,5"/>
                     <Setter Property="BorderBrush" Value="#cbd5e1"/>
                     <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                    <Setter Property="Foreground" Value="#334155"/>
                 </Style>
             </DataGrid.ColumnHeaderStyle>
             <DataGrid.Columns>

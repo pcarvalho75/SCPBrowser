@@ -19,7 +19,9 @@ namespace SCPBrowser
         private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
         private Dictionary<string, Color> _goTermColorMap;
         private List<DataPoint> _currentSelectedPoints = new List<DataPoint>();
+
         private HashSet<string> _checkedBioConditions = new HashSet<string>();
+        private HashSet<string> _checkedCellTypes = new HashSet<string>();
         // Add this new event
         public event EventHandler CellTypePredictionsRequested;
 
@@ -131,22 +133,13 @@ namespace SCPBrowser
             ColorByBioConditionRadio.IsEnabled = isAvailable;
         }
 
-        private async void ColorMode_Changed(object sender, RoutedEventArgs e)
+        private void ColorMode_Changed(object sender, RoutedEventArgs e)
         {
             if (!_isInitialized || ColorByCellTypeRadio == null)
                 return;
 
-            Console.WriteLine($"ColorMode_Changed fired");
-            Console.WriteLine($"  ColorByBioConditionRadio.IsChecked: {ColorByBioConditionRadio.IsChecked}");
-            Console.WriteLine($"  ColorByCellTypeRadio.IsChecked: {ColorByCellTypeRadio.IsChecked}");
-            Console.WriteLine($"  ColorByTrypsinRadio.IsChecked: {ColorByTrypsinRadio.IsChecked}");
-
-            // Show/hide panel and populate checkboxes based on selection
             if (ColorByCellTypeRadio.IsChecked == true)
             {
-                Console.WriteLine($"  -> Entering cell type branch");
-
-                // If we don't have predictions yet, request them first
                 if (_cellTypePredictions == null || _cellTypePredictions.Count == 0)
                 {
                     CellTypePredictionsRequested?.Invoke(this, EventArgs.Empty);
@@ -158,7 +151,6 @@ namespace SCPBrowser
             }
             else if (ColorByBioConditionRadio.IsChecked == true)
             {
-                Console.WriteLine($"  -> Entering bio condition branch");
                 PopulateBioConditionCheckboxes();
                 BioConditionPanel.Visibility = Visibility.Visible;
             }
@@ -173,30 +165,48 @@ namespace SCPBrowser
             }
         }
 
+
         private void PopulateCellTypeCheckboxes()
+        {
+            PopulateColorCheckboxes(_cellTypeColorMap, _checkedCellTypes);
+        }
+
+
+
+        private void PopulateBioConditionCheckboxes()
+        {
+            var colorMap = GenerateBioConditionColorMap();
+            PopulateColorCheckboxes(colorMap, _checkedBioConditions);
+        }
+
+        private void PopulateColorCheckboxes(Dictionary<string, Color> colorMap, HashSet<string> checkedItems)
         {
             BioConditionCheckboxes.Children.Clear();
 
-            Console.WriteLine($"PopulateCellTypeCheckboxes called");
-            Console.WriteLine($"  _cellTypeColorMap is null: {_cellTypeColorMap == null}");
-
-            if (_cellTypeColorMap == null || _cellTypeColorMap.Count == 0)
-            {
-                Console.WriteLine($"  No cell type color map available");
+            if (colorMap == null || colorMap.Count == 0)
                 return;
-            }
 
-            Console.WriteLine($"  _cellTypeColorMap.Count: {_cellTypeColorMap.Count}");
-
-            foreach (var cellType in _cellTypeColorMap.OrderBy(kvp => kvp.Key))
+            foreach (var item in colorMap.OrderBy(kvp => kvp.Key))
             {
-                Console.WriteLine($"  Adding checkbox for: {cellType.Key}");
+                bool isChecked = checkedItems.Contains(item.Key);
 
                 var checkBox = new CheckBox
                 {
-                    IsChecked = false,
+                    IsChecked = isChecked,
                     Margin = new Thickness(0, 0, 0, 4),
-                    Tag = cellType.Key
+                    Tag = item.Key
+                };
+
+                checkBox.Checked += (s, e) =>
+                {
+                    if (s is CheckBox cb && cb.Tag is string key)
+                        checkedItems.Add(key);
+                };
+
+                checkBox.Unchecked += (s, e) =>
+                {
+                    if (s is CheckBox cb && cb.Tag is string key)
+                        checkedItems.Remove(key);
                 };
 
                 var stackPanel = new StackPanel { Orientation = Orientation.Horizontal };
@@ -205,7 +215,7 @@ namespace SCPBrowser
                 {
                     Width = 12,
                     Height = 12,
-                    Fill = new SolidColorBrush(cellType.Value),
+                    Fill = new SolidColorBrush(item.Value),
                     Stroke = new SolidColorBrush(Colors.Black),
                     StrokeThickness = 1,
                     Margin = new Thickness(0, 0, 6, 0),
@@ -214,7 +224,7 @@ namespace SCPBrowser
 
                 var label = new TextBlock
                 {
-                    Text = cellType.Key,
+                    Text = item.Key,
                     FontSize = 11,
                     VerticalAlignment = VerticalAlignment.Center
                 };
@@ -224,90 +234,6 @@ namespace SCPBrowser
                 checkBox.Content = stackPanel;
 
                 BioConditionCheckboxes.Children.Add(checkBox);
-            }
-
-            Console.WriteLine($"  Total checkboxes added: {BioConditionCheckboxes.Children.Count}");
-        }
-
-
-        private void PopulateBioConditionCheckboxes()
-        {
-            BioConditionCheckboxes.Children.Clear();
-
-            Console.WriteLine($"PopulateBioConditionCheckboxes called");
-            Console.WriteLine($"  _currentData is null: {_currentData == null}");
-
-            if (_currentData != null)
-            {
-                Console.WriteLine($"  BiologicalConditionPerFile.Count: {_currentData.BiologicalConditionPerFile.Count}");
-            }
-
-            if (_currentData == null || _currentData.BiologicalConditionPerFile.Count == 0)
-                return;
-
-            var colorMap = GenerateBioConditionColorMap();
-            Console.WriteLine($"  colorMap.Count: {colorMap.Count}");
-
-            foreach (var condition in colorMap.OrderBy(kvp => kvp.Key))
-            {
-                Console.WriteLine($"  Adding checkbox for: {condition.Key}");
-
-                // Check if this condition was previously checked (default to unchecked for new conditions)
-                bool isChecked = _checkedBioConditions.Contains(condition.Key);
-
-                var checkBox = new CheckBox
-                {
-                    IsChecked = isChecked,
-                    Margin = new Thickness(0, 0, 0, 4),
-                    Tag = condition.Key
-                };
-
-                // Wire up event to track checked state
-                checkBox.Checked += BioConditionCheckbox_Changed;
-                checkBox.Unchecked += BioConditionCheckbox_Changed;
-
-                var stackPanel = new StackPanel { Orientation = Orientation.Horizontal };
-
-                var colorRect = new System.Windows.Shapes.Rectangle
-                {
-                    Width = 12,
-                    Height = 12,
-                    Fill = new SolidColorBrush(condition.Value),
-                    Stroke = new SolidColorBrush(Colors.Black),
-                    StrokeThickness = 1,
-                    Margin = new Thickness(0, 0, 6, 0),
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                var label = new TextBlock
-                {
-                    Text = condition.Key,
-                    FontSize = 11,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-
-                stackPanel.Children.Add(colorRect);
-                stackPanel.Children.Add(label);
-                checkBox.Content = stackPanel;
-
-                BioConditionCheckboxes.Children.Add(checkBox);
-            }
-
-            Console.WriteLine($"  Total checkboxes added: {BioConditionCheckboxes.Children.Count}");
-        }
-
-        private void BioConditionCheckbox_Changed(object sender, RoutedEventArgs e)
-        {
-            if (sender is CheckBox checkBox && checkBox.Tag is string condition)
-            {
-                if (checkBox.IsChecked == true)
-                {
-                    _checkedBioConditions.Add(condition);
-                }
-                else
-                {
-                    _checkedBioConditions.Remove(condition);
-                }
             }
         }
         private void RefreshChart()

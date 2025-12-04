@@ -52,6 +52,13 @@ namespace SCPBrowser
 
             if (_currentData != null)
             {
+                // If cell type mode is selected, populate the checkboxes now that we have the color map
+                if (ColorByCellTypeRadio.IsChecked == true && _cellTypeColorMap != null && _cellTypeColorMap.Count > 0)
+                {
+                    PopulateCellTypeCheckboxes();
+                    BioConditionPanel.Visibility = Visibility.Visible;
+                }
+
                 RefreshChart();
             }
         }
@@ -133,8 +140,22 @@ namespace SCPBrowser
             Console.WriteLine($"  ColorByCellTypeRadio.IsChecked: {ColorByCellTypeRadio.IsChecked}");
             Console.WriteLine($"  ColorByTrypsinRadio.IsChecked: {ColorByTrypsinRadio.IsChecked}");
 
-            // Show/hide bio condition panel based on selection
-            if (ColorByBioConditionRadio.IsChecked == true)
+            // Show/hide panel and populate checkboxes based on selection
+            if (ColorByCellTypeRadio.IsChecked == true)
+            {
+                Console.WriteLine($"  -> Entering cell type branch");
+
+                // If we don't have predictions yet, request them first
+                if (_cellTypePredictions == null || _cellTypePredictions.Count == 0)
+                {
+                    CellTypePredictionsRequested?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+
+                PopulateCellTypeCheckboxes();
+                BioConditionPanel.Visibility = Visibility.Visible;
+            }
+            else if (ColorByBioConditionRadio.IsChecked == true)
             {
                 Console.WriteLine($"  -> Entering bio condition branch");
                 PopulateBioConditionCheckboxes();
@@ -145,22 +166,66 @@ namespace SCPBrowser
                 BioConditionPanel.Visibility = Visibility.Collapsed;
             }
 
-            // If user selected "Color by Cell Type" but we don't have predictions yet
-            if (ColorByCellTypeRadio.IsChecked == true &&
-                (_cellTypePredictions == null || _cellTypePredictions.Count == 0))
-            {
-                // Request predictions from MainWindow
-                CellTypePredictionsRequested?.Invoke(this, EventArgs.Empty);
-
-                // The MainWindow will handle the event, get predictions, and call SetCellTypePredictions()
-                // which will then call RefreshChart()
-                return;
-            }
-
             if (_currentData != null)
             {
                 RefreshChart();
             }
+        }
+
+        private void PopulateCellTypeCheckboxes()
+        {
+            BioConditionCheckboxes.Children.Clear();
+
+            Console.WriteLine($"PopulateCellTypeCheckboxes called");
+            Console.WriteLine($"  _cellTypeColorMap is null: {_cellTypeColorMap == null}");
+
+            if (_cellTypeColorMap == null || _cellTypeColorMap.Count == 0)
+            {
+                Console.WriteLine($"  No cell type color map available");
+                return;
+            }
+
+            Console.WriteLine($"  _cellTypeColorMap.Count: {_cellTypeColorMap.Count}");
+
+            foreach (var cellType in _cellTypeColorMap.OrderBy(kvp => kvp.Key))
+            {
+                Console.WriteLine($"  Adding checkbox for: {cellType.Key}");
+
+                var checkBox = new CheckBox
+                {
+                    IsChecked = true,
+                    Margin = new Thickness(0, 0, 0, 4),
+                    Tag = cellType.Key
+                };
+
+                var stackPanel = new StackPanel { Orientation = Orientation.Horizontal };
+
+                var colorRect = new Rectangle
+                {
+                    Width = 12,
+                    Height = 12,
+                    Fill = new SolidColorBrush(cellType.Value),
+                    Stroke = new SolidColorBrush(Colors.Black),
+                    StrokeThickness = 1,
+                    Margin = new Thickness(0, 0, 6, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                var label = new TextBlock
+                {
+                    Text = cellType.Key,
+                    FontSize = 11,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                stackPanel.Children.Add(colorRect);
+                stackPanel.Children.Add(label);
+                checkBox.Content = stackPanel;
+
+                BioConditionCheckboxes.Children.Add(checkBox);
+            }
+
+            Console.WriteLine($"  Total checkboxes added: {BioConditionCheckboxes.Children.Count}");
         }
 
 

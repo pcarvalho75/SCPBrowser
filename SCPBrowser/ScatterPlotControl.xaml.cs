@@ -178,18 +178,19 @@ namespace SCPBrowser
             double maxRatio = trypsinRatios.Any() ? trypsinRatios.Max() : 0.05;
             if (maxRatio < 0.01) maxRatio = 0.05;
 
-            // *** NEW LOGIC HERE ***
+            
+
             if (options.UseCellTypeColoring && options.CellTypePredictions != null)
             {
                 _dataPoints = DrawDataPointsWithCellTypes(PlotCanvas, rawFiles, peptideCounts, ticValues,
                     proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.CellTypePredictions, options.CellTypeColorMap);
-                DrawCellTypeLegend(PlotCanvas, canvasWidth, canvasHeight, options.CellTypeColorMap);
+                // Legend is now shown as checkboxes in PeptideTicControl
             }
             else if (options.UseBioConditionColoring && options.BioConditionPerFile != null)
             {
                 _dataPoints = DrawDataPointsWithBioConditions(PlotCanvas, rawFiles, peptideCounts, ticValues,
                     proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.BioConditionPerFile, options.BioConditionColorMap);
-                DrawBioConditionLegend(PlotCanvas, canvasWidth, canvasHeight, options.BioConditionColorMap);
+                // Legend is now shown as checkboxes in PeptideTicControl
             }
             else // Default: Color by Target Protein Ratio
             {

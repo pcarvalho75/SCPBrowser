@@ -19,10 +19,13 @@ namespace SCPBrowser
         public Dictionary<string, RunGoEnrichmentResult> GoEnrichmentResults { get; set; }
         public Dictionary<string, Color> GoTermColorMap { get; set; }
 
-        // ADD THESE THREE NEW PROPERTIES
         public bool UseBioConditionColoring { get; set; } = false;
         public Dictionary<string, string> BioConditionPerFile { get; set; }
         public Dictionary<string, Color> BioConditionColorMap { get; set; }
+
+        // Checkbox filter sets for persistent selection
+        public HashSet<string> CheckedCellTypes { get; set; }
+        public HashSet<string> CheckedBioConditions { get; set; }
     }
 
     public class PlotSelectionChangedEventArgs : EventArgs
@@ -109,12 +112,72 @@ namespace SCPBrowser
                     _selectionManager.SetPolygonPointsData(savedDataCoordinates);
                     RedrawSelectionFromDataCoordinates();
                 }
+
+                // Apply checkbox selections at the very end
+                if (options.CheckedCellTypes != null || options.CheckedBioConditions != null)
+                {
+                    UpdateSelectionWithFilters(
+                        options.CheckedCellTypes ?? new HashSet<string>(),
+                        options.CheckedBioConditions ?? new HashSet<string>());
+                }
             }
             finally
             {
                 _suppressSelectionEvents = false;
                 _isRefreshing = false;
             }
+        }
+
+        /// <summary>
+        /// Updates point selection based on checkbox filters combined with existing polygon selection.
+        /// </summary>
+        /// <param name="checkedCellTypes">Set of checked cell types</param>
+        /// <param name="checkedBioConditions">Set of checked biological conditions</param>
+        public void UpdateSelectionWithFilters(HashSet<string> checkedCellTypes, HashSet<string> checkedBioConditions)
+        {
+            if (_dataPoints == null || _dataPoints.Count == 0)
+                return;
+
+            var selectedPoints = new List<DataPoint>();
+            bool hasPolygonSelection = _selectionManager.PolygonPointsScreen.Count >= 3;
+
+            foreach (var point in _dataPoints)
+            {
+                bool isInPolygon = false;
+                if (hasPolygonSelection)
+                {
+                    Point testPoint = new Point(point.XScreen, point.YScreen);
+                    isInPolygon = _selectionManager.IsPointInSelection(testPoint);
+                }
+
+                bool matchesCellType = checkedCellTypes != null &&
+                                       checkedCellTypes.Count > 0 &&
+                                       !string.IsNullOrEmpty(point.PredictedCellType) &&
+                                       checkedCellTypes.Contains(point.PredictedCellType);
+
+                bool matchesBioCondition = checkedBioConditions != null &&
+                                           checkedBioConditions.Count > 0 &&
+                                           !string.IsNullOrEmpty(point.BiologicalCondition) &&
+                                           checkedBioConditions.Contains(point.BiologicalCondition);
+
+                bool shouldBeSelected = isInPolygon || matchesCellType || matchesBioCondition;
+
+                point.IsSelected = shouldBeSelected;
+
+                if (shouldBeSelected)
+                {
+                    selectedPoints.Add(point);
+                    point.Visual.Stroke = new SolidColorBrush(Color.FromRgb(220, 38, 38));
+                    point.Visual.StrokeThickness = 2;
+                }
+                else
+                {
+                    point.Visual.Stroke = new SolidColorBrush(Color.FromRgb(50, 50, 50));
+                    point.Visual.StrokeThickness = 1;
+                }
+            }
+
+            SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = selectedPoints });
         }
 
         public void ClearSelection()
@@ -182,19 +245,19 @@ namespace SCPBrowser
             double maxRatio = trypsinRatios.Any() ? trypsinRatios.Max() : 0.05;
             if (maxRatio < 0.01) maxRatio = 0.05;
 
-            
+
 
             if (options.UseCellTypeColoring && options.CellTypePredictions != null)
             {
                 _dataPoints = DrawDataPointsWithCellTypes(PlotCanvas, rawFiles, peptideCounts, ticValues,
-                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.CellTypePredictions, options.CellTypeColorMap);
-                // Legend is now shown as checkboxes in PeptideTicControl
+                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.CellTypePredictions,
+                    options.CellTypeColorMap, options.BioConditionPerFile);
             }
             else if (options.UseBioConditionColoring && options.BioConditionPerFile != null)
             {
                 _dataPoints = DrawDataPointsWithBioConditions(PlotCanvas, rawFiles, peptideCounts, ticValues,
-                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.BioConditionPerFile, options.BioConditionColorMap);
-                // Legend is now shown as checkboxes in PeptideTicControl
+                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.BioConditionPerFile,
+                    options.BioConditionColorMap, options.CellTypePredictions);
             }
             else // Default: Color by Target Protein Ratio
             {
@@ -211,9 +274,9 @@ namespace SCPBrowser
         }
 
         private List<DataPoint> DrawDataPointsWithCellTypes(Canvas canvas, List<string> rawFiles, List<int> peptideCounts,
-            List<double> ticValues, List<int> proteinCounts, List<double> trypsinRatios,
-            double canvasWidth, double canvasHeight, Dictionary<string, CellTypePredictionResult> predictions,
-            Dictionary<string, Color> colorMap)
+      List<double> ticValues, List<int> proteinCounts, List<double> trypsinRatios,
+      double canvasWidth, double canvasHeight, Dictionary<string, CellTypePredictionResult> predictions,
+      Dictionary<string, Color> colorMap, Dictionary<string, string> bioConditions)
         {
             var dataPoints = new List<DataPoint>();
             const double MarkerSize = 8;
@@ -239,6 +302,12 @@ namespace SCPBrowser
                     {
                         markerColor = colorMap[cellType];
                     }
+                }
+
+                string condition = null;
+                if (bioConditions != null && bioConditions.TryGetValue(rawFiles[i], out var cond))
+                {
+                    condition = cond;
                 }
 
                 var ellipse = new System.Windows.Shapes.Ellipse
@@ -267,13 +336,13 @@ namespace SCPBrowser
                     BaseColor = markerColor,
                     IsSelected = false,
                     PredictedCellType = cellType,
-                    PredictionScore = predictionScore
+                    PredictionScore = predictionScore,
+                    BiologicalCondition = condition
                 });
             }
 
             return dataPoints;
         }
-
         private void DrawCellTypeLegend(Canvas canvas, double canvasWidth, double canvasHeight, Dictionary<string, Color> colorMap)
         {
             if (colorMap == null || colorMap.Count == 0)
@@ -328,11 +397,11 @@ namespace SCPBrowser
         private List<DataPoint> DrawDataPointsWithBioConditions(Canvas canvas, List<string> rawFiles, List<int> peptideCounts,
             List<double> ticValues, List<int> proteinCounts, List<double> trypsinRatios,
             double canvasWidth, double canvasHeight, Dictionary<string, string> bioConditions,
-            Dictionary<string, Color> colorMap)
+            Dictionary<string, Color> colorMap, Dictionary<string, CellTypePredictionResult> predictions)
         {
             var dataPoints = new List<DataPoint>();
             const double MarkerSize = 8;
-            var unassignedColor = Color.FromRgb(200, 200, 200); // Gray for unassigned
+            var unassignedColor = Color.FromRgb(200, 200, 200);
 
             for (int i = 0; i < rawFiles.Count; i++)
             {
@@ -350,6 +419,15 @@ namespace SCPBrowser
                     {
                         markerColor = colorMap[condition];
                     }
+                }
+
+                string cellType = null;
+                CellTypeScore predictionScore = null;
+                if (predictions != null && predictions.ContainsKey(rawFiles[i]))
+                {
+                    var prediction = predictions[rawFiles[i]];
+                    cellType = prediction.TopCellType;
+                    predictionScore = prediction.TopScore;
                 }
 
                 var ellipse = new System.Windows.Shapes.Ellipse
@@ -377,7 +455,9 @@ namespace SCPBrowser
                     Visual = ellipse,
                     BaseColor = markerColor,
                     IsSelected = false,
-                    BiologicalCondition = condition // Store the condition
+                    PredictedCellType = cellType,
+                    PredictionScore = predictionScore,
+                    BiologicalCondition = condition
                 });
             }
 

@@ -22,6 +22,7 @@ namespace SCPBrowser
 
         private HashSet<string> _checkedBioConditions = new HashSet<string>();
         private HashSet<string> _checkedCellTypes = new HashSet<string>();
+        private bool _suppressCheckboxEvents = false;
         // Add this new event
         public event EventHandler CellTypePredictionsRequested;
 
@@ -38,6 +39,19 @@ namespace SCPBrowser
 
         public void UpdateChart(ProteomicsData data)
         {
+            UpdateChart(data, clearSelections: true);
+        }
+
+        public void UpdateChart(ProteomicsData data, bool clearSelections)
+        {
+            if (clearSelections)
+            {
+                // Clear old selections when loading new data
+                _checkedCellTypes.Clear();
+                _checkedBioConditions.Clear();
+                _currentSelectedPoints.Clear();
+            }
+
             _currentData = data;
             RefreshChart();
         }
@@ -199,14 +213,26 @@ namespace SCPBrowser
 
                 checkBox.Checked += (s, e) =>
                 {
+                    if (_suppressCheckboxEvents)
+                        return;
+
                     if (s is CheckBox cb && cb.Tag is string key)
+                    {
                         checkedItems.Add(key);
+                        ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions);
+                    }
                 };
 
                 checkBox.Unchecked += (s, e) =>
                 {
+                    if (_suppressCheckboxEvents)
+                        return;
+
                     if (s is CheckBox cb && cb.Tag is string key)
+                    {
                         checkedItems.Remove(key);
+                        ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions);
+                    }
                 };
 
                 var stackPanel = new StackPanel { Orientation = Orientation.Horizontal };
@@ -245,7 +271,6 @@ namespace SCPBrowser
                 ClearSelectionButton.IsEnabled = false;
                 RunDetailPanel.ClearDetails();
 
-                // Clear the scatter plot too!
                 ScatterPlot.UpdatePlot(null, new ScatterPlotOptions());
                 return;
             }
@@ -260,7 +285,9 @@ namespace SCPBrowser
                 GoTermColorMap = _goTermColorMap,
                 UseBioConditionColoring = ColorByBioConditionRadio.IsChecked == true,
                 BioConditionPerFile = _currentData.BiologicalConditionPerFile,
-                BioConditionColorMap = GenerateBioConditionColorMap()
+                BioConditionColorMap = GenerateBioConditionColorMap(),
+                CheckedCellTypes = _checkedCellTypes,
+                CheckedBioConditions = _checkedBioConditions
             };
 
             ScatterPlot.UpdatePlot(_currentData, options);
@@ -295,12 +322,38 @@ namespace SCPBrowser
 
         private void ClearSelectionButton_Click(object sender, RoutedEventArgs e)
         {
-            ScatterPlot.ClearSelection();
-            SelectedPointsGridPanel.ClearGrid();
-            GoEnrichmentTab.ClearData();
-            ClearSelectionButton.IsEnabled = false;
-            RunDetailPanel.ClearDetails();
-            _currentSelectedPoints.Clear();
+            // Suppress checkbox events during bulk clear
+            _suppressCheckboxEvents = true;
+
+            try
+            {
+                // Clear polygon selection
+                ScatterPlot.ClearSelection();
+
+                // Clear checkbox selections
+                _checkedCellTypes.Clear();
+                _checkedBioConditions.Clear();
+
+                // Uncheck all checkboxes visually
+                foreach (var child in BioConditionCheckboxes.Children)
+                {
+                    if (child is CheckBox cb)
+                    {
+                        cb.IsChecked = false;
+                    }
+                }
+
+                // Clear UI panels
+                SelectedPointsGridPanel.ClearGrid();
+                GoEnrichmentTab.ClearData();
+                ClearSelectionButton.IsEnabled = false;
+                RunDetailPanel.ClearDetails();
+                _currentSelectedPoints.Clear();
+            }
+            finally
+            {
+                _suppressCheckboxEvents = false;
+            }
         }
 
         private void ScatterPlot_SelectionChanged(object sender, PlotSelectionChangedEventArgs e)
@@ -334,6 +387,31 @@ namespace SCPBrowser
             }
             else
             {
+                // Selection is empty - clear checkboxes if any were checked
+                bool hadCheckedItems = _checkedCellTypes.Count > 0 || _checkedBioConditions.Count > 0;
+
+                if (hadCheckedItems)
+                {
+                    _suppressCheckboxEvents = true;
+                    try
+                    {
+                        _checkedCellTypes.Clear();
+                        _checkedBioConditions.Clear();
+
+                        foreach (var child in BioConditionCheckboxes.Children)
+                        {
+                            if (child is CheckBox cb)
+                            {
+                                cb.IsChecked = false;
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        _suppressCheckboxEvents = false;
+                    }
+                }
+
                 SelectedPointsGridPanel.ClearGrid();
                 GoEnrichmentTab.ClearData();
                 ClearSelectionButton.IsEnabled = false;

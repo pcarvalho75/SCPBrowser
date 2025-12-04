@@ -244,7 +244,7 @@ namespace SCPBrowser
             Console.WriteLine($"Refreshing all tabs with filtered data: {_filteredData.TotalRawFiles} runs");
 
             MainControlTab.UpdateChart(_filteredData);
-            PeptideTicTab.UpdateChart(_filteredData);
+            PeptideTicTab.UpdateChart(_filteredData, clearSelections: false);
             ProteinMatrixTab.UpdateMatrix(_filteredData);
         }
 

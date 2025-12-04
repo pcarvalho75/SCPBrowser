@@ -19,6 +19,7 @@ namespace SCPBrowser
         private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
         private Dictionary<string, Color> _goTermColorMap;
         private List<DataPoint> _currentSelectedPoints = new List<DataPoint>();
+        private HashSet<string> _checkedBioConditions = new HashSet<string>();
         // Add this new event
         public event EventHandler CellTypePredictionsRequested;
 
@@ -193,7 +194,7 @@ namespace SCPBrowser
 
                 var checkBox = new CheckBox
                 {
-                    IsChecked = true,
+                    IsChecked = false,
                     Margin = new Thickness(0, 0, 0, 4),
                     Tag = cellType.Key
                 };
@@ -251,12 +252,19 @@ namespace SCPBrowser
             {
                 Console.WriteLine($"  Adding checkbox for: {condition.Key}");
 
+                // Check if this condition was previously checked (default to unchecked for new conditions)
+                bool isChecked = _checkedBioConditions.Contains(condition.Key);
+
                 var checkBox = new CheckBox
                 {
-                    IsChecked = true,
+                    IsChecked = isChecked,
                     Margin = new Thickness(0, 0, 0, 4),
                     Tag = condition.Key
                 };
+
+                // Wire up event to track checked state
+                checkBox.Checked += BioConditionCheckbox_Changed;
+                checkBox.Unchecked += BioConditionCheckbox_Changed;
 
                 var stackPanel = new StackPanel { Orientation = Orientation.Horizontal };
 
@@ -286,6 +294,21 @@ namespace SCPBrowser
             }
 
             Console.WriteLine($"  Total checkboxes added: {BioConditionCheckboxes.Children.Count}");
+        }
+
+        private void BioConditionCheckbox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox checkBox && checkBox.Tag is string condition)
+            {
+                if (checkBox.IsChecked == true)
+                {
+                    _checkedBioConditions.Add(condition);
+                }
+                else
+                {
+                    _checkedBioConditions.Remove(condition);
+                }
+            }
         }
         private void RefreshChart()
         {

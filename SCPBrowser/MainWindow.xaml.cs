@@ -1,13 +1,14 @@
-﻿using System;
+﻿using Microsoft.Win32;
+using SCPBrowser.GOTools;
+using SCPBrowser.Models;
+using SCPBrowser.Services;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using Microsoft.Win32;
-using SCPBrowser.GOTools;
-using SCPBrowser.Services;
 
 namespace SCPBrowser
 {
@@ -99,19 +100,32 @@ namespace SCPBrowser
                 LoadingOverlay.SetProgress("Loading project information...");
                 LoadingOverlay.Show();
 
+                // Allow UI to render the overlay
+                await Task.Delay(50);
+
                 _currentProjectPath = projectDbPath;
 
-                // Initialize all services
-                _projectDatabaseService = new ProjectDatabaseService(projectDbPath);
-                _parquetService = new ParquetDataService(projectDbPath);
-                _plateService = new PlateService(projectDbPath);
-                _cellTypeService = new CellTypeClassificationService(projectDbPath);
+                // Run service initialization and database work on background thread
+                ProjectInfo projectInfo = null;
+                string lastImportedFile = null;
 
-                // Ensure new tables exist (migration for existing projects)
-                await _projectDatabaseService.EnsureCellTypeClassificationsTableExistsAsync();
+                await Task.Run(async () =>
+                {
+                    // Initialize all services
+                    _projectDatabaseService = new ProjectDatabaseService(projectDbPath);
+                    _parquetService = new ParquetDataService(projectDbPath);
+                    _plateService = new PlateService(projectDbPath);
+                    _cellTypeService = new CellTypeClassificationService(projectDbPath);
 
-                // Load project info
-                var projectInfo = await _projectDatabaseService.GetProjectInfoAsync();
+                    // Ensure new tables exist (migration for existing projects)
+                    await _projectDatabaseService.EnsureCellTypeClassificationsTableExistsAsync();
+
+                    // Load project info
+                    projectInfo = await _projectDatabaseService.GetProjectInfoAsync();
+
+                    // Get last imported file
+                    lastImportedFile = await _parquetService.GetLastImportedParquetFileAsync();
+                });
 
                 if (projectInfo == null)
                 {
@@ -123,7 +137,7 @@ namespace SCPBrowser
                 // The project database IS the reference database (unified)
                 _projectReferenceDatabasePath = projectDbPath;
 
-                // Update UI
+                // Update UI (must be on UI thread)
                 WelcomeScreen.Visibility = Visibility.Collapsed;
                 MainTabControl.Visibility = Visibility.Visible;
                 ImportParquetMenuItem.IsEnabled = true;
@@ -144,7 +158,6 @@ namespace SCPBrowser
                 // Find and load the last imported parquet file
                 LoadingOverlay.SetProgress("Finding associated data...");
 
-                string lastImportedFile = await _parquetService.GetLastImportedParquetFileAsync();
                 string parquetPath = null;
 
                 if (!string.IsNullOrEmpty(lastImportedFile))
@@ -152,7 +165,9 @@ namespace SCPBrowser
                     string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
                     parquetPath = Path.Combine(projectDirectory, "imports", lastImportedFile);
 
-                    if (!File.Exists(parquetPath))
+                    bool fileExists = await Task.Run(() => File.Exists(parquetPath));
+
+                    if (!fileExists)
                     {
                         LoadingOverlay.Hide();
                         MessageBox.Show(

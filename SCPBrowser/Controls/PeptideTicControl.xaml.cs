@@ -6,6 +6,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Shapes;
 
 namespace SCPBrowser
 {
@@ -127,6 +128,17 @@ namespace SCPBrowser
             if (!_isInitialized || ColorByCellTypeRadio == null)
                 return;
 
+            // Show/hide bio condition panel based on selection
+            if (ColorByBioConditionRadio.IsChecked == true)
+            {
+                PopulateBioConditionCheckboxes();
+                BioConditionPanel.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                BioConditionPanel.Visibility = Visibility.Collapsed;
+            }
+
             // If user selected "Color by Cell Type" but we don't have predictions yet
             if (ColorByCellTypeRadio.IsChecked == true &&
                 (_cellTypePredictions == null || _cellTypePredictions.Count == 0))
@@ -145,6 +157,65 @@ namespace SCPBrowser
             }
         }
 
+
+        private void PopulateBioConditionCheckboxes()
+        {
+            BioConditionCheckboxes.Children.Clear();
+
+            Console.WriteLine($"PopulateBioConditionCheckboxes called");
+            Console.WriteLine($"  _currentData is null: {_currentData == null}");
+
+            if (_currentData != null)
+            {
+                Console.WriteLine($"  BiologicalConditionPerFile.Count: {_currentData.BiologicalConditionPerFile.Count}");
+            }
+
+            if (_currentData == null || _currentData.BiologicalConditionPerFile.Count == 0)
+                return;
+
+            var colorMap = GenerateBioConditionColorMap();
+            Console.WriteLine($"  colorMap.Count: {colorMap.Count}");
+
+            foreach (var condition in colorMap.OrderBy(kvp => kvp.Key))
+            {
+                Console.WriteLine($"  Adding checkbox for: {condition.Key}");
+
+                var checkBox = new CheckBox
+                {
+                    IsChecked = true,
+                    Margin = new Thickness(0, 0, 0, 4),
+                    Tag = condition.Key
+                };
+
+                var stackPanel = new StackPanel { Orientation = Orientation.Horizontal };
+
+                var colorRect = new System.Windows.Shapes.Rectangle
+                {
+                    Width = 12,
+                    Height = 12,
+                    Fill = new SolidColorBrush(condition.Value),
+                    Stroke = new SolidColorBrush(Colors.Black),
+                    StrokeThickness = 1,
+                    Margin = new Thickness(0, 0, 6, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                var label = new TextBlock
+                {
+                    Text = condition.Key,
+                    FontSize = 11,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                stackPanel.Children.Add(colorRect);
+                stackPanel.Children.Add(label);
+                checkBox.Content = stackPanel;
+
+                BioConditionCheckboxes.Children.Add(checkBox);
+            }
+
+            Console.WriteLine($"  Total checkboxes added: {BioConditionCheckboxes.Children.Count}");
+        }
         private void RefreshChart()
         {
             if (_currentData == null || _currentData.PeptideCountPerFile.Count == 0)

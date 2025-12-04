@@ -63,25 +63,47 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*" MinWidth="400"/>
                 <ColumnDefinition Width="Auto"/>
+                <!-- NEW: Condition checkboxes panel -->
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*" MinWidth="250"/>
             </Grid.ColumnDefinitions>
 
             <GroupBox Grid.Column="0">
                 <GroupBox.Header>
                     <TextBlock x:Name="PlotGroupBoxHeader" 
-                               Text="Peptides vs Total Ion Current per Raw File"
-                               FontWeight="SemiBold"/>
+                       Text="Peptides vs Total Ion Current per Raw File"
+                       FontWeight="SemiBold"/>
                 </GroupBox.Header>
                 <local:ScatterPlotControl x:Name="ScatterPlot"/>
             </GroupBox>
 
-            <GridSplitter Grid.Column="1" 
-                          Width="5" 
-                          HorizontalAlignment="Center"
-                          VerticalAlignment="Stretch"
-                          Background="#e2e8f0"/>
+            <!-- NEW: Biological Condition Checkboxes Panel -->
+            <Border x:Name="BioConditionPanel"
+            Grid.Column="1"
+            Visibility="Collapsed"
+            Background="#f8fafc"
+            BorderBrush="#e2e8f0"
+            BorderThickness="1"
+            Margin="5,0,0,0"
+            Padding="8">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxWidth="180">
+                    <StackPanel>
+                        <TextBlock Text="Biological Conditions"
+                           FontWeight="SemiBold"
+                           FontSize="11"
+                           Margin="0,0,0,8"/>
+                        <StackPanel x:Name="BioConditionCheckboxes"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
 
-            <local:RunDetailControl x:Name="RunDetailPanel" Grid.Column="2"/>
+            <GridSplitter Grid.Column="2" 
+                  Width="5" 
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Stretch"
+                  Background="#e2e8f0"/>
+
+            <local:RunDetailControl x:Name="RunDetailPanel" Grid.Column="3"/>
         </Grid>
 
         <GridSplitter Grid.Row="2" 

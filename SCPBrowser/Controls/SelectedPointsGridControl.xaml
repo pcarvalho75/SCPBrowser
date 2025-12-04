@@ -4,7 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
-             d:DesignHeight="250" d:DesignWidth="900">
+             d:DesignHeight="250" d:DesignWidth="1000">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -37,18 +37,20 @@
             </DataGrid.ColumnHeaderStyle>
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Run Name" Binding="{Binding RunName}" Width="*"/>
-                <DataGridTextColumn Header="Peptides" Binding="{Binding PeptideCount, StringFormat=N0}" Width="100"/>
-                <DataGridTextColumn Header="TIC" Binding="{Binding TicValue, StringFormat=E2}" Width="120"/>
-                <DataGridTextColumn Header="Proteins" Binding="{Binding ProteinCount, StringFormat=N0}" Width="100"/>
-                <DataGridTextColumn Header="Target Protein Ratio" Binding="{Binding TrypsinRatioPercent}" Width="140"/>
-                <DataGridTextColumn Header="Cell Type" Binding="{Binding CellType}" Width="150"/>
+                <DataGridTextColumn Header="Condition" Binding="{Binding BiologicalCondition}" Width="120"/>
+                <DataGridTextColumn Header="Peptides" Binding="{Binding PeptideCount, StringFormat=N0}" Width="80"/>
+                <DataGridTextColumn Header="TIC" Binding="{Binding TicValue, StringFormat=E2}" Width="100"/>
+                <DataGridTextColumn Header="Proteins" Binding="{Binding ProteinCount, StringFormat=N0}" Width="80"/>
+                <DataGridTextColumn Header="Target Ratio" Binding="{Binding TrypsinRatioPercent}" Width="90"/>
+                <DataGridTextColumn Header="Cell Type" Binding="{Binding CellType}" Width="120"/>
+                <DataGridTextColumn Header="Score" Binding="{Binding CompositeScore}" Width="70"/>
             </DataGrid.Columns>
         </DataGrid>
 
         <TextBlock x:Name="SelectionStatusText" 
                    Grid.Row="1"
                    Margin="10,5,0,5"
-                   Text="Click a point or drag to select multiple points. Right-click a point to view details."
+                   Text="Click a point or drag to select multiple points."
                    FontStyle="Italic"
                    Foreground="#64748b"/>
     </Grid>

@@ -43,7 +43,6 @@
                          Checked="ColorMode_Changed"
                          IsEnabled="False"/>
 
-
             <RadioButton x:Name="ColorByBioConditionRadio"
                          Content="Biological Condition"
                          GroupName="ColorMode"
@@ -61,11 +60,8 @@
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*" MinWidth="400"/>
+                <ColumnDefinition Width="*" MinWidth="400"/>
                 <ColumnDefinition Width="Auto"/>
-                <!-- NEW: Condition checkboxes panel -->
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*" MinWidth="250"/>
             </Grid.ColumnDefinitions>
 
             <GroupBox Grid.Column="0">
@@ -77,33 +73,25 @@
                 <local:ScatterPlotControl x:Name="ScatterPlot"/>
             </GroupBox>
 
-            <!-- NEW: Biological Condition Checkboxes Panel -->
+            <!-- Biological Condition Checkboxes Panel -->
             <Border x:Name="BioConditionPanel"
-            Grid.Column="1"
-            Visibility="Collapsed"
-            Background="#f8fafc"
-            BorderBrush="#e2e8f0"
-            BorderThickness="1"
-            Margin="5,0,0,0"
-            Padding="8">
+                    Grid.Column="1"
+                    Visibility="Collapsed"
+                    Background="#f8fafc"
+                    BorderBrush="#e2e8f0"
+                    BorderThickness="1"
+                    Margin="5,0,0,0"
+                    Padding="8">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" MaxWidth="180">
                     <StackPanel>
                         <TextBlock Text="Biological Conditions"
-                           FontWeight="SemiBold"
-                           FontSize="11"
-                           Margin="0,0,0,8"/>
+                                   FontWeight="SemiBold"
+                                   FontSize="11"
+                                   Margin="0,0,0,8"/>
                         <StackPanel x:Name="BioConditionCheckboxes"/>
                     </StackPanel>
                 </ScrollViewer>
             </Border>
-
-            <GridSplitter Grid.Column="2" 
-                  Width="5" 
-                  HorizontalAlignment="Center"
-                  VerticalAlignment="Stretch"
-                  Background="#e2e8f0"/>
-
-            <local:RunDetailControl x:Name="RunDetailPanel" Grid.Column="3"/>
         </Grid>
 
         <GridSplitter Grid.Row="2" 

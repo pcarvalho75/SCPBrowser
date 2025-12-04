@@ -29,5 +29,7 @@ namespace SCPBrowser
         public int ProteinCount { get; set; }
         public string TrypsinRatioPercent { get; set; }
         public string CellType { get; set; }
+        public string BiologicalCondition { get; set; }
+        public string CompositeScore { get; set; }
     }
 }

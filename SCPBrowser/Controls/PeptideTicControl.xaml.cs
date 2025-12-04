@@ -58,7 +58,7 @@ namespace SCPBrowser
 
         public void SetImageBaseDirectory(string directory)
         {
-            RunDetailPanel.SetImageBaseDirectory(directory);
+            // No longer needed - RunDetailPanel was removed
         }
 
         public void SetCellTypePredictions(Dictionary<string, CellTypePredictionResult> predictions, Dictionary<string, Color> colorMap)
@@ -269,7 +269,6 @@ namespace SCPBrowser
                 SelectedPointsGridPanel.ClearGrid();
                 GoEnrichmentTab.ClearData();
                 ClearSelectionButton.IsEnabled = false;
-                RunDetailPanel.ClearDetails();
 
                 ScatterPlot.UpdatePlot(null, new ScatterPlotOptions());
                 return;
@@ -347,7 +346,6 @@ namespace SCPBrowser
                 SelectedPointsGridPanel.ClearGrid();
                 GoEnrichmentTab.ClearData();
                 ClearSelectionButton.IsEnabled = false;
-                RunDetailPanel.ClearDetails();
                 _currentSelectedPoints.Clear();
             }
             finally
@@ -369,21 +367,14 @@ namespace SCPBrowser
                     TicValue = p.TicValue,
                     ProteinCount = p.ProteinCount,
                     TrypsinRatioPercent = $"{p.TrypsinRatio * 100:F2}%",
-                    CellType = p.PredictedCellType ?? "Unknown"
+                    CellType = p.PredictedCellType ?? "",
+                    BiologicalCondition = p.BiologicalCondition ?? "",
+                    CompositeScore = p.PredictionScore != null ? $"{p.PredictionScore.CompositeScore:F3}" : ""
                 }).ToList();
 
                 SelectedPointsGridPanel.UpdateGrid(gridData);
                 GoEnrichmentTab.UpdateGoEnrichment(e.SelectedPoints, _goEnrichmentResults);
                 ClearSelectionButton.IsEnabled = true;
-
-                if (e.SelectedPoints.Count == 1)
-                {
-                    RunDetailPanel.ShowRunDetails(e.SelectedPoints[0], _goEnrichmentResults);
-                }
-                else
-                {
-                    RunDetailPanel.ShowSelectionSummary(e.SelectedPoints, _goEnrichmentResults);
-                }
             }
             else
             {
@@ -415,15 +406,12 @@ namespace SCPBrowser
                 SelectedPointsGridPanel.ClearGrid();
                 GoEnrichmentTab.ClearData();
                 ClearSelectionButton.IsEnabled = false;
-                RunDetailPanel.ClearDetails();
             }
         }
 
         private void ScatterPlot_PointClicked(object sender, PointInteractionEventArgs e)
         {
-            RunDetailPanel.ShowRunDetails(e.DataPoint, _goEnrichmentResults);
-
-            // Also update GO enrichment tab for the clicked point
+            // Update GO enrichment tab for the clicked point
             if (e.DataPoint != null)
             {
                 GoEnrichmentTab.UpdateGoEnrichment(new List<DataPoint> { e.DataPoint }, _goEnrichmentResults);
@@ -435,12 +423,8 @@ namespace SCPBrowser
             if (selectedData == null)
                 return;
 
-            var dataPoint = _currentSelectedPoints.FirstOrDefault(p => p.RunName == selectedData.RunName);
-            if (dataPoint != null)
-            {
-                RunDetailPanel.ShowRunDetails(dataPoint, _goEnrichmentResults);
-                ScatterPlot.HighlightPoints(new List<string> { selectedData.RunName });
-            }
+            // Highlight the selected point on the scatter plot
+            ScatterPlot.HighlightPoints(new List<string> { selectedData.RunName });
         }
     }
 }

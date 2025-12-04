@@ -172,6 +172,10 @@ namespace SCPBrowser
             var trypsinRatios = rawFiles.Select(rf => data.TargetProteinRatioPerFile.ContainsKey(rf) ?
                 data.TargetProteinRatioPerFile[rf] : 0).ToList();
 
+            // Determine if we need space for internal legend (only for Target Protein Ratio mode)
+            bool showInternalLegend = !options.UseCellTypeColoring && !options.UseBioConditionColoring;
+            _plotRenderer.SetShowInternalLegend(showInternalLegend);
+
             _plotRenderer.CalculateAxisRanges(peptideCounts, ticValues, options.UseLogLog);
             _plotRenderer.DrawAxesAndGrid(PlotCanvas, canvasWidth, canvasHeight);
 

@@ -128,9 +128,15 @@ namespace SCPBrowser
             if (!_isInitialized || ColorByCellTypeRadio == null)
                 return;
 
+            Console.WriteLine($"ColorMode_Changed fired");
+            Console.WriteLine($"  ColorByBioConditionRadio.IsChecked: {ColorByBioConditionRadio.IsChecked}");
+            Console.WriteLine($"  ColorByCellTypeRadio.IsChecked: {ColorByCellTypeRadio.IsChecked}");
+            Console.WriteLine($"  ColorByTrypsinRadio.IsChecked: {ColorByTrypsinRadio.IsChecked}");
+
             // Show/hide bio condition panel based on selection
             if (ColorByBioConditionRadio.IsChecked == true)
             {
+                Console.WriteLine($"  -> Entering bio condition branch");
                 PopulateBioConditionCheckboxes();
                 BioConditionPanel.Visibility = Visibility.Visible;
             }

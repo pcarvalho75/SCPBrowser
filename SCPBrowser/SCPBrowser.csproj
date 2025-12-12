@@ -33,6 +33,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Voronoi\ProteoMappings\BioTessera.csproj" />
+    <ProjectReference Include="..\..\Voronoi\Revigo\RevigoCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Update="Settings.Designer.cs">
       <DesignTimeSharedInput>True</DesignTimeSharedInput>
       <AutoGen>True</AutoGen>

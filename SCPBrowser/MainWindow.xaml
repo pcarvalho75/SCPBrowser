@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SCPBrowser"
+        xmlns:biotessera="clr-namespace:BioTessera;assembly=BioTessera"
         xmlns:converters="clr-namespace:SCPBrowser.Converters"
         mc:Ignorable="d"
         Title="SCP Browser" Height="700" Width="950">
@@ -106,6 +107,9 @@ This adds the PlateFilterControl above the TabControl
                 </TabItem>
                 <TabItem Header="Protein Matrix">
                     <local:ProteinMatrixControl x:Name="ProteinMatrixTab"/>
+                </TabItem>
+                <TabItem Header="BioTessera">
+                    <biotessera:ProteoMappingControl x:Name="BioTesseraTab"/>
                 </TabItem>
             </TabControl>
 

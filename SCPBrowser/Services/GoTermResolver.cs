@@ -1,0 +1,148 @@
+﻿using BioTessera.Core.Models;
+using BioTessera.GO;
+using BioTessera.Utilities;
+using System;
+using System.Collections.Generic;
+
+namespace SCPBrowser.Services
+{
+    /// <summary>
+    /// Resolves GO terms for proteins using the central GO database.
+    /// Caches gene annotations for fast repeated lookups.
+    /// </summary>
+    public class GoTermResolver
+    {
+        private readonly int _taxonId;
+        private Dictionary<string, List<int>> _geneAnnotations;
+        private bool _isLoaded;
+
+        public int TaxonId => _taxonId;
+        public bool IsReady => _isLoaded && _geneAnnotations != null && _geneAnnotations.Count > 0;
+        public int GeneCount => _geneAnnotations?.Count ?? 0;
+        public int ResolvedCount { get; private set; }
+        public int UnresolvedCount { get; private set; }
+
+        public GoTermResolver(int taxonId = 9606)
+        {
+            _taxonId = taxonId;
+            _isLoaded = false;
+        }
+
+        /// <summary>
+        /// Loads gene annotations from the central GO database.
+        /// Call this before ResolveGoTerms, or it will be called automatically.
+        /// </summary>
+        public void LoadAnnotations()
+        {
+            if (_isLoaded)
+                return;
+
+            try
+            {
+                var dbPath = PatternLabPaths.GoDatabasePath;
+                if (!System.IO.File.Exists(dbPath))
+                {
+                    Console.WriteLine($"[GoTermResolver] GO database not found at {dbPath}");
+                    _geneAnnotations = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+                    _isLoaded = true;
+                    return;
+                }
+
+                using var db = new GoDatabase(dbPath);
+                _geneAnnotations = db.GetAllGeneAnnotations(_taxonId);
+                _isLoaded = true;
+
+                Console.WriteLine($"[GoTermResolver] Loaded {_geneAnnotations.Count} gene annotations for taxon {_taxonId}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GoTermResolver] Error loading annotations: {ex.Message}");
+                _geneAnnotations = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+                _isLoaded = true;
+            }
+        }
+
+        /// <summary>
+        /// Resolves GO terms for a list of proteins using their gene names.
+        /// Modifies the proteins in place, setting their GoTerms property.
+        /// </summary>
+        public void ResolveGoTerms(List<Protein> proteins)
+        {
+            if (proteins == null || proteins.Count == 0)
+                return;
+
+            // Ensure annotations are loaded
+            if (!_isLoaded)
+                LoadAnnotations();
+
+            ResolvedCount = 0;
+            UnresolvedCount = 0;
+
+            foreach (var protein in proteins)
+            {
+                // Clear existing GO terms
+                protein.GoTerms.Clear();
+
+                // Skip if no gene name
+                if (string.IsNullOrWhiteSpace(protein.GeneName))
+                {
+                    UnresolvedCount++;
+                    continue;
+                }
+
+                // Look up gene in annotations
+                if (_geneAnnotations.TryGetValue(protein.GeneName, out var termIds))
+                {
+                    // Convert term IDs to GO:XXXXXXX format
+                    foreach (var termId in termIds)
+                    {
+                        protein.GoTerms.Add($"GO:{termId:D7}");
+                    }
+                    ResolvedCount++;
+                }
+                else
+                {
+                    UnresolvedCount++;
+                }
+            }
+
+            Console.WriteLine($"[GoTermResolver] Resolved: {ResolvedCount}, Unresolved: {UnresolvedCount}");
+        }
+
+        /// <summary>
+        /// Clears the cached annotations. Call this if the GO database is updated.
+        /// </summary>
+        public void ClearCache()
+        {
+            _geneAnnotations = null;
+            _isLoaded = false;
+            ResolvedCount = 0;
+            UnresolvedCount = 0;
+        }
+
+        /// <summary>
+        /// Gets GO term IDs for a single gene name.
+        /// Returns empty list if gene not found.
+        /// </summary>
+        public List<string> GetGoTermsForGene(string geneName)
+        {
+            if (!_isLoaded)
+                LoadAnnotations();
+
+            var result = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(geneName))
+                return result;
+
+            if (_geneAnnotations.TryGetValue(geneName, out var termIds))
+            {
+                foreach (var termId in termIds)
+                {
+                    result.Add($"GO:{termId:D7}");
+                }
+            }
+
+            return result;
+        }
+    }
+}

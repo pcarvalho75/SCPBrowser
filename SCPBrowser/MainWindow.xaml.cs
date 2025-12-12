@@ -9,6 +9,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using SCPBrowser.Services;
+using BioTessera.Core.Models;
 
 namespace SCPBrowser
 {
@@ -22,6 +24,7 @@ namespace SCPBrowser
         private CellTypeClassificationService _cellTypeService;
         private bool _hasOpenProject = false;
         private string _projectReferenceDatabasePath;
+        private GoTermResolver _goTermResolver;
 
         // Data filtering fields
         private ProteomicsData _originalData; // Unfiltered data from parquet file
@@ -34,6 +37,7 @@ namespace SCPBrowser
         public MainWindow()
         {
             InitializeComponent();
+            _goTermResolver = new GoTermResolver(9606); // Human default
             UpdateWindowTitle();
 
             // CRITICAL: Ensure loading overlay is hidden on startup
@@ -236,7 +240,7 @@ namespace SCPBrowser
             }
         }
 
-        private void RefreshAllTabsWithFilteredData()
+        private async void RefreshAllTabsWithFilteredData()
         {
             if (_filteredData == null)
                 return;
@@ -246,6 +250,39 @@ namespace SCPBrowser
             MainControlTab.UpdateChart(_filteredData);
             PeptideTicTab.UpdateChart(_filteredData, clearSelections: false);
             ProteinMatrixTab.UpdateMatrix(_filteredData);
+            await UpdateBioTesseraTabAsync();
+        }
+
+        private async Task UpdateBioTesseraTabAsync()
+        {
+            var data = _filteredData ?? _originalData;
+            if (data == null)
+                return;
+
+            try
+            {
+                // Convert SCPBrowser data to BioTessera proteins
+                var proteins = ProteomicsDataConverter.Convert(data);
+
+                if (proteins.Count == 0)
+                {
+                    Console.WriteLine("[BioTessera] No proteins after conversion");
+                    return;
+                }
+
+                // Resolve GO terms from central database
+                _goTermResolver.ResolveGoTerms(proteins);
+
+                // Load into BioTessera and generate
+                BioTesseraTab.LoadProteins(proteins);
+                await BioTesseraTab.GenerateAsync();
+
+                Console.WriteLine($"[BioTessera] Updated with {proteins.Count} proteins");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[BioTessera] Error updating tab: {ex.Message}");
+            }
         }
 
         private async void ClearCellTypeClassifications_Click(object sender, RoutedEventArgs e)
@@ -600,7 +637,7 @@ namespace SCPBrowser
             // Future: Handle tab switching logic if needed
         }
 
-        private void MainControlTab_DataLoaded(object sender, EventArgs e)
+        private async void MainControlTab_DataLoaded(object sender, EventArgs e)
         {
             // Store original data for filtering
             _originalData = MainControlTab.GetCurrentData();
@@ -631,6 +668,8 @@ namespace SCPBrowser
             // Wire up the event handler for cell type predictions
             PeptideTicTab.CellTypePredictionsRequested -= PeptideTicTab_CellTypePredictionsRequested;
             PeptideTicTab.CellTypePredictionsRequested += PeptideTicTab_CellTypePredictionsRequested;
+
+            await UpdateBioTesseraTabAsync();
 
             Console.WriteLine($"Cell type classification enabled: {cellTypeAvailable}");
         }

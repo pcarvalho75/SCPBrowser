@@ -62,10 +62,6 @@ namespace SCPBrowser.Services
             }
         }
 
-        /// <summary>
-        /// Resolves GO terms for a list of proteins using their gene names.
-        /// Modifies the proteins in place, setting their GoTerms property.
-        /// </summary>
         public void ResolveGoTerms(List<Protein> proteins)
         {
             if (proteins == null || proteins.Count == 0)
@@ -75,8 +71,16 @@ namespace SCPBrowser.Services
             if (!_isLoaded)
                 LoadAnnotations();
 
+            Console.WriteLine($"[GoTermResolver] Starting resolution for {proteins.Count} proteins");
+            Console.WriteLine($"[GoTermResolver] Gene annotations loaded: {_geneAnnotations?.Count ?? 0}");
+
             ResolvedCount = 0;
             UnresolvedCount = 0;
+            int noGeneNameCount = 0;
+
+            // Sample some gene names for debugging
+            var sampleGeneNames = new List<string>();
+            var sampleDbGenes = _geneAnnotations?.Keys.Take(5).ToList() ?? new List<string>();
 
             foreach (var protein in proteins)
             {
@@ -86,9 +90,13 @@ namespace SCPBrowser.Services
                 // Skip if no gene name
                 if (string.IsNullOrWhiteSpace(protein.GeneName))
                 {
-                    UnresolvedCount++;
+                    noGeneNameCount++;
                     continue;
                 }
+
+                // Collect sample gene names for debugging
+                if (sampleGeneNames.Count < 10)
+                    sampleGeneNames.Add(protein.GeneName);
 
                 // Look up gene in annotations
                 if (_geneAnnotations.TryGetValue(protein.GeneName, out var termIds))
@@ -106,7 +114,9 @@ namespace SCPBrowser.Services
                 }
             }
 
-            Console.WriteLine($"[GoTermResolver] Resolved: {ResolvedCount}, Unresolved: {UnresolvedCount}");
+            Console.WriteLine($"[GoTermResolver] Sample protein gene names: {string.Join(", ", sampleGeneNames)}");
+            Console.WriteLine($"[GoTermResolver] Sample DB gene names: {string.Join(", ", sampleDbGenes)}");
+            Console.WriteLine($"[GoTermResolver] No gene name: {noGeneNameCount}, Resolved: {ResolvedCount}, Unresolved: {UnresolvedCount}");
         }
 
         /// <summary>

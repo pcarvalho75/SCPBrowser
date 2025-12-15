@@ -45,11 +45,6 @@ Location: SCPBrowser/Controls/ProjectBrowser2.xaml
                     x:Name="MainTabControl"
                     Margin="0">
 
-            <!-- GO Annotations Tab -->
-            <TabItem Header="GO Annotations">
-                <local:GOBrowserControl x:Name="GOBrowser"/>
-            </TabItem>
-
             <!-- Transcriptomic Data Tab -->
             <TabItem Header="Transcriptomic Data">
                 <local:OmicBrowserControl x:Name="OmicBrowser"/>

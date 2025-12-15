@@ -17,17 +17,12 @@ namespace SCPBrowser
             Console.WriteLine("ProjectBrowser2 (mother control) initialized");
         }
 
-        /// <summary>
-        /// Main entry point - shows the control and loads data into all child controls
-        /// </summary>
         public async Task ShowWithDatabaseAsync(string databasePath)
         {
             Console.WriteLine($"ProjectBrowser2: Loading database from {databasePath}");
 
-            // Make control visible
             this.Visibility = Visibility.Visible;
 
-            // Get reference to MainWindow for loading overlay
             var mainWindow = Window.GetWindow(this) as MainWindow;
 
             try
@@ -37,16 +32,6 @@ namespace SCPBrowser
                     mainWindow.LoadingOverlay.SetMessage("Loading Project Browser");
                     mainWindow.LoadingOverlay.Show();
                 }
-
-                // Load each child control independently
-                // They will manage their own data loading
-
-                if (mainWindow != null)
-                {
-                    mainWindow.LoadingOverlay.SetProgress("Loading GO annotations...");
-                }
-                await GOBrowser.LoadDataAsync(databasePath);
-                Console.WriteLine("  ✓ GO Browser loaded");
 
                 if (mainWindow != null)
                 {

@@ -146,7 +146,6 @@ namespace SCPBrowser
                 MainTabControl.Visibility = Visibility.Visible;
                 ImportParquetMenuItem.IsEnabled = true;
                 ImportOmicProfileMenuItem.IsEnabled = true;
-                ImportGoAnnotationsMenuItem.IsEnabled = true;
                 CloseProjectMenuItem.IsEnabled = true;
                 ClearCellTypeClassificationsMenuItem.IsEnabled = true;
 
@@ -351,7 +350,6 @@ namespace SCPBrowser
             MainTabControl.Visibility = Visibility.Collapsed;
             ImportParquetMenuItem.IsEnabled = false;
             ImportOmicProfileMenuItem.IsEnabled = false;
-            ImportGoAnnotationsMenuItem.IsEnabled = false;
             CloseProjectMenuItem.IsEnabled = false;
             ClearCellTypeClassificationsMenuItem.IsEnabled = false;
 

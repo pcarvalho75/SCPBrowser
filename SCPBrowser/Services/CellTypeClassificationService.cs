@@ -73,6 +73,10 @@ namespace SCPBrowser.Services
                                     continue;
                                 }
 
+                                // Skip if no prediction data
+                                if (prediction.TopScore == null)
+                                    continue;
+
                                 // Handle NaN values
                                 double compositeScore = double.IsNaN(prediction.TopScore.CompositeScore) ? 0.0 : prediction.TopScore.CompositeScore;
                                 double spearman = double.IsNaN(prediction.TopScore.SpearmanCorrelation) ? 0.0 : prediction.TopScore.SpearmanCorrelation;

@@ -89,7 +89,6 @@ namespace SCPBrowser
         {
             _goEnrichmentResults = results;
             _goTermColorMap = colorMap;
-            ColorByBioConditionRadio.IsEnabled = results != null && results.Count > 0;
 
             // Update GO tab if we have selected points
             if (_currentSelectedPoints.Count > 0)

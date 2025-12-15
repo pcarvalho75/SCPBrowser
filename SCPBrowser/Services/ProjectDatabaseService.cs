@@ -138,14 +138,6 @@ namespace SCPBrowser.Services
                 batch_info TEXT
             );
 
-            -- Gene to GO term annotations (for transcriptomic gene mappings)
-            CREATE TABLE IF NOT EXISTS go_annotations (
-                gene_name TEXT NOT NULL,
-                go_id TEXT NOT NULL,
-                PRIMARY KEY (gene_name, go_id),
-                FOREIGN KEY (go_id) REFERENCES go_terms(go_id)
-            );
-
             -- ==================== CELL TYPE CLASSIFICATIONS ====================
             
             -- Raw file cell type classifications
@@ -175,8 +167,6 @@ namespace SCPBrowser.Services
             -- Reference data indices
             CREATE INDEX IF NOT EXISTS idx_cell_type_profiles_cell_type ON cell_type_profiles(cell_type);
             CREATE INDEX IF NOT EXISTS idx_cell_type_profiles_gene ON cell_type_profiles(gene_name);
-            CREATE INDEX IF NOT EXISTS idx_protein_go ON protein_go_annotations(protein_id);
-            CREATE INDEX IF NOT EXISTS idx_go_protein ON protein_go_annotations(go_term_id);
         ";
                 await command.ExecuteNonQueryAsync();
             }

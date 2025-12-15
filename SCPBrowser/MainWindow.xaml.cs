@@ -379,7 +379,7 @@ namespace SCPBrowser
             }
         }
 
-        private void ImportParquet_Click(object sender, RoutedEventArgs e)
+        private async void ImportParquet_Click(object sender, RoutedEventArgs e)
         {
             if (!_hasOpenProject || _parquetService == null)
             {
@@ -393,10 +393,9 @@ namespace SCPBrowser
 
             string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
 
-            // Pass the new specialized services to ImportParquetDialog
             var dialog = new ImportParquetDialog(
-                _parquetService,      // For parquet operations
-                _plateService,        // For plate operations  
+                _parquetService,
+                _plateService,
                 projectDirectory)
             {
                 Owner = this
@@ -404,16 +403,38 @@ namespace SCPBrowser
 
             if (dialog.ShowDialog() == true)
             {
-                MessageBox.Show(
-                    "Parquet data imported successfully!",
-                    "Import Complete",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-
-                // Refresh the UI if needed
-                if (_hasOpenProject)
+                // Refresh UI after successful import
+                try
                 {
-                    // Trigger any necessary UI updates here
+                    LoadingOverlay.SetMessage("Refreshing Data");
+                    LoadingOverlay.SetProgress("Reloading plates...");
+                    LoadingOverlay.Show();
+
+                    // Refresh plate filter
+                    await PlateFilterControl.LoadPlatesAsync(_currentProjectPath);
+
+                    // Get the last imported parquet file and reload data
+                    var lastImportedFile = await _parquetService.GetLastImportedParquetFileAsync();
+                    if (!string.IsNullOrEmpty(lastImportedFile))
+                    {
+                        string parquetPath = Path.Combine(projectDirectory, "imports", lastImportedFile);
+                        if (File.Exists(parquetPath))
+                        {
+                            LoadingOverlay.SetProgress($"Loading {lastImportedFile}...");
+                            await MainControlTab.LoadDataFromProject(parquetPath, _projectReferenceDatabasePath);
+                        }
+                    }
+
+                    LoadingOverlay.Hide();
+                }
+                catch (Exception ex)
+                {
+                    LoadingOverlay.Hide();
+                    MessageBox.Show(
+                        $"Data imported but error refreshing display:\n\n{ex.Message}\n\nTry closing and reopening the project.",
+                        "Refresh Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
                 }
             }
         }

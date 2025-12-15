@@ -134,21 +134,13 @@ namespace SCPBrowser
         /// </summary>
         public CellTypePredictionResult PredictCellTypeForRun(ProteomicsData proteomicsData, string runName)
         {
-            if (!IsLoaded)
-                throw new InvalidOperationException("Transcriptomic database not loaded");
+            if (!IsLoaded || _predictor == null)
+                return new CellTypePredictionResult();
 
             if (proteomicsData == null || string.IsNullOrEmpty(runName))
                 return new CellTypePredictionResult();
 
             var proteinAbundances = ExtractProteinAbundances(proteomicsData, runName);
-
-            ////// ADD THIS DEBUG OUTPUT
-            //if (_database.CellTypeProfiles.Count > 0)
-            //{
-            //    var firstCellType = _database.CellTypeProfiles.First();
-            //    Console.WriteLine($"[DEBUG] Transcriptomic DB - First cell type: {firstCellType.Key}");
-            //    Console.WriteLine($"[DEBUG] Sample gene names: {string.Join(", ", firstCellType.Value.MedianExpression.Keys.Take(10))}");
-            //}
 
             return _predictor.PredictCellType(proteinAbundances);
         }

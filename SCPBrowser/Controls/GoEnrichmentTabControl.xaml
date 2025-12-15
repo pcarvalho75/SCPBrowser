@@ -119,9 +119,21 @@
                 <DataGridTextColumn Header="GO Term" Binding="{Binding GoTermName}" Width="2*"/>
                 <DataGridTextColumn Header="GO ID" Binding="{Binding GoTermId}" Width="100"/>
                 <DataGridTextColumn Header="Namespace" Binding="{Binding Namespace}" Width="150"/>
-                <DataGridTextColumn Header="P-Value" Binding="{Binding PValue, StringFormat=E2}" Width="100"/>
-                <DataGridTextColumn Header="Fold Enrichment" Binding="{Binding FoldEnrichment, StringFormat=F2}" Width="120"/>
-                <DataGridTextColumn Header="Overlap" Binding="{Binding OverlapText}" Width="100"/>
+                <DataGridTextColumn Binding="{Binding PValue, StringFormat=E2}" Width="100">
+                    <DataGridTextColumn.Header>
+                        <TextBlock Text="FDR (BH)" ToolTip="False Discovery Rate, Benjamini-Hochberg corrected"/>
+                    </DataGridTextColumn.Header>
+                </DataGridTextColumn>
+                <DataGridTextColumn Binding="{Binding FoldEnrichment, StringFormat=F2}" Width="120">
+                    <DataGridTextColumn.Header>
+                        <TextBlock Text="Fold Enrichment" ToolTip="Ratio of observed vs expected: (k/n) / (K/N)&#x0a;Values > 1 indicate enrichment"/>
+                    </DataGridTextColumn.Header>
+                </DataGridTextColumn>
+                <DataGridTextColumn Binding="{Binding OverlapText}" Width="100">
+                    <DataGridTextColumn.Header>
+                        <TextBlock Text="Overlap" ToolTip="Sample genes annotated with this term / Total annotated sample genes"/>
+                    </DataGridTextColumn.Header>
+                </DataGridTextColumn>
             </DataGrid.Columns>
         </DataGrid>
     </Grid>

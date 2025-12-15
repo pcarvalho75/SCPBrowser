@@ -17,7 +17,6 @@ namespace SCPBrowser
     {
         private ReferenceDataService _referenceService;
         private GoSlimDatabase _goSlimDatabase;
-        private GoAnnotationDatabase _goAnnotations;
 
         public GOBrowserControl()
         {

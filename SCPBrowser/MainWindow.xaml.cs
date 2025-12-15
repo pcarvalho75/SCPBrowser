@@ -25,6 +25,7 @@ namespace SCPBrowser
         private bool _hasOpenProject = false;
         private string _projectReferenceDatabasePath;
         private GoTermResolver _goTermResolver;
+        private BioTessera.GO.GoStatusService _goStatusService;
 
         // Data filtering fields
         private ProteomicsData _originalData; // Unfiltered data from parquet file
@@ -46,10 +47,14 @@ namespace SCPBrowser
             // Load recent projects
             LoadRecentProjectsUI();
 
+            // Check GO database status
+            CheckGoStatus();
+
             Console.Clear();
         }
 
         // ==================== PROJECT MANAGEMENT ====================
+
 
         private async void NewProject_Click(object sender, RoutedEventArgs e)
         {
@@ -415,6 +420,24 @@ namespace SCPBrowser
 
         // ==================== EXISTING MENU HANDLERS ====================
 
+        private void GoDatabase_Click(object sender, RoutedEventArgs e)
+        {
+            var manager = new BioTessera.GoAnnotationManager();
+            var window = new Window
+            {
+                Title = "GO Database Manager",
+                Content = manager,
+                Width = 700,
+                Height = 550,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this
+            };
+            window.ShowDialog();
+
+            // Refresh status after dialog closes
+            CheckGoStatus();
+        }
+
         private void Exit_Click(object sender, RoutedEventArgs e)
         {
             Close();
@@ -442,6 +465,24 @@ namespace SCPBrowser
                 "About SCP Browser",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
+        }
+
+        private void ConfigureGoDatabase_Click(object sender, RoutedEventArgs e)
+        {
+            var manager = new BioTessera.GoAnnotationManager();
+            var window = new Window
+            {
+                Title = "GO Database Manager",
+                Content = manager,
+                Width = 700,
+                Height = 550,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this
+            };
+            window.ShowDialog();
+
+            // Refresh status after dialog closes
+            CheckGoStatus();
         }
 
         // ==================== IMPORT MENU ====================
@@ -578,9 +619,6 @@ namespace SCPBrowser
 
             Console.WriteLine($"Cell type classification enabled: {cellTypeAvailable}");
         }
-
-        // Add this new method to MainWindow.xaml.cs
-        // Place it after the CloseProject() method (around line 200)
 
         /// <summary>
         /// Filters proteomics data to only include raw files from selected plates
@@ -878,6 +916,43 @@ namespace SCPBrowser
                 // Open the project
                 await OpenProjectAsync(projectPath);
             }
+        }
+
+        // ==================== GENE ONTOLOGY STATUS CHECK ====================
+        private void CheckGoStatus()
+        {
+            _goStatusService = new BioTessera.GO.GoStatusService();
+
+            bool isReady = _goStatusService.IsReady;
+
+            // Update GO status panel visibility and content
+            if (!_goStatusService.DatabaseExists || !_goStatusService.HasOntology)
+            {
+                GoStatusPanel.Visibility = Visibility.Visible;
+                GoStatusTitle.Text = "⚠️ Gene Ontology database required";
+                GoStatusMessage.Text = "Set up GO database to enable analysis";
+            }
+            else if (_goStatusService.InstalledSpecies == null || _goStatusService.InstalledSpecies.Count == 0)
+            {
+                GoStatusPanel.Visibility = Visibility.Visible;
+                GoStatusTitle.Text = "⚠️ No species annotations";
+                GoStatusMessage.Text = "Add at least one species to enable GO enrichment";
+            }
+            else
+            {
+                GoStatusPanel.Visibility = Visibility.Collapsed;
+            }
+
+            // Enable/disable project buttons on welcome screen
+            OpenProjectButton.IsEnabled = isReady;
+            NewProjectButton.IsEnabled = isReady;
+
+            // Enable/disable File menu items
+            NewProjectMenuItem.IsEnabled = isReady;
+            OpenProjectMenuItem.IsEnabled = isReady;
+
+            // Enable/disable recent projects list
+            RecentProjectsList.IsEnabled = isReady;
         }
     }
 }

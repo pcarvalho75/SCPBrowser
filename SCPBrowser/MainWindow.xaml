@@ -24,8 +24,8 @@
         <!-- Menu Bar -->
         <Menu Grid.Row="0">
             <MenuItem Header="_File">
-                <MenuItem Header="_New Project..." Click="NewProject_Click"/>
-                <MenuItem Header="_Open Project..." Click="OpenProject_Click"/>
+                <MenuItem x:Name="NewProjectMenuItem" Header="_New Project..." Click="NewProject_Click"/>
+                <MenuItem x:Name="OpenProjectMenuItem" Header="_Open Project..." Click="OpenProject_Click"/>
                 <MenuItem Header="_LoadParquet..." Click="LoadParquet"/>
                 <Separator/>
                 <MenuItem Header="_Close Project" 
@@ -49,16 +49,18 @@
                 
             </MenuItem>
             <MenuItem Header="_Utils">
+                <MenuItem Header="_GO Database..." Click="GoDatabase_Click"/>
                 <MenuItem Header="_Settings" Click="Settings_Click"/>
+                <Separator/>
                 <MenuItem Header="_Project Browser" 
-                  x:Name="ProjectBrowserMenuItem"
-                  Click="ProjectBrowser_Click"
-                  IsEnabled="False"/>
+      x:Name="ProjectBrowserMenuItem"
+      Click="ProjectBrowser_Click"
+      IsEnabled="False"/>
                 <Separator/>
                 <MenuItem Header="_Clear Cell Type Classifications" 
-              x:Name="ClearCellTypeClassificationsMenuItem"
-              Click="ClearCellTypeClassifications_Click"
-              IsEnabled="False"/>
+      x:Name="ClearCellTypeClassificationsMenuItem"
+      Click="ClearCellTypeClassifications_Click"
+      IsEnabled="False"/>
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Click="About_Click"/>
@@ -159,21 +161,54 @@ This adds the PlateFilterControl above the TabControl
                                    Foreground="#0f172a"/>
 
                                 <TextBlock Text="Single Cell Proteomics Analysis Tool" 
-                                   FontSize="14" 
-                                   HorizontalAlignment="Center"
-                                   Foreground="#64748b"
-                                   Margin="0,0,0,30"/>
+   FontSize="14" 
+   HorizontalAlignment="Center"
+   Foreground="#64748b"
+   Margin="0,0,0,30"/>
+
+                                <!-- GO Database Status Panel -->
+                                <Border x:Name="GoStatusPanel"
+        Background="#10DC2626"
+        BorderBrush="#DC2626"
+        BorderThickness="1"
+        CornerRadius="8"
+        Padding="16,12"
+        Margin="0,0,0,20"
+        Visibility="Collapsed">
+                                    <StackPanel>
+                                        <TextBlock x:Name="GoStatusTitle"
+                   Text="⚠️ Gene Ontology database required"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   Foreground="#DC2626"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,4"/>
+                                        <TextBlock x:Name="GoStatusMessage"
+                   Text="Set up GO database to enable analysis"
+                   FontSize="12"
+                   Foreground="#B91C1C"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,10"/>
+                                        <Button Content="Configure GO Database"
+                Click="ConfigureGoDatabase_Click"
+                HorizontalAlignment="Center"
+                Padding="16,6"
+                FontSize="12"/>
+                                    </StackPanel>
+                                </Border>
 
                                 <!-- Action Buttons -->
-                                <Button Content="📁 Open Project"
-                                Click="OpenProject_Click"
-                                Style="{StaticResource ModernButton}"
-                                Margin="0,0,0,10"/>
+                                <Button x:Name="OpenProjectButton"
+        Content="📁 Open Project"
+        Click="OpenProject_Click"
+        Style="{StaticResource ModernButton}"
+        Margin="0,0,0,10"/>
 
-                                <Button Content="✨ New Project"
-                                Click="NewProject_Click"
-                                Style="{StaticResource ModernButton}"
-                                Margin="0,0,0,30"/>
+                                <Button x:Name="NewProjectButton"
+        Content="✨ New Project"
+        Click="NewProject_Click"
+        Style="{StaticResource ModernButton}"
+        Margin="0,0,0,30"/>
 
                                 <!-- Info Text -->
                                 <TextBlock TextWrapping="Wrap"

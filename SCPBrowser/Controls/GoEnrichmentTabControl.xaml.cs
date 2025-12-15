@@ -33,14 +33,14 @@ namespace SCPBrowser
             _allGoTerms = new List<GoEnrichmentDisplayRow>();
             int runsWithEnrichment = 0;
             int totalSignificantTerms = 0;
+            int runsWithNoAnnotations = 0;
+            int runsWithAnnotationsButNoEnrichment = 0;
 
             foreach (var point in selectedPoints)
             {
-                if (goEnrichmentResults.ContainsKey(point.RunName))
+                if (goEnrichmentResults.TryGetValue(point.RunName, out var result))
                 {
-                    var result = goEnrichmentResults[point.RunName];
-
-                    if (result.AllSignificantTerms != null && result.AllSignificantTerms.Count > 0)
+                    if (result.HasSignificantTerms)
                     {
                         runsWithEnrichment++;
                         totalSignificantTerms += result.AllSignificantTerms.Count;
@@ -59,12 +59,29 @@ namespace SCPBrowser
                             });
                         }
                     }
+                    else if (!result.HasAnnotatedGenes)
+                    {
+                        runsWithNoAnnotations++;
+                    }
+                    else
+                    {
+                        runsWithAnnotationsButNoEnrichment++;
+                    }
                 }
             }
 
+            // Build summary message
             if (runsWithEnrichment > 0)
             {
                 SummaryText.Text = $"{runsWithEnrichment} of {selectedPoints.Count} selected run(s) have significant GO term enrichment ({totalSignificantTerms} total terms)";
+            }
+            else if (runsWithNoAnnotations == selectedPoints.Count)
+            {
+                SummaryText.Text = $"No GO annotations found for genes in {selectedPoints.Count} selected run(s). Check gene name format or species settings.";
+            }
+            else if (runsWithNoAnnotations > 0)
+            {
+                SummaryText.Text = $"No significant enrichment. {runsWithNoAnnotations} run(s) had no annotated genes, {runsWithAnnotationsButNoEnrichment} had annotations but no enrichment.";
             }
             else
             {

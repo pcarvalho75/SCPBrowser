@@ -16,6 +16,13 @@ namespace SCPBrowser.GOTools
         public double FoldEnrichment { get; set; }
         public int OverlapCount { get; set; }
         public List<GoEnrichmentResult> AllSignificantTerms { get; set; } = new List<GoEnrichmentResult>();
+
+        // Diagnostic info
+        public int TotalGenesInRun { get; set; }
+        public int AnnotatedGenesInRun { get; set; }
+
+        public bool HasAnnotatedGenes => AnnotatedGenesInRun > 0;
+        public bool HasSignificantTerms => AllSignificantTerms != null && AllSignificantTerms.Count > 0;
     }
 
     public class GoEnrichmentManager
@@ -74,15 +81,19 @@ namespace SCPBrowser.GOTools
         }
 
         private RunGoEnrichmentResult EnrichRun(
-            ProteomicsData proteomicsData,
-            string runName,
-            double pValueThreshold,
-            int minOverlap)
+     ProteomicsData proteomicsData,
+     string runName,
+     double pValueThreshold,
+     int minOverlap)
         {
             var geneNames = ExtractGeneNamesForRun(proteomicsData, runName);
 
             if (geneNames.Count == 0)
-                return new RunGoEnrichmentResult();
+                return new RunGoEnrichmentResult
+                {
+                    TotalGenesInRun = 0,
+                    AnnotatedGenesInRun = 0
+                };
 
             var enrichmentResults = _enrichmentService.Analyze(
                 geneNames,
@@ -90,8 +101,17 @@ namespace SCPBrowser.GOTools
                 minOverlap,
                 applyFdrCorrection: true);
 
+            // Get annotated count from the first result, or calculate if no results
+            int annotatedCount = enrichmentResults.Count > 0
+                ? enrichmentResults.First().SampleTotal
+                : _enrichmentService.CountAnnotatedGenes(geneNames);
+
             if (enrichmentResults.Count == 0)
-                return new RunGoEnrichmentResult();
+                return new RunGoEnrichmentResult
+                {
+                    TotalGenesInRun = geneNames.Count,
+                    AnnotatedGenesInRun = annotatedCount
+                };
 
             var topTerm = enrichmentResults.First();
 
@@ -103,7 +123,9 @@ namespace SCPBrowser.GOTools
                 PValue = topTerm.FdrCorrectedPValue,
                 FoldEnrichment = topTerm.FoldEnrichment,
                 OverlapCount = topTerm.SampleInTerm,
-                AllSignificantTerms = enrichmentResults
+                AllSignificantTerms = enrichmentResults,
+                TotalGenesInRun = geneNames.Count,
+                AnnotatedGenesInRun = annotatedCount
             };
         }
 

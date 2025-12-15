@@ -138,21 +138,6 @@ namespace SCPBrowser.Services
                 batch_info TEXT
             );
 
-            -- GO terms (GO Slim)
-            CREATE TABLE IF NOT EXISTS go_terms (
-                go_id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                namespace TEXT NOT NULL,
-                definition TEXT
-            );
-
-            -- Protein to GO term annotations
-            CREATE TABLE IF NOT EXISTS protein_go_annotations (
-                protein_id TEXT NOT NULL,
-                go_term_id TEXT NOT NULL,
-                PRIMARY KEY (protein_id, go_term_id)
-            );
-
             -- Gene to GO term annotations (for transcriptomic gene mappings)
             CREATE TABLE IF NOT EXISTS go_annotations (
                 gene_name TEXT NOT NULL,

@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
-using SCPBrowser.GOTools;
 
 namespace SCPBrowser.Services
 {
@@ -338,34 +337,6 @@ namespace SCPBrowser.Services
             }
 
             return database;
-        }
-        // ==================== GO ANNOTATIONS ====================
-
-        /// <summary>
-        /// Clears all GO annotation data from the database
-        /// </summary>
-        public async Task ClearGoAnnotationsAsync(string databasePath)
-        {
-            if (!File.Exists(databasePath))
-                return;
-
-            var connectionString = $"Data Source={databasePath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
-                        DELETE FROM protein_go_annotations;
-                        DELETE FROM go_terms;
-                    ";
-                    await command.ExecuteNonQueryAsync();
-                }
-
-                Console.WriteLine("Cleared existing GO annotation data from database.");
-            }
         }
 
     }

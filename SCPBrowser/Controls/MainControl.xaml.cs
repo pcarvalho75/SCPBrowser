@@ -81,67 +81,60 @@ namespace SCPBrowser
 
         private async System.Threading.Tasks.Task LoadGoEnrichmentAsync()
         {
-            if (_goEnrichmentManager.IsLoaded)
+            // Check if central GO database is available
+            var goStatusService = new BioTessera.GO.GoStatusService();
+
+            if (!goStatusService.DatabaseExists || !goStatusService.HasOntology)
             {
+                StatusText.Text = "GO database not configured. Use Tools → GO Database to set up.";
+                _goEnrichmentResults = null;
+                return;
+            }
+
+            // Check if we have annotations for human (default)
+            var humanSpecies = goStatusService.InstalledSpecies?.FirstOrDefault(s => s.TaxonId == 9606);
+            if (humanSpecies == null)
+            {
+                StatusText.Text = "No GO annotations for Human. Use Tools → GO Database to download.";
+                _goEnrichmentResults = null;
+                return;
+            }
+
+            try
+            {
+                StatusText.Text = "Loading GO enrichment database...";
+
+                // Load synchronously (runs on background via Task.Run to keep UI responsive)
+                await System.Threading.Tasks.Task.Run(() => _goEnrichmentManager.LoadDatabase());
+
+                if (!_goEnrichmentManager.IsLoaded)
+                {
+                    StatusText.Text = "Could not load GO database.";
+                    _goEnrichmentResults = null;
+                    return;
+                }
+
+                StatusText.Text = $"GO database loaded: {_goEnrichmentManager.GeneCount:N0} genes, {_goEnrichmentManager.TermCount:N0} GO terms";
+
                 StatusText.Text = "Running GO enrichment analysis...";
 
                 // Use settings for GO enrichment parameters
                 var pValueCutoff = Settings.Default.GOPValueCutoff;
                 var minOverlap = Settings.Default.GOMinimumOverlap;
 
-                _goEnrichmentResults = _goEnrichmentManager.EnrichAllRuns(
-                    _currentData,
-                    pValueCutoff,
-                    minOverlap);
-
-                int enrichedCount = _goEnrichmentResults.Count(kvp => !string.IsNullOrEmpty(kvp.Value.TopGoTermId));
-                StatusText.Text += $" | GO enrichment: {enrichedCount}/{_currentData.TotalRawFiles} runs";
-                return;
-            }
-
-            // Get the project database path (contains both project and reference data)
-            var mainWindow = Window.GetWindow(this) as MainWindow;
-            if (mainWindow == null || !mainWindow.HasOpenProject)
-            {
-                _goEnrichmentResults = null;
-                return;
-            }
-
-            var databasePath = mainWindow.ProjectReferenceDatabasePath;
-
-            if (File.Exists(databasePath))
-            {
-                try
-                {
-                    StatusText.Text = "Loading GO enrichment database...";
-                    await _goEnrichmentManager.LoadDatabaseAsync(databasePath);
-
-                    var db = _goEnrichmentManager.AnnotationDatabase;
-                    StatusText.Text = $"GO database loaded: {db.TotalProteins:N0} proteins, {db.GoTermToProteins.Count} GO terms";
-
-                    StatusText.Text = "Running GO enrichment analysis...";
-
-                    // Use settings for GO enrichment parameters
-                    var pValueCutoff = Settings.Default.GOPValueCutoff;
-                    var minOverlap = Settings.Default.GOMinimumOverlap;
-
-                    _goEnrichmentResults = _goEnrichmentManager.EnrichAllRuns(
+                _goEnrichmentResults = await System.Threading.Tasks.Task.Run(() =>
+                    _goEnrichmentManager.EnrichAllRuns(
                         _currentData,
                         pValueCutoff,
-                        minOverlap);
+                        minOverlap));
 
-                    int enrichedCount = _goEnrichmentResults.Count(kvp => !string.IsNullOrEmpty(kvp.Value.TopGoTermId));
-                    StatusText.Text += $" | GO enrichment: {enrichedCount}/{_currentData.TotalRawFiles} runs";
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Could not load GO enrichment database: {ex.Message}\n\nContinuing without GO enrichment.",
-                        "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    _goEnrichmentResults = null;
-                }
+                int enrichedCount = _goEnrichmentResults.Count(kvp => !string.IsNullOrEmpty(kvp.Value.TopGoTermId));
+                StatusText.Text = $"GO enrichment: {enrichedCount}/{_currentData.TotalRawFiles} runs with significant terms";
             }
-            else
+            catch (Exception ex)
             {
+                MessageBox.Show($"Could not run GO enrichment analysis: {ex.Message}\n\nContinuing without GO enrichment.",
+                    "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
                 _goEnrichmentResults = null;
             }
         }

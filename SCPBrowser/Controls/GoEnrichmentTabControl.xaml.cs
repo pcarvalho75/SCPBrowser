@@ -50,12 +50,12 @@ namespace SCPBrowser
                             _allGoTerms.Add(new GoEnrichmentDisplayRow
                             {
                                 RunName = point.RunName,
-                                GoTermId = term.GoTermId,
-                                GoTermName = term.GoTermName,
-                                Namespace = term.Namespace,
-                                PValue = term.PValue,
+                                GoTermId = term.TermIdFormatted,
+                                GoTermName = term.TermName,
+                                Namespace = NamespaceToString(term.Namespace),
+                                PValue = term.FdrCorrectedPValue,
                                 FoldEnrichment = term.FoldEnrichment,
-                                OverlapText = $"{term.Overlap}/{term.ProteinsInSample}"
+                                OverlapText = $"{term.SampleInTerm}/{term.SampleTotal}"
                             });
                         }
                     }
@@ -72,6 +72,17 @@ namespace SCPBrowser
             }
 
             ApplyNamespaceFilter();
+        }
+
+        private string NamespaceToString(BioTessera.GO.GoNamespace ns)
+        {
+            return ns switch
+            {
+                BioTessera.GO.GoNamespace.BiologicalProcess => "biological_process",
+                BioTessera.GO.GoNamespace.MolecularFunction => "molecular_function",
+                BioTessera.GO.GoNamespace.CellularComponent => "cellular_component",
+                _ => "unknown"
+            };
         }
 
         public void ClearData()

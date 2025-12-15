@@ -1,5 +1,5 @@
 ﻿using SCPBrowser.GOTools;
-using System;
+using BioTessera.GO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -27,21 +27,20 @@ namespace SCPBrowser
 
         private void PopulateGrids(List<GoEnrichmentResult> allTerms)
         {
-            // Filter by namespace and take top 20 for each
             var biologicalProcess = allTerms
-                .Where(t => t.Namespace == "biological_process")
+                .Where(t => t.Namespace == GoNamespace.BiologicalProcess)
                 .Take(20)
                 .Select(t => new GoEnrichmentDisplayItem(t))
                 .ToList();
 
             var molecularFunction = allTerms
-                .Where(t => t.Namespace == "molecular_function")
+                .Where(t => t.Namespace == GoNamespace.MolecularFunction)
                 .Take(20)
                 .Select(t => new GoEnrichmentDisplayItem(t))
                 .ToList();
 
             var cellularComponent = allTerms
-                .Where(t => t.Namespace == "cellular_component")
+                .Where(t => t.Namespace == GoNamespace.CellularComponent)
                 .Take(20)
                 .Select(t => new GoEnrichmentDisplayItem(t))
                 .ToList();
@@ -57,7 +56,6 @@ namespace SCPBrowser
         }
     }
 
-    // Helper class for DataGrid binding
     public class GoEnrichmentDisplayItem
     {
         public string GoTermId { get; set; }
@@ -68,11 +66,11 @@ namespace SCPBrowser
 
         public GoEnrichmentDisplayItem(GoEnrichmentResult result)
         {
-            GoTermId = result.GoTermId;
-            GoTermName = result.GoTermName;
-            PValue = result.PValue;
+            GoTermId = result.TermIdFormatted;
+            GoTermName = result.TermName;
+            PValue = result.FdrCorrectedPValue;
             FoldEnrichment = result.FoldEnrichment;
-            OverlapText = $"{result.Overlap}/{result.ProteinsInSample}";
+            OverlapText = $"{result.SampleInTerm}/{result.SampleTotal}";
         }
     }
 }

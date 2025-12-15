@@ -1,9 +1,9 @@
-﻿using SCPBrowser.Services;
+﻿using BioTessera.GO;
+using BioTessera.Utilities;
+using SCPBrowser.Services;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace SCPBrowser.GOTools
 {
@@ -20,51 +20,49 @@ namespace SCPBrowser.GOTools
 
     public class GoEnrichmentManager
     {
-        private GoSlimDatabase _goSlimDatabase;
-        private GoAnnotationDatabase _annotationDatabase;
-        private GoEnrichmentAnalyzer _analyzer;
-        private readonly ReferenceDataService _referenceService;
+        private GoEnrichmentService _enrichmentService;
+        private int _taxonId = 9606; // Default to human
 
-        public bool IsLoaded => _goSlimDatabase != null && _annotationDatabase != null && _analyzer != null;
-        public GoSlimDatabase GoSlimDatabase => _goSlimDatabase;
-        public GoAnnotationDatabase AnnotationDatabase => _annotationDatabase;
+        public bool IsLoaded => _enrichmentService != null && _enrichmentService.IsReady;
+        public int GeneCount => _enrichmentService?.GeneCount ?? 0;
+        public int TermCount => _enrichmentService?.TermCount ?? 0;
 
-        public GoEnrichmentManager()
+        public GoEnrichmentManager(int taxonId = 9606)
         {
-            _referenceService = new ReferenceDataService();
+            _taxonId = taxonId;
         }
 
-        public async Task LoadDatabaseAsync(string databasePath)
+        public void LoadDatabase()
         {
-            if (!File.Exists(databasePath))
-                throw new FileNotFoundException("Reference database not found", databasePath);
-
-            var (goSlimDb, annotationDb) = await _referenceService.LoadGoAnnotationsAsync(databasePath);
-
-            _goSlimDatabase = goSlimDb;
-            _annotationDatabase = annotationDb;
-            _analyzer = new GoEnrichmentAnalyzer(_goSlimDatabase, _annotationDatabase);
+            _enrichmentService = new GoEnrichmentService(_taxonId);
+            _enrichmentService.LoadBackground();
         }
 
-        // In SCPBrowser/GOTools/GoEnrichmentManager.cs
+        public void SetTaxonId(int taxonId)
+        {
+            if (_taxonId != taxonId)
+            {
+                _taxonId = taxonId;
+                _enrichmentService?.ClearCache();
+                _enrichmentService = null;
+            }
+        }
 
         public Dictionary<string, RunGoEnrichmentResult> EnrichAllRuns(
             ProteomicsData proteomicsData,
             double pValueThreshold = 0.05,
             int minOverlap = 2)
         {
-            if (!IsLoaded)
-                throw new InvalidOperationException("GO databases not loaded");
-
             var results = new Dictionary<string, RunGoEnrichmentResult>();
 
-            // --- ADD THIS NULL CHECK ---
-            // If there's no proteomics data, just return an empty results list.
             if (proteomicsData == null || proteomicsData.RawFileNames == null)
-            {
                 return results;
-            }
-            // --- END OF NULL CHECK ---
+
+            if (!IsLoaded)
+                LoadDatabase();
+
+            if (!IsLoaded)
+                return results;
 
             foreach (var runName in proteomicsData.RawFileNames)
             {
@@ -81,182 +79,113 @@ namespace SCPBrowser.GOTools
             double pValueThreshold,
             int minOverlap)
         {
-            var detectedProteinIds = ExtractProteinIdsForRun(proteomicsData, runName);
+            var geneNames = ExtractGeneNamesForRun(proteomicsData, runName);
 
-            if (detectedProteinIds.Count == 0)
-            {
+            if (geneNames.Count == 0)
                 return new RunGoEnrichmentResult();
-            }
 
-            var enrichmentResults = _analyzer.AnalyzeEnrichment(
-                detectedProteinIds,
+            var enrichmentResults = _enrichmentService.Analyze(
+                geneNames,
                 pValueThreshold,
-                minOverlap);
+                minOverlap,
+                applyFdrCorrection: true);
 
             if (enrichmentResults.Count == 0)
-            {
                 return new RunGoEnrichmentResult();
-            }
 
             var topTerm = enrichmentResults.First();
 
             return new RunGoEnrichmentResult
             {
-                TopGoTermId = topTerm.GoTermId,
-                TopGoTermName = topTerm.GoTermName,
-                Namespace = topTerm.Namespace,
-                PValue = topTerm.PValue,
+                TopGoTermId = topTerm.TermIdFormatted,
+                TopGoTermName = topTerm.TermName,
+                Namespace = NamespaceToString(topTerm.Namespace),
+                PValue = topTerm.FdrCorrectedPValue,
                 FoldEnrichment = topTerm.FoldEnrichment,
-                OverlapCount = topTerm.Overlap,
+                OverlapCount = topTerm.SampleInTerm,
                 AllSignificantTerms = enrichmentResults
             };
         }
 
-        private List<string> ExtractProteinIdsForRun(ProteomicsData proteomicsData, string runName)
+        private List<string> ExtractGeneNamesForRun(ProteomicsData proteomicsData, string runName)
         {
-            var proteinIds = new HashSet<string>();
+            var geneNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var proteinGroup in proteomicsData.ProteinQuantMatrix.Keys)
+            foreach (var proteinEntry in proteomicsData.ProteinQuantMatrix)
             {
-                if (proteomicsData.ProteinQuantMatrix[proteinGroup].ContainsKey(runName))
-                {
-                    double abundance = proteomicsData.ProteinQuantMatrix[proteinGroup][runName];
+                string proteinId = proteinEntry.Key;
+                var runAbundances = proteinEntry.Value;
 
-                    if (abundance > 0)
-                    {
-                        var extractedIds = ExtractProteinIds(proteinGroup);
-                        foreach (var id in extractedIds)
-                        {
-                            proteinIds.Add(id);
-                        }
-                    }
-                }
-            }
-
-            return proteinIds.ToList();
-        }
-
-        private List<string> ExtractProteinIds(string proteinGroup)
-        {
-            var ids = new List<string>();
-
-            var parts = proteinGroup.Split(';', ',');
-
-            foreach (var part in parts)
-            {
-                var trimmed = part.Trim();
-                if (string.IsNullOrEmpty(trimmed))
+                // Check if protein is detected in this run
+                if (!runAbundances.TryGetValue(runName, out var abundance) || abundance <= 0)
                     continue;
 
-                string proteinId = null;
-
-                if (trimmed.Contains("|"))
+                // Extract gene name(s) from protein group
+                var proteinParts = proteinId.Split(';', ',');
+                foreach (var part in proteinParts)
                 {
-                    var pipeParts = trimmed.Split('|');
-                    if (pipeParts.Length >= 2)
-                    {
-                        proteinId = pipeParts[1];
-                    }
-                }
-                else if (trimmed.Contains("_") || trimmed.Contains("-"))
-                {
-                    int underscorePos = trimmed.IndexOf('_');
-                    int dashPos = trimmed.IndexOf('-');
-
-                    int splitPos = -1;
-                    if (underscorePos >= 0 && dashPos >= 0)
-                        splitPos = Math.Min(underscorePos, dashPos);
-                    else if (underscorePos >= 0)
-                        splitPos = underscorePos;
-                    else if (dashPos >= 0)
-                        splitPos = dashPos;
-
-                    if (splitPos > 0)
-                        proteinId = trimmed.Substring(0, splitPos);
-                    else
-                        proteinId = trimmed;
-                }
-                else
-                {
-                    proteinId = trimmed;
-                }
-
-                if (!string.IsNullOrEmpty(proteinId))
-                {
-                    ids.Add(proteinId);
+                    var geneName = GeneNameExtractor.Extract(part.Trim());
+                    if (!string.IsNullOrEmpty(geneName))
+                        geneNames.Add(geneName);
                 }
             }
 
-            return ids;
+            return geneNames.ToList();
+        }
+
+        private string NamespaceToString(GoNamespace ns)
+        {
+            return ns switch
+            {
+                GoNamespace.BiologicalProcess => "biological_process",
+                GoNamespace.MolecularFunction => "molecular_function",
+                GoNamespace.CellularComponent => "cellular_component",
+                _ => "unknown"
+            };
         }
 
         public Dictionary<string, System.Windows.Media.Color> GenerateGoTermColorMap(
             Dictionary<string, RunGoEnrichmentResult> enrichmentResults)
         {
-            if (!IsLoaded)
-                return new Dictionary<string, System.Windows.Media.Color>();
-
             var uniqueGoTerms = enrichmentResults.Values
                 .Where(r => !string.IsNullOrEmpty(r.TopGoTermId))
                 .Select(r => r.TopGoTermId)
                 .Distinct()
-                .OrderBy(g => g)
                 .ToList();
 
             var colorMap = new Dictionary<string, System.Windows.Media.Color>();
-
             for (int i = 0; i < uniqueGoTerms.Count; i++)
             {
-                colorMap[uniqueGoTerms[i]] = GetDistinctColor(i, uniqueGoTerms.Count);
+                double hue = (double)i / uniqueGoTerms.Count * 360.0;
+                colorMap[uniqueGoTerms[i]] = HsvToRgb(hue, 0.7, 0.9);
             }
 
             return colorMap;
         }
 
-        private System.Windows.Media.Color GetDistinctColor(int index, int total)
-        {
-            double hue = (double)index / total * 360.0;
-            return HsvToRgb(hue, 0.7, 0.9);
-        }
-
         private System.Windows.Media.Color HsvToRgb(double h, double s, double v)
         {
-            double c = v * s;
-            double x = c * (1 - Math.Abs(h / 60.0 % 2 - 1));
-            double m = v - c;
+            int hi = (int)(h / 60) % 6;
+            double f = h / 60 - (int)(h / 60);
+            double p = v * (1 - s);
+            double q = v * (1 - f * s);
+            double t = v * (1 - (1 - f) * s);
 
             double r, g, b;
-
-            if (h < 60)
+            switch (hi)
             {
-                r = c; g = x; b = 0;
-            }
-            else if (h < 120)
-            {
-                r = x; g = c; b = 0;
-            }
-            else if (h < 180)
-            {
-                r = 0; g = c; b = x;
-            }
-            else if (h < 240)
-            {
-                r = 0; g = x; b = c;
-            }
-            else if (h < 300)
-            {
-                r = x; g = 0; b = c;
-            }
-            else
-            {
-                r = c; g = 0; b = x;
+                case 0: r = v; g = t; b = p; break;
+                case 1: r = q; g = v; b = p; break;
+                case 2: r = p; g = v; b = t; break;
+                case 3: r = p; g = q; b = v; break;
+                case 4: r = t; g = p; b = v; break;
+                default: r = v; g = p; b = q; break;
             }
 
             return System.Windows.Media.Color.FromRgb(
-                (byte)((r + m) * 255),
-                (byte)((g + m) * 255),
-                (byte)((b + m) * 255)
-            );
+                (byte)(r * 255),
+                (byte)(g * 255),
+                (byte)(b * 255));
         }
     }
 }

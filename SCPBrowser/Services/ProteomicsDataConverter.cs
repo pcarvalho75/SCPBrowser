@@ -34,7 +34,10 @@ namespace SCPBrowser.Services
                 // Get gene name from map, or extract from protein ID
                 string geneName = null;
                 if (data.ProteinToGeneMap != null && data.ProteinToGeneMap.TryGetValue(proteinId, out var mappedGene))
-                    geneName = mappedGene;
+                {
+                    // Always extract clean gene symbol (strips _HUMAN suffix, handles sp| format)
+                    geneName = GeneNameExtractor.Extract(mappedGene);
+                }
 
                 if (string.IsNullOrEmpty(geneName))
                     geneName = GeneNameExtractor.Extract(proteinId);

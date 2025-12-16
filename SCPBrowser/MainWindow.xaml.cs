@@ -277,6 +277,8 @@ namespace SCPBrowser
                 // Resolve GO terms from central database
                 _goTermResolver.ResolveGoTerms(proteins);
 
+                proteins = _goTermResolver.ResolveHierarchyPaths(proteins);
+
                 // Load into BioTessera and generate
                 BioTesseraTab.LoadProteins(proteins);
                 await BioTesseraTab.GenerateAsync();

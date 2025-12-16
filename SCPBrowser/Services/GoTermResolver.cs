@@ -64,13 +64,13 @@ namespace SCPBrowser.Services
             }
         }
 
-        private List<Protein> ResolveHierarchyPaths(List<Protein> proteins)
+        public List<Protein> ResolveHierarchyPaths(List<Protein> proteins)
         {
             var result = new List<Protein>();
 
             try
             {
-                using var db = new GO.GoDatabase();
+                using var db = new BioTessera.GO.GoDatabase();
 
                 if (db.GetGoTermPathCount() == 0)
                 {

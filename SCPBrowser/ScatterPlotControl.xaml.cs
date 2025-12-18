@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 
 namespace SCPBrowser
 {
@@ -524,16 +525,6 @@ namespace SCPBrowser
                 };
 
                 _dataPoints.Add(dataPoint);
-            }
-
-            // Draw legend if using coloring
-            if (options.UseCellTypeColoring && options.CellTypeColorMap != null)
-            {
-                DrawCellTypeLegend(PlotCanvas, canvasWidth, canvasHeight, options.CellTypeColorMap);
-            }
-            else if (options.UseBioConditionColoring && options.BioConditionColorMap != null)
-            {
-                DrawBioConditionLegend(PlotCanvas, canvasWidth, canvasHeight, options.BioConditionColorMap);
             }
         }
 

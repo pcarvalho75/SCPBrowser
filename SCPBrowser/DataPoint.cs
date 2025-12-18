@@ -13,6 +13,8 @@ namespace SCPBrowser
         public double TrypsinRatio { get; set; }
         public double XScreen { get; set; }
         public double YScreen { get; set; }
+        public double XData { get; set; }
+        public double YData { get; set; }
         public Ellipse Visual { get; set; }
         public Color BaseColor { get; set; }
         public bool IsSelected { get; set; }

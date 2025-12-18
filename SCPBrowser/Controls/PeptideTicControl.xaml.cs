@@ -90,6 +90,32 @@ namespace SCPBrowser
             _goTermColorMap = colorMap;
         }
 
+        private void ViewMode_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_isInitialized)
+                return;
+
+            bool isPcaMode = ViewPcaRadio.IsChecked == true;
+
+            // Disable Log-Log scale for PCA (doesn't apply)
+            LogLogCheckBox.IsEnabled = !isPcaMode;
+
+            // Update header text
+            if (isPcaMode)
+            {
+                PlotGroupBoxHeader.Text = "PCA - Principal Component Analysis";
+            }
+            else
+            {
+                PlotGroupBoxHeader.Text = "Peptides vs Total Ion Current per Raw File";
+            }
+
+            if (_currentData != null)
+            {
+                RefreshChart();
+            }
+        }
+
         private Dictionary<string, Color> GenerateBioConditionColorMap()
         {
             if (_currentData == null || _currentData.BiologicalConditionPerFile.Count == 0)
@@ -268,6 +294,7 @@ namespace SCPBrowser
             var options = new ScatterPlotOptions
             {
                 UseLogLog = LogLogCheckBox.IsChecked == true,
+                UsePcaView = ViewPcaRadio.IsChecked == true,
                 UseCellTypeColoring = ColorByCellTypeRadio.IsChecked == true,
                 CellTypePredictions = _cellTypePredictions,
                 CellTypeColorMap = _cellTypeColorMap,

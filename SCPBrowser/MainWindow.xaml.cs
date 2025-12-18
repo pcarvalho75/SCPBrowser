@@ -574,16 +574,19 @@ namespace SCPBrowser
                 var loadedDatabase = await referenceService.LoadTranscriptomicDataAsync(referenceDatabasePath);
 
                 MessageBox.Show(
-                    $"Transcriptomic data imported successfully!\n\n" +
-                    $"Cell Types: {loadedDatabase.TotalCellTypes}\n" +
-                    $"Total Cells: {loadedDatabase.TotalCells:N0}\n" +
-                    $"Unique Genes: {loadedDatabase.TotalGenes:N0}\n\n" +
-                    $"Database: {Path.GetFileName(referenceDatabasePath)}",
-                    "Import Complete",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
+                                    $"Transcriptomic data imported successfully!\n\n" +
+                                    $"Cell Types: {loadedDatabase.TotalCellTypes}\n" +
+                                    $"Total Cells: {loadedDatabase.TotalCells:N0}\n" +
+                                    $"Unique Genes: {loadedDatabase.TotalGenes:N0}\n\n" +
+                                    $"Database: {Path.GetFileName(referenceDatabasePath)}",
+                                    "Import Complete",
+                                    MessageBoxButton.OK,
+                                    MessageBoxImage.Information);
 
                 Console.WriteLine($"Transcriptomic data imported to: {referenceDatabasePath}");
+
+                // Hot reload: Update MainControl's transcriptomic reference
+                await MainControlTab.ReloadTranscriptomicReferenceAsync();
             }
             catch (Exception ex)
             {

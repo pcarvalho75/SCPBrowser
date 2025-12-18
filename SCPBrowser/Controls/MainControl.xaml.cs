@@ -33,6 +33,34 @@ namespace SCPBrowser
         }
 
 
+        /// <summary>
+        /// Reloads the transcriptomic reference database (call after importing new omic data)
+        /// </summary>
+        public async System.Threading.Tasks.Task ReloadTranscriptomicReferenceAsync()
+        {
+            var mainWindow = Window.GetWindow(this) as MainWindow;
+            if (mainWindow == null || !mainWindow.HasOpenProject)
+                return;
+
+            var databasePath = mainWindow.ProjectReferenceDatabasePath;
+
+            if (File.Exists(databasePath))
+            {
+                try
+                {
+                    StatusText.Text = "Reloading transcriptomic reference database...";
+                    await _cellTypeClassificationManager.LoadDatabaseAsync(databasePath);
+
+                    var db = _cellTypeClassificationManager.Database;
+                    StatusText.Text = $"Reference reloaded: {db.TotalGenes:N0} genes, {db.TotalCells:N0} cells, {db.TotalCellTypes} cell types";
+                }
+                catch (Exception ex)
+                {
+                    StatusText.Text = $"Error reloading reference: {ex.Message}";
+                }
+            }
+        }
+
         private async System.Threading.Tasks.Task LoadTranscriptomicReferenceAsync()
         {
             if (_cellTypeClassificationManager.IsLoaded)

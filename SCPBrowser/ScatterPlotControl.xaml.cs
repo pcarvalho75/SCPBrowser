@@ -1,4 +1,5 @@
-﻿using SCPBrowser.GOTools;
+﻿using PCANipals;
+using SCPBrowser.GOTools;
 using SCPBrowser.Services;
 using System;
 using System.Collections.Generic;
@@ -12,6 +13,7 @@ namespace SCPBrowser
 {
     public class ScatterPlotOptions
     {
+        public bool UsePcaView { get; set; } = false;
         public bool UseLogLog { get; set; } = true;
         public bool UseCellTypeColoring { get; set; } = false;
         public Dictionary<string, CellTypePredictionResult> CellTypePredictions { get; set; }
@@ -44,6 +46,8 @@ namespace SCPBrowser
         private ScatterPlotOptions _currentOptions;
         private List<DataPoint> _dataPoints;
         private PlotRenderer _plotRenderer;
+        private PcaResult _pcaResult;
+        private double[] _pcaVarianceExplained;
         private SelectionManager _selectionManager;
         private bool _isRefreshing = false;
         private const double HoverTolerance = 12;
@@ -85,6 +89,12 @@ namespace SCPBrowser
 
             try
             {
+                // Clear PCA if data changed
+                if (_currentData != data)
+                {
+                    _pcaResult = null;
+                }
+
                 _currentData = data;
                 _currentOptions = options;
 
@@ -103,6 +113,12 @@ namespace SCPBrowser
                 {
                     Console.WriteLine($"  -> UpdatePlot: No data to display (data null: {data == null}, count: {data?.PeptideCountPerFile.Count ?? -1})");
                     return;
+                }
+
+                // Compute PCA if needed
+                if (options.UsePcaView && _pcaResult == null)
+                {
+                    ComputePca(data);
                 }
 
                 DrawChart(data, options);
@@ -125,6 +141,66 @@ namespace SCPBrowser
             {
                 _suppressSelectionEvents = false;
                 _isRefreshing = false;
+            }
+        }
+
+        private void ComputePca(ProteomicsData data)
+        {
+            if (data == null || data.ProteinQuantMatrix.Count == 0)
+            {
+                _pcaResult = null;
+                return;
+            }
+
+            try
+            {
+                var rawFiles = data.RawFileNames.ToList();
+                var proteins = data.ProteinQuantMatrix.Keys.ToList();
+
+                int nSamples = rawFiles.Count;
+                int nProteins = proteins.Count;
+
+                if (nSamples < 3 || nProteins < 2)
+                {
+                    _pcaResult = null;
+                    return;
+                }
+
+                // Build matrix: rows = samples (raw files), columns = proteins
+                double[,] matrix = new double[nSamples, nProteins];
+
+                for (int i = 0; i < nSamples; i++)
+                {
+                    string rawFile = rawFiles[i];
+                    for (int j = 0; j < nProteins; j++)
+                    {
+                        string protein = proteins[j];
+                        if (data.ProteinQuantMatrix[protein].TryGetValue(rawFile, out double value) && value > 0)
+                        {
+                            matrix[i, j] = Math.Log2(value + 1); // Log transform
+                        }
+                        else
+                        {
+                            matrix[i, j] = double.NaN; // Missing value
+                        }
+                    }
+                }
+
+                // Run NIPALS PCA
+                _pcaResult = NipalsAlgorithm.Compute(
+                    matrix,
+                    nComponents: 2,
+                    maxIterations: 500,
+                    tolerance: 1e-9,
+                    center: true,
+                    scale: false);
+
+                Console.WriteLine($"PCA computed: PC1={_pcaResult.VarianceExplained[0]:P1}, PC2={_pcaResult.VarianceExplained[1]:P1}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"PCA computation failed: {ex.Message}");
+                _pcaResult = null;
             }
         }
 
@@ -227,6 +303,14 @@ namespace SCPBrowser
                 return;
 
             var rawFiles = data.PeptideCountPerFile.Keys.ToList();
+
+            // PCA mode
+            if (options.UsePcaView && _pcaResult != null)
+            {
+                DrawPcaChart(data, options, rawFiles, canvasWidth, canvasHeight);
+                return;
+            }
+
             var peptideCounts = rawFiles.Select(rf => data.PeptideCountPerFile[rf]).ToList();
             var ticValues = rawFiles.Select(rf => data.TotalIonCurrentPerFile.ContainsKey(rf) ?
                 data.TotalIonCurrentPerFile[rf] : 0).ToList();
@@ -244,8 +328,6 @@ namespace SCPBrowser
 
             double maxRatio = trypsinRatios.Any() ? trypsinRatios.Max() : 0.05;
             if (maxRatio < 0.01) maxRatio = 0.05;
-
-
 
             if (options.UseCellTypeColoring && options.CellTypePredictions != null)
             {
@@ -265,13 +347,197 @@ namespace SCPBrowser
                     proteinCounts, trypsinRatios, canvasWidth, canvasHeight);
                 _plotRenderer.DrawColorLegend(PlotCanvas, canvasWidth, canvasHeight, maxRatio);
             }
-            // *** END OF NEW LOGIC ***
 
             if (_selectionManager.PolygonPointsData.Count > 0)
             {
                 RedrawSelectionFromDataCoordinates();
             }
         }
+
+
+        private void DrawPcaChart(ProteomicsData data, ScatterPlotOptions options, List<string> rawFiles, double canvasWidth, double canvasHeight)
+        {
+            const double MarginLeft = 60;
+            const double MarginRight = 20;
+            const double MarginTop = 20;
+            const double MarginBottom = 50;
+
+            double plotWidth = canvasWidth - MarginLeft - MarginRight;
+            double plotHeight = canvasHeight - MarginTop - MarginBottom;
+
+            // Get PC scores
+            var pc1Scores = new List<double>();
+            var pc2Scores = new List<double>();
+
+            for (int i = 0; i < rawFiles.Count; i++)
+            {
+                pc1Scores.Add(_pcaResult.Scores[i, 0]);
+                pc2Scores.Add(_pcaResult.Scores[i, 1]);
+            }
+
+            // Calculate ranges with padding
+            double pc1Min = pc1Scores.Min();
+            double pc1Max = pc1Scores.Max();
+            double pc2Min = pc2Scores.Min();
+            double pc2Max = pc2Scores.Max();
+
+            double pc1Range = pc1Max - pc1Min;
+            double pc2Range = pc2Max - pc2Min;
+
+            pc1Min -= pc1Range * 0.1;
+            pc1Max += pc1Range * 0.1;
+            pc2Min -= pc2Range * 0.1;
+            pc2Max += pc2Range * 0.1;
+
+            // Draw axes
+            var axisColor = new SolidColorBrush(Color.FromRgb(100, 100, 100));
+
+            // X axis
+            var xAxis = new System.Windows.Shapes.Line
+            {
+                X1 = MarginLeft,
+                Y1 = canvasHeight - MarginBottom,
+                X2 = canvasWidth - MarginRight,
+                Y2 = canvasHeight - MarginBottom,
+                Stroke = axisColor,
+                StrokeThickness = 1
+            };
+            PlotCanvas.Children.Add(xAxis);
+
+            // Y axis
+            var yAxis = new System.Windows.Shapes.Line
+            {
+                X1 = MarginLeft,
+                Y1 = MarginTop,
+                X2 = MarginLeft,
+                Y2 = canvasHeight - MarginBottom,
+                Stroke = axisColor,
+                StrokeThickness = 1
+            };
+            PlotCanvas.Children.Add(yAxis);
+
+            // Axis labels with variance explained
+            string pc1Label = $"PC1 ({_pcaResult.VarianceExplained[0]:P1})";
+            string pc2Label = $"PC2 ({_pcaResult.VarianceExplained[1]:P1})";
+
+            var xLabel = new TextBlock
+            {
+                Text = pc1Label,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Colors.Black)
+            };
+            Canvas.SetLeft(xLabel, MarginLeft + plotWidth / 2 - 40);
+            Canvas.SetTop(xLabel, canvasHeight - 25);
+            PlotCanvas.Children.Add(xLabel);
+
+            var yLabel = new TextBlock
+            {
+                Text = pc2Label,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Colors.Black),
+                RenderTransform = new RotateTransform(-90)
+            };
+            Canvas.SetLeft(yLabel, 15);
+            Canvas.SetTop(yLabel, MarginTop + plotHeight / 2 + 40);
+            PlotCanvas.Children.Add(yLabel);
+
+            // Draw data points
+            _dataPoints = new List<DataPoint>();
+            const double MarkerSize = 8;
+
+            for (int i = 0; i < rawFiles.Count; i++)
+            {
+                double xNorm = (pc1Scores[i] - pc1Min) / (pc1Max - pc1Min);
+                double yNorm = (pc2Scores[i] - pc2Min) / (pc2Max - pc2Min);
+
+                double screenX = MarginLeft + xNorm * plotWidth;
+                double screenY = canvasHeight - MarginBottom - yNorm * plotHeight;
+
+                // Determine color
+                Color markerColor = Color.FromRgb(100, 149, 237); // Default: cornflower blue
+                string cellType = null;
+                string bioCondition = null;
+                CellTypeScore predictionScore = null;
+
+                if (options.UseCellTypeColoring && options.CellTypePredictions != null)
+                {
+                    if (options.CellTypePredictions.TryGetValue(rawFiles[i], out var prediction) && prediction.TopCellType != null)
+                    {
+                        cellType = prediction.TopCellType;
+                        predictionScore = prediction.TopScore;
+                        if (options.CellTypeColorMap != null && options.CellTypeColorMap.TryGetValue(cellType, out var color))
+                        {
+                            markerColor = color;
+                        }
+                    }
+                }
+                else if (options.UseBioConditionColoring && options.BioConditionPerFile != null)
+                {
+                    if (options.BioConditionPerFile.TryGetValue(rawFiles[i], out var condition) && !string.IsNullOrEmpty(condition))
+                    {
+                        bioCondition = condition;
+                        if (options.BioConditionColorMap != null && options.BioConditionColorMap.TryGetValue(condition, out var color))
+                        {
+                            markerColor = color;
+                        }
+                    }
+                }
+
+                var ellipse = new Ellipse
+                {
+                    Width = MarkerSize,
+                    Height = MarkerSize,
+                    Fill = new SolidColorBrush(markerColor),
+                    Stroke = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
+                    StrokeThickness = 1,
+                    Cursor = Cursors.Hand
+                };
+
+                Canvas.SetLeft(ellipse, screenX - MarkerSize / 2);
+                Canvas.SetTop(ellipse, screenY - MarkerSize / 2);
+                PlotCanvas.Children.Add(ellipse);
+
+                // Get additional data for DataPoint
+                int peptideCount = data.PeptideCountPerFile.ContainsKey(rawFiles[i]) ? data.PeptideCountPerFile[rawFiles[i]] : 0;
+                double ticValue = data.TotalIonCurrentPerFile.ContainsKey(rawFiles[i]) ? data.TotalIonCurrentPerFile[rawFiles[i]] : 0;
+                int proteinCount = data.ProteinCountPerFile.ContainsKey(rawFiles[i]) ? data.ProteinCountPerFile[rawFiles[i]] : 0;
+                double trypsinRatio = data.TargetProteinRatioPerFile.ContainsKey(rawFiles[i]) ? data.TargetProteinRatioPerFile[rawFiles[i]] : 0;
+
+                var dataPoint = new DataPoint
+                {
+                    RunName = rawFiles[i],
+                    XScreen = screenX,
+                    YScreen = screenY,
+                    XData = pc1Scores[i],
+                    YData = pc2Scores[i],
+                    PeptideCount = peptideCount,
+                    TicValue = ticValue,
+                    ProteinCount = proteinCount,
+                    TrypsinRatio = trypsinRatio,
+                    Visual = ellipse,
+                    BaseColor = markerColor,
+                    PredictedCellType = cellType,
+                    PredictionScore = predictionScore,
+                    BiologicalCondition = bioCondition
+                };
+
+                _dataPoints.Add(dataPoint);
+            }
+
+            // Draw legend if using coloring
+            if (options.UseCellTypeColoring && options.CellTypeColorMap != null)
+            {
+                DrawCellTypeLegend(PlotCanvas, canvasWidth, canvasHeight, options.CellTypeColorMap);
+            }
+            else if (options.UseBioConditionColoring && options.BioConditionColorMap != null)
+            {
+                DrawBioConditionLegend(PlotCanvas, canvasWidth, canvasHeight, options.BioConditionColorMap);
+            }
+        }
+
+
 
         private List<DataPoint> DrawDataPointsWithCellTypes(Canvas canvas, List<string> rawFiles, List<int> peptideCounts,
       List<double> ticValues, List<int> proteinCounts, List<double> trypsinRatios,

@@ -96,14 +96,19 @@ namespace SCPBrowser
                 return;
 
             bool isPcaMode = ViewPcaRadio.IsChecked == true;
+            bool isUmapMode = ViewUmapRadio.IsChecked == true;
 
-            // Disable Log-Log scale for PCA (doesn't apply)
-            LogLogCheckBox.IsEnabled = !isPcaMode;
+            // Disable Log-Log scale for PCA/UMAP (doesn't apply)
+            LogLogCheckBox.IsEnabled = !isPcaMode && !isUmapMode;
 
             // Update header text
             if (isPcaMode)
             {
                 PlotGroupBoxHeader.Text = "PCA - Principal Component Analysis";
+            }
+            else if (isUmapMode)
+            {
+                PlotGroupBoxHeader.Text = "UMAP - Uniform Manifold Approximation and Projection";
             }
             else
             {
@@ -295,6 +300,7 @@ namespace SCPBrowser
             {
                 UseLogLog = LogLogCheckBox.IsChecked == true,
                 UsePcaView = ViewPcaRadio.IsChecked == true,
+                UseUmapView = ViewUmapRadio.IsChecked == true,
                 UseCellTypeColoring = ColorByCellTypeRadio.IsChecked == true,
                 CellTypePredictions = _cellTypePredictions,
                 CellTypeColorMap = _cellTypeColorMap,

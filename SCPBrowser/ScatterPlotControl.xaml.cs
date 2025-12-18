@@ -9,12 +9,14 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using UMAP;
 
 namespace SCPBrowser
 {
     public class ScatterPlotOptions
     {
         public bool UsePcaView { get; set; } = false;
+        public bool UseUmapView { get; set; } = false;
         public bool UseLogLog { get; set; } = true;
         public bool UseCellTypeColoring { get; set; } = false;
         public Dictionary<string, CellTypePredictionResult> CellTypePredictions { get; set; }
@@ -49,11 +51,11 @@ namespace SCPBrowser
         private PlotRenderer _plotRenderer;
         private PcaResult _pcaResult;
         private double[] _pcaVarianceExplained;
+        private float[][] _umapResult;
         private SelectionManager _selectionManager;
         private bool _isRefreshing = false;
         private const double HoverTolerance = 12;
         private bool _suppressSelectionEvents = false;
-
         public event EventHandler<PlotSelectionChangedEventArgs> SelectionChanged;
         public event EventHandler<PointInteractionEventArgs> PointHovered;
         public event EventHandler<PointInteractionEventArgs> PointClicked;
@@ -90,10 +92,11 @@ namespace SCPBrowser
 
             try
             {
-                // Clear PCA if data changed
+                // Clear PCA/UMAP if data changed
                 if (_currentData != data)
                 {
                     _pcaResult = null;
+                    _umapResult = null;
                 }
 
                 _currentData = data;
@@ -122,6 +125,12 @@ namespace SCPBrowser
                     ComputePca(data);
                 }
 
+                // Compute UMAP if needed
+                if (options.UseUmapView && _umapResult == null)
+                {
+                    ComputeUmap(data);
+                }
+
                 DrawChart(data, options);
 
                 if (hadSelection && savedDataCoordinates.Count > 0)
@@ -142,6 +151,243 @@ namespace SCPBrowser
             {
                 _suppressSelectionEvents = false;
                 _isRefreshing = false;
+            }
+        }
+
+        private void ComputeUmap(ProteomicsData data)
+        {
+            if (data == null || data.ProteinQuantMatrix.Count == 0)
+            {
+                _umapResult = null;
+                return;
+            }
+
+            try
+            {
+                var rawFiles = data.RawFileNames.ToList();
+                var proteins = data.ProteinQuantMatrix.Keys.ToList();
+
+                int nSamples = rawFiles.Count;
+                int nProteins = proteins.Count;
+
+                if (nSamples < 15 || nProteins < 2)
+                {
+                    Console.WriteLine($"UMAP requires at least 15 samples, got {nSamples}");
+                    _umapResult = null;
+                    return;
+                }
+
+                // Build matrix: rows = samples (raw files), columns = proteins
+                // UMAP expects float[][] (jagged array)
+                float[][] matrix = new float[nSamples][];
+
+                for (int i = 0; i < nSamples; i++)
+                {
+                    matrix[i] = new float[nProteins];
+                    string rawFile = rawFiles[i];
+
+                    for (int j = 0; j < nProteins; j++)
+                    {
+                        string protein = proteins[j];
+                        if (data.ProteinQuantMatrix[protein].TryGetValue(rawFile, out double value) && value > 0)
+                        {
+                            matrix[i][j] = (float)Math.Log2(value + 1);
+                        }
+                        else
+                        {
+                            matrix[i][j] = 0f; // UMAP doesn't handle NaN well, use 0
+                        }
+                    }
+                }
+
+                // Run UMAP
+                var umap = new Umap(
+                    distance: Umap.DistanceFunctions.Euclidean,
+                    dimensions: 2,
+                    numberOfNeighbors: Math.Min(15, nSamples - 1)
+                );
+
+                int epochs = umap.InitializeFit(matrix);
+                for (int i = 0; i < epochs; i++)
+                {
+                    umap.Step();
+                }
+
+                _umapResult = umap.GetEmbedding();
+
+                Console.WriteLine($"UMAP computed: {_umapResult.Length} points embedded");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"UMAP computation failed: {ex.Message}");
+                _umapResult = null;
+            }
+        }
+
+        private void DrawUmapChart(ProteomicsData data, ScatterPlotOptions options, List<string> rawFiles, double canvasWidth, double canvasHeight)
+        {
+            const double MarginLeft = 60;
+            const double MarginRight = 20;
+            const double MarginTop = 20;
+            const double MarginBottom = 50;
+
+            double plotWidth = canvasWidth - MarginLeft - MarginRight;
+            double plotHeight = canvasHeight - MarginTop - MarginBottom;
+
+            // Get UMAP coordinates
+            var umap1 = new List<double>();
+            var umap2 = new List<double>();
+
+            for (int i = 0; i < rawFiles.Count; i++)
+            {
+                umap1.Add(_umapResult[i][0]);
+                umap2.Add(_umapResult[i][1]);
+            }
+
+            // Calculate ranges with padding
+            double umap1Min = umap1.Min();
+            double umap1Max = umap1.Max();
+            double umap2Min = umap2.Min();
+            double umap2Max = umap2.Max();
+
+            double umap1Range = umap1Max - umap1Min;
+            double umap2Range = umap2Max - umap2Min;
+
+            if (umap1Range < 0.001) umap1Range = 1;
+            if (umap2Range < 0.001) umap2Range = 1;
+
+            umap1Min -= umap1Range * 0.1;
+            umap1Max += umap1Range * 0.1;
+            umap2Min -= umap2Range * 0.1;
+            umap2Max += umap2Range * 0.1;
+
+            // Draw axes
+            var axisColor = new SolidColorBrush(Color.FromRgb(100, 100, 100));
+
+            var xAxis = new Line
+            {
+                X1 = MarginLeft,
+                Y1 = canvasHeight - MarginBottom,
+                X2 = canvasWidth - MarginRight,
+                Y2 = canvasHeight - MarginBottom,
+                Stroke = axisColor,
+                StrokeThickness = 1
+            };
+            PlotCanvas.Children.Add(xAxis);
+
+            var yAxis = new Line
+            {
+                X1 = MarginLeft,
+                Y1 = MarginTop,
+                X2 = MarginLeft,
+                Y2 = canvasHeight - MarginBottom,
+                Stroke = axisColor,
+                StrokeThickness = 1
+            };
+            PlotCanvas.Children.Add(yAxis);
+
+            // Axis labels
+            var xLabel = new TextBlock
+            {
+                Text = "UMAP 1",
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Colors.Black)
+            };
+            Canvas.SetLeft(xLabel, MarginLeft + plotWidth / 2 - 25);
+            Canvas.SetTop(xLabel, canvasHeight - 25);
+            PlotCanvas.Children.Add(xLabel);
+
+            var yLabel = new TextBlock
+            {
+                Text = "UMAP 2",
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Colors.Black),
+                RenderTransform = new RotateTransform(-90)
+            };
+            Canvas.SetLeft(yLabel, 15);
+            Canvas.SetTop(yLabel, MarginTop + plotHeight / 2 + 25);
+            PlotCanvas.Children.Add(yLabel);
+
+            // Draw data points
+            _dataPoints = new List<DataPoint>();
+            const double MarkerSize = 8;
+
+            for (int i = 0; i < rawFiles.Count; i++)
+            {
+                double xNorm = (umap1[i] - umap1Min) / (umap1Max - umap1Min);
+                double yNorm = (umap2[i] - umap2Min) / (umap2Max - umap2Min);
+
+                double screenX = MarginLeft + xNorm * plotWidth;
+                double screenY = canvasHeight - MarginBottom - yNorm * plotHeight;
+
+                // Determine color
+                Color markerColor = Color.FromRgb(100, 149, 237);
+                string cellType = null;
+                string bioCondition = null;
+                CellTypeScore predictionScore = null;
+
+                if (options.UseCellTypeColoring && options.CellTypePredictions != null)
+                {
+                    if (options.CellTypePredictions.TryGetValue(rawFiles[i], out var prediction))
+                    {
+                        cellType = prediction.TopCellType;
+                        predictionScore = prediction.TopScore;
+                        if (!string.IsNullOrEmpty(cellType) && options.CellTypeColorMap != null &&
+                            options.CellTypeColorMap.TryGetValue(cellType, out var color))
+                        {
+                            markerColor = color;
+                        }
+                    }
+                }
+                else if (options.UseBioConditionColoring && options.BioConditionPerFile != null)
+                {
+                    if (options.BioConditionPerFile.TryGetValue(rawFiles[i], out bioCondition) &&
+                        !string.IsNullOrEmpty(bioCondition) && options.BioConditionColorMap != null &&
+                        options.BioConditionColorMap.TryGetValue(bioCondition, out var color))
+                    {
+                        markerColor = color;
+                    }
+                }
+
+                var ellipse = new Ellipse
+                {
+                    Width = MarkerSize,
+                    Height = MarkerSize,
+                    Fill = new SolidColorBrush(markerColor),
+                    Stroke = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
+                    StrokeThickness = 1
+                };
+
+                Canvas.SetLeft(ellipse, screenX - MarkerSize / 2);
+                Canvas.SetTop(ellipse, screenY - MarkerSize / 2);
+                PlotCanvas.Children.Add(ellipse);
+
+                int peptideCount = data.PeptideCountPerFile.ContainsKey(rawFiles[i]) ? data.PeptideCountPerFile[rawFiles[i]] : 0;
+                double ticValue = data.TotalIonCurrentPerFile.ContainsKey(rawFiles[i]) ? data.TotalIonCurrentPerFile[rawFiles[i]] : 0;
+                int proteinCount = data.ProteinCountPerFile.ContainsKey(rawFiles[i]) ? data.ProteinCountPerFile[rawFiles[i]] : 0;
+                double trypsinRatio = data.TargetProteinRatioPerFile.ContainsKey(rawFiles[i]) ? data.TargetProteinRatioPerFile[rawFiles[i]] : 0;
+
+                var dataPoint = new DataPoint
+                {
+                    RunName = rawFiles[i],
+                    XScreen = screenX,
+                    YScreen = screenY,
+                    XData = umap1[i],
+                    YData = umap2[i],
+                    PeptideCount = peptideCount,
+                    TicValue = ticValue,
+                    ProteinCount = proteinCount,
+                    TrypsinRatio = trypsinRatio,
+                    Visual = ellipse,
+                    BaseColor = markerColor,
+                    PredictedCellType = cellType,
+                    PredictionScore = predictionScore,
+                    BiologicalCondition = bioCondition
+                };
+
+                _dataPoints.Add(dataPoint);
             }
         }
 
@@ -309,6 +555,13 @@ namespace SCPBrowser
             if (options.UsePcaView && _pcaResult != null)
             {
                 DrawPcaChart(data, options, rawFiles, canvasWidth, canvasHeight);
+                return;
+            }
+
+            // UMAP mode
+            if (options.UseUmapView && _umapResult != null)
+            {
+                DrawUmapChart(data, options, rawFiles, canvasWidth, canvasHeight);
                 return;
             }
 

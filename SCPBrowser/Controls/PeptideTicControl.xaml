@@ -101,9 +101,6 @@
                       Background="#e2e8f0"/>
 
         <TabControl Grid.Row="3" Margin="0,5,0,0">
-            <TabItem Header="GO Enrichment">
-                <local:GoEnrichmentTabControl x:Name="GoEnrichmentTab"/>
-            </TabItem>
             <TabItem Header="Selected Points">
                 <local:SelectedPointsGridControl x:Name="SelectedPointsGridPanel"/>
             </TabItem>

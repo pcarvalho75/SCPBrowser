@@ -31,7 +31,6 @@ namespace SCPBrowser
             InitializeComponent();
 
             ScatterPlot.SelectionChanged += ScatterPlot_SelectionChanged;
-            ScatterPlot.PointClicked += ScatterPlot_PointClicked;
             SelectedPointsGridPanel.GridSelectionChanged += SelectedPointsGridPanel_GridSelectionChanged;
 
             _isInitialized = true;
@@ -89,12 +88,6 @@ namespace SCPBrowser
         {
             _goEnrichmentResults = results;
             _goTermColorMap = colorMap;
-
-            // Update GO tab if we have selected points
-            if (_currentSelectedPoints.Count > 0)
-            {
-                GoEnrichmentTab.UpdateGoEnrichment(_currentSelectedPoints, _goEnrichmentResults);
-            }
         }
 
         private Dictionary<string, Color> GenerateBioConditionColorMap()
@@ -266,7 +259,6 @@ namespace SCPBrowser
             if (_currentData == null || _currentData.PeptideCountPerFile.Count == 0)
             {
                 SelectedPointsGridPanel.ClearGrid();
-                GoEnrichmentTab.ClearData();
                 ClearSelectionButton.IsEnabled = false;
 
                 ScatterPlot.UpdatePlot(null, new ScatterPlotOptions());
@@ -343,7 +335,6 @@ namespace SCPBrowser
 
                 // Clear UI panels
                 SelectedPointsGridPanel.ClearGrid();
-                GoEnrichmentTab.ClearData();
                 ClearSelectionButton.IsEnabled = false;
                 _currentSelectedPoints.Clear();
             }
@@ -372,7 +363,6 @@ namespace SCPBrowser
                 }).ToList();
 
                 SelectedPointsGridPanel.UpdateGrid(gridData);
-                GoEnrichmentTab.UpdateGoEnrichment(e.SelectedPoints, _goEnrichmentResults);
                 ClearSelectionButton.IsEnabled = true;
             }
             else
@@ -403,17 +393,7 @@ namespace SCPBrowser
                 }
 
                 SelectedPointsGridPanel.ClearGrid();
-                GoEnrichmentTab.ClearData();
                 ClearSelectionButton.IsEnabled = false;
-            }
-        }
-
-        private void ScatterPlot_PointClicked(object sender, PointInteractionEventArgs e)
-        {
-            // Update GO enrichment tab for the clicked point
-            if (e.DataPoint != null)
-            {
-                GoEnrichmentTab.UpdateGoEnrichment(new List<DataPoint> { e.DataPoint }, _goEnrichmentResults);
             }
         }
 

@@ -74,16 +74,13 @@ namespace SCPBrowser
         public void UpdatePlot(ProteomicsData data, ScatterPlotOptions options)
         {
             var stackTrace = new System.Diagnostics.StackTrace(true);
-            Console.WriteLine("UpdatePlot called from:");
             for (int i = 1; i < Math.Min(5, stackTrace.FrameCount); i++)
             {
                 var frame = stackTrace.GetFrame(i);
-                Console.WriteLine($"  [{i}] {frame.GetMethod().DeclaringType?.Name}.{frame.GetMethod().Name}");
             }
 
             if (_isRefreshing)
             {
-                Console.WriteLine("  -> Already refreshing, exiting");
                 return;
             }
 
@@ -115,7 +112,6 @@ namespace SCPBrowser
 
                 if (data == null || data.PeptideCountPerFile.Count == 0)
                 {
-                    Console.WriteLine($"  -> UpdatePlot: No data to display (data null: {data == null}, count: {data?.PeptideCountPerFile.Count ?? -1})");
                     return;
                 }
 
@@ -215,7 +211,6 @@ namespace SCPBrowser
 
                 _umapResult = umap.GetEmbedding();
 
-                Console.WriteLine($"UMAP computed: {_umapResult.Length} points embedded");
             }
             catch (Exception ex)
             {
@@ -442,7 +437,6 @@ namespace SCPBrowser
                     center: true,
                     scale: false);
 
-                Console.WriteLine($"PCA computed: PC1={_pcaResult.VarianceExplained[0]:P1}, PC2={_pcaResult.VarianceExplained[1]:P1}");
             }
             catch (Exception ex)
             {
@@ -505,7 +499,6 @@ namespace SCPBrowser
 
         public void ClearSelection()
         {
-            Console.WriteLine("Selection cleared");
             _selectionManager.ClearSelection();
 
             foreach (var point in _dataPoints)
@@ -1030,11 +1023,6 @@ namespace SCPBrowser
             var stackTrace = new System.Diagnostics.StackTrace();
             var callingMethod = stackTrace.GetFrame(1)?.GetMethod()?.Name;
 
-            Console.WriteLine($"RedrawSelectionFromDataCoordinates called by {callingMethod}:");
-            Console.WriteLine($"  -> PolygonPointsData.Count = {_selectionManager.PolygonPointsData.Count}");
-            Console.WriteLine($"  -> _dataPoints.Count = {_dataPoints.Count}");
-            Console.WriteLine($"  -> Canvas size = {PlotCanvas.ActualWidth}x{PlotCanvas.ActualHeight}");
-
             if (_selectionManager.PolygonPointsData.Count < 3)
             {
                 Console.WriteLine($"  -> Skipped: Less than 3 polygon points");
@@ -1055,9 +1043,6 @@ namespace SCPBrowser
         {
             var stackTrace = new System.Diagnostics.StackTrace();
             var callingMethod = stackTrace.GetFrame(1)?.GetMethod()?.Name;
-            Console.WriteLine($"UpdateSelectionVisuals called by {callingMethod}:");
-            Console.WriteLine($"  -> _dataPoints.Count = {_dataPoints.Count}");
-            Console.WriteLine($"  -> PolygonPointsScreen.Count = {_selectionManager.PolygonPointsScreen.Count}");
 
             var selectedPoints = new List<DataPoint>();
 
@@ -1080,12 +1065,9 @@ namespace SCPBrowser
                 }
             }
 
-            Console.WriteLine($"  -> Found {selectedPoints.Count} points in selection");
-
             // Only fire SelectionChanged event if not suppressed
             if (!_suppressSelectionEvents)
             {
-                Console.WriteLine($"  -> Firing SelectionChanged event");
                 SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = selectedPoints });
             }
             else
@@ -1274,7 +1256,6 @@ namespace SCPBrowser
 
         private void PlotCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            Console.WriteLine($"PlotCanvas_SizeChanged fired: {e.PreviousSize.Width}x{e.PreviousSize.Height} -> {e.NewSize.Width}x{e.NewSize.Height}");
 
             if (_currentData == null)
             {
@@ -1299,14 +1280,6 @@ namespace SCPBrowser
 
             if (shouldRefresh)
             {
-                if (isInitialization)
-                {
-                    Console.WriteLine($"  -> Initial canvas sizing (0x0 -> real size)");
-                }
-                else
-                {
-                    Console.WriteLine($"  -> Canvas resize accepted: {widthChange:F2}px width change, {heightChange:F2}px height change");
-                }
 
                 UpdatePlot(_currentData, _currentOptions);
             }

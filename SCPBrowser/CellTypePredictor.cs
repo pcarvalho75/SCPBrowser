@@ -152,8 +152,9 @@ namespace SCPBrowser
             // Note: using MathNet.Numerics.Statistics for Mean() and StandardDeviation()
             var spearmanValues = results.Values.Select(x => x.SpearmanCorrelation).ToList();
             var specificityValues = results.Values.Select(x => x.SpecificityScore).ToList();
-            // Convert P-Value to "Enrichment Score" (1 - P) so "higher is better"
-            var enrichmentValues = results.Values.Select(x => 1.0 - x.HypergeometricPValue).ToList();
+            // Convert P-Value to -log10(p) so "higher is better" with better separation at significant values
+            // Clamp minimum p-value to 1e-300 to avoid infinity
+            var enrichmentValues = results.Values.Select(x => -Math.Log10(Math.Max(x.HypergeometricPValue, 1e-300))).ToList();
 
             // 3. Calculate Statistics (Mean and StdDev)
             double meanSpearman = spearmanValues.Mean();
@@ -174,7 +175,7 @@ namespace SCPBrowser
                 // Guard against divide-by-zero if all scores are identical (StdDev ~ 0)
                 double zSpearman = stdSpearman > 1e-9 ? (score.SpearmanCorrelation - meanSpearman) / stdSpearman : 0;
                 double zSpecificity = stdSpec > 1e-9 ? (score.SpecificityScore - meanSpec) / stdSpec : 0;
-                double zEnrichment = stdEnrich > 1e-9 ? ((1.0 - score.HypergeometricPValue) - meanEnrich) / stdEnrich : 0;
+                double zEnrichment = stdEnrich > 1e-9 ? (-Math.Log10(Math.Max(score.HypergeometricPValue, 1e-300)) - meanEnrich) / stdEnrich : 0;
 
                 // Final Composite Score is the average of the Z-Scores
                 // This gives equal weight to each statistical line of evidence
@@ -230,45 +231,6 @@ namespace SCPBrowser
                 SpecificityScore = specificityScore,
                 HypergeometricPValue = hypergeometricPValue,
                 CompositeScore = 0
-            };
-        }
-
-        /// <summary>
-        /// Calculates a comprehensive score combining multiple statistical approaches
-        /// </summary>
-        private CellTypeScore CalculateComprehensiveScore(Dictionary<string, double> proteinAbundances, string cellType)
-        {
-            if (!_database.CellTypeProfiles.ContainsKey(cellType))
-            {
-                return new CellTypeScore
-                {
-                    SpearmanCorrelation = 0,
-                    SpecificityScore = 0,
-                    HypergeometricPValue = 1.0,
-                    CompositeScore = 0
-                };
-            }
-
-            var profile = _database.CellTypeProfiles[cellType];
-
-            // 1. Spearman correlation: How well do protein ranks correlate with transcript ranks?
-            double spearmanCorr = CalculateSpearmanCorrelation(proteinAbundances, profile);
-
-            // 2. Specificity-weighted score: Prioritize specific marker genes
-            double specificityScore = CalculateSpecificityWeightedScore(proteinAbundances, profile);
-
-            // 3. Hypergeometric p-value: Is the overlap with markers statistically significant?
-            double hypergeometricPValue = CalculateHypergeometricPValue(proteinAbundances.Keys.ToList(), cellType);
-
-            // Combine scores: correlation (40%) + specificity (40%) + enrichment (20%)
-            double compositeScore = (spearmanCorr * 0.4) + (specificityScore * 0.4) + ((1 - hypergeometricPValue) * 0.2);
-
-            return new CellTypeScore
-            {
-                SpearmanCorrelation = spearmanCorr,
-                SpecificityScore = specificityScore,
-                HypergeometricPValue = hypergeometricPValue,
-                CompositeScore = Math.Max(0, compositeScore)
             };
         }
 
@@ -423,13 +385,13 @@ namespace SCPBrowser
     public class CellTypeScore
     {
         /// <summary>
-        /// Spearman rank correlation between proteomics and transcriptomics profiles (0-1)
-        /// Higher = better rank agreement
+        /// Spearman rank correlation between proteomics and transcriptomics profiles (-1 to +1)
+        /// Higher = better rank agreement, negative = inverse correlation
         /// </summary>
         public double SpearmanCorrelation { get; set; }
 
         /// <summary>
-        /// Specificity-weighted similarity score (0-∞, typically 0-10)
+        /// Specificity-weighted similarity score (0 to unbounded, typically 0-10)
         /// Higher = more specific marker genes match
         /// </summary>
         public double SpecificityScore { get; set; }
@@ -441,8 +403,8 @@ namespace SCPBrowser
         public double HypergeometricPValue { get; set; }
 
         /// <summary>
-        /// Composite score combining all metrics (0-1)
-        /// Higher = better overall match
+        /// Z-score based composite combining all metrics (unbounded, can be negative)
+        /// Higher = better overall match relative to other cell types
         /// </summary>
         public double CompositeScore { get; set; }
 

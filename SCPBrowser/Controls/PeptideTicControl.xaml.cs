@@ -101,6 +101,9 @@ namespace SCPBrowser
             // Disable Log-Log scale for PCA/UMAP (doesn't apply)
             LogLogCheckBox.IsEnabled = !isPcaMode && !isUmapMode;
 
+            // Enable Loadings button only in PCA mode
+            ShowLoadingsButton.IsEnabled = isPcaMode;
+
             // Update header text
             if (isPcaMode)
             {
@@ -119,6 +122,28 @@ namespace SCPBrowser
             {
                 RefreshChart();
             }
+        }
+
+        private void ShowLoadingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var loadingsData = ScatterPlot.GetPcaLoadings();
+
+            if (loadingsData == null)
+            {
+                MessageBox.Show("PCA has not been computed yet. Select some data first.",
+                    "No PCA Data", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dialog = new PcaLoadingsDialog(
+                loadingsData.Value.ProteinNames,
+                loadingsData.Value.Loadings,
+                loadingsData.Value.VarianceExplained)
+            {
+                Owner = Window.GetWindow(this)
+            };
+
+            dialog.ShowDialog();
         }
 
         private Dictionary<string, Color> GenerateBioConditionColorMap()

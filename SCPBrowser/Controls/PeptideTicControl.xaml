@@ -34,7 +34,16 @@
                          Margin="0,0,30,0"
                          VerticalAlignment="Center"
                          Checked="ViewMode_Changed"/>
-            
+
+            <Button x:Name="ShowLoadingsButton"
+                Content="Loadings"
+                Click="ShowLoadingsButton_Click"
+                Padding="6,2"
+                Margin="0,0,15,0"
+                VerticalAlignment="Center"
+                IsEnabled="False"
+                ToolTip="Show which proteins drive PC1 and PC2 separation"/>    
+
             <RadioButton x:Name="ViewUmapRadio"
              Content="UMAP"
              GroupName="ViewMode"

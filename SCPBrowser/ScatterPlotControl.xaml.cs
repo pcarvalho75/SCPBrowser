@@ -51,6 +51,7 @@ namespace SCPBrowser
         private PlotRenderer _plotRenderer;
         private PcaResult _pcaResult;
         private double[] _pcaVarianceExplained;
+        private List<string> _pcaProteinNames;
         private float[][] _umapResult;
         private SelectionManager _selectionManager;
         private bool _isRefreshing = false;
@@ -93,6 +94,7 @@ namespace SCPBrowser
                 if (_currentData != data)
                 {
                     _pcaResult = null;
+                    _pcaProteinNames = null;
                     _umapResult = null;
                 }
 
@@ -148,6 +150,17 @@ namespace SCPBrowser
                 _suppressSelectionEvents = false;
                 _isRefreshing = false;
             }
+        }
+
+        /// <summary>
+        /// Gets PCA loadings data for display. Returns null if PCA hasn't been computed.
+        /// </summary>
+        public (List<string> ProteinNames, double[,] Loadings, double[] VarianceExplained)? GetPcaLoadings()
+        {
+            if (_pcaResult == null || _pcaProteinNames == null)
+                return null;
+
+            return (_pcaProteinNames, _pcaResult.Loadings, _pcaResult.VarianceExplained);
         }
 
         private void ComputeUmap(ProteomicsData data)
@@ -391,6 +404,7 @@ namespace SCPBrowser
             if (data == null || data.ProteinQuantMatrix.Count == 0)
             {
                 _pcaResult = null;
+                _pcaProteinNames = null;
                 return;
             }
 
@@ -405,6 +419,7 @@ namespace SCPBrowser
                 if (nSamples < 3 || nProteins < 2)
                 {
                     _pcaResult = null;
+                    _pcaProteinNames = null;
                     return;
                 }
 
@@ -419,11 +434,11 @@ namespace SCPBrowser
                         string protein = proteins[j];
                         if (data.ProteinQuantMatrix[protein].TryGetValue(rawFile, out double value) && value > 0)
                         {
-                            matrix[i, j] = Math.Log2(value + 1); // Log transform
+                            matrix[i, j] = Math.Log2(value + 1);
                         }
                         else
                         {
-                            matrix[i, j] = double.NaN; // Missing value
+                            matrix[i, j] = double.NaN;
                         }
                     }
                 }
@@ -437,11 +452,13 @@ namespace SCPBrowser
                     center: true,
                     scale: false);
 
+                _pcaProteinNames = proteins;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"PCA computation failed: {ex.Message}");
                 _pcaResult = null;
+                _pcaProteinNames = null;
             }
         }
 

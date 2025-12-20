@@ -67,7 +67,6 @@ namespace SCPBrowser.Services
                     GeneName = geneName,
                     Abundances = conditionAbundances,
                     GoTerms = new List<string>(),
-                    HierarchyPath = new List<string>()
                 });
             }
 

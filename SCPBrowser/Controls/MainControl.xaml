@@ -36,64 +36,83 @@
         </StackPanel>
 
         <StackPanel x:Name="StatusPanel" 
-                    Grid.Row="1" 
-                    Orientation="Horizontal" 
-                    Margin="0,15,0,10"
-                    Visibility="Collapsed">
+            Grid.Row="1" 
+            Orientation="Horizontal" 
+            Margin="0,15,0,10"
+            Visibility="Collapsed">
+
+            <Border Background="#faf5ff" 
+            BorderBrush="#9333ea" 
+            BorderThickness="1" 
+            CornerRadius="4" 
+            Padding="15,10"
+            Margin="0,0,10,0">
+                <StackPanel>
+                    <TextBlock Text="Plates" 
+                       FontSize="11" 
+                       Foreground="#64748b" 
+                       FontWeight="SemiBold"/>
+                    <TextBlock x:Name="TotalPlatesText" 
+                       Text="0" 
+                       FontSize="24" 
+                       FontWeight="Bold" 
+                       Foreground="#9333ea"/>
+                </StackPanel>
+            </Border>
 
             <Border Background="#f0f9ff" 
-                    BorderBrush="#0284c7" 
-                    BorderThickness="1" 
-                    CornerRadius="4" 
-                    Padding="15,10"
-                    Margin="0,0,10,0">
+            BorderBrush="#0284c7" 
+            BorderThickness="1" 
+            CornerRadius="4" 
+            Padding="15,10"
+            Margin="0,0,10,0">
                 <StackPanel>
                     <TextBlock Text="Total Runs" 
-                               FontSize="11" 
-                               Foreground="#64748b" 
-                               FontWeight="SemiBold"/>
+                       FontSize="11" 
+                       Foreground="#64748b" 
+                       FontWeight="SemiBold"/>
                     <TextBlock x:Name="TotalRunsText" 
-                               Text="0" 
-                               FontSize="24" 
-                               FontWeight="Bold" 
-                               Foreground="#0284c7"/>
+                       Text="0" 
+                       FontSize="24" 
+                       FontWeight="Bold" 
+                       Foreground="#0284c7"/>
                 </StackPanel>
             </Border>
 
             <Border Background="#fef3c7" 
-                    BorderBrush="#d97706" 
-                    BorderThickness="1" 
-                    CornerRadius="4" 
-                    Padding="15,10"
-                    Margin="0,0,10,0">
+            BorderBrush="#d97706" 
+            BorderThickness="1" 
+            CornerRadius="4" 
+            Padding="15,10"
+            Margin="0,0,10,0">
                 <StackPanel>
                     <TextBlock Text="Protein Groups" 
-                               FontSize="11" 
-                               Foreground="#64748b" 
-                               FontWeight="SemiBold"/>
+                       FontSize="11" 
+                       Foreground="#64748b" 
+                       FontWeight="SemiBold"/>
                     <TextBlock x:Name="TotalProteinsText" 
-                               Text="0" 
-                               FontSize="24" 
-                               FontWeight="Bold" 
-                               Foreground="#d97706"/>
+                       Text="0" 
+                       FontSize="24" 
+                       FontWeight="Bold" 
+                       Foreground="#d97706"/>
                 </StackPanel>
             </Border>
 
             <Border Background="#f0fdf4" 
-                    BorderBrush="#16a34a" 
-                    BorderThickness="1" 
-                    CornerRadius="4" 
-                    Padding="15,10">
+            BorderBrush="#16a34a" 
+            BorderThickness="1" 
+            CornerRadius="4" 
+            Padding="15,10">
                 <StackPanel>
                     <TextBlock Text="Peptides" 
-                               FontSize="11" 
-                               Foreground="#64748b" 
-                               FontWeight="SemiBold"/>
+                       FontSize="11" 
+                       Foreground="#64748b" 
+                       FontWeight="SemiBold"/>
                     <TextBlock x:Name="TotalPeptidesText" 
-                               Text="0" 
-                               FontSize="24" 
-                               FontWeight="Bold" 
-                               Foreground="#16a34a"/>
+                       Text="0" 
+                       FontSize="24" 
+                       FontWeight="Bold" 
+                       Foreground="#16a34a"/>
                 </StackPanel>
             </Border>
         </StackPanel>

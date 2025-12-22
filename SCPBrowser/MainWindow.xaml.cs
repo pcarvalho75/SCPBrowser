@@ -116,7 +116,7 @@ namespace SCPBrowser
 
                 // Run service initialization and database work on background thread
                 ProjectInfo projectInfo = null;
-                string lastImportedFile = null;
+                List<string> allImportedFiles = null;
 
                 await Task.Run(async () =>
                 {
@@ -134,8 +134,8 @@ namespace SCPBrowser
                     // Load project info
                     projectInfo = await _projectDatabaseService.GetProjectInfoAsync();
 
-                    // Get last imported file
-                    lastImportedFile = await _parquetService.GetLastImportedParquetFileAsync();
+                    // Get ALL imported files
+                    allImportedFiles = await _parquetService.GetAllImportedParquetFilesAsync();
                 });
 
                 if (projectInfo == null)
@@ -165,31 +165,42 @@ namespace SCPBrowser
 
                 UpdateWindowTitle(projectInfo.ProjectName);
 
-                // Find and load the last imported parquet file
+                // Find and load ALL imported parquet files
                 LoadingOverlay.SetProgress("Finding associated data...");
 
-                string parquetPath = null;
+                List<string> parquetPaths = new List<string>();
 
-                if (!string.IsNullOrEmpty(lastImportedFile))
+                if (allImportedFiles != null && allImportedFiles.Count > 0)
                 {
                     string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
-                    parquetPath = Path.Combine(projectDirectory, "imports", lastImportedFile);
 
-                    bool fileExists = await Task.Run(() => File.Exists(parquetPath));
-
-                    if (!fileExists)
+                    foreach (var fileName in allImportedFiles)
                     {
-                        LoadingOverlay.Hide();
-                        MessageBox.Show(
-                            $"Data file '{lastImportedFile}' not found in imports folder.\n\nPlease re-import your data.",
-                            "Data File Missing",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Warning);
-                        parquetPath = null;
+                        string parquetPath = Path.Combine(projectDirectory, "imports", fileName);
+                        bool fileExists = await Task.Run(() => File.Exists(parquetPath));
+
+                        if (fileExists)
+                        {
+                            parquetPaths.Add(parquetPath);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Warning: Data file '{fileName}' not found in imports folder.");
+                        }
+                    }
+
+                    if (parquetPaths.Count > 0)
+                    {
+                        LoadingOverlay.SetProgress($"Loading data from {parquetPaths.Count} file(s)...");
                     }
                     else
                     {
-                        LoadingOverlay.SetProgress($"Loading data from {lastImportedFile}...");
+                        LoadingOverlay.Hide();
+                        MessageBox.Show(
+                            "No data files found in imports folder.\n\nPlease re-import your data.",
+                            "Data Files Missing",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
                     }
                 }
                 else
@@ -199,7 +210,7 @@ namespace SCPBrowser
 
                 // Load data into MainControlTab
                 // This will trigger the DataLoaded event which populates other tabs
-                await MainControlTab.LoadDataFromProject(parquetPath, _projectReferenceDatabasePath);
+                await MainControlTab.LoadDataFromProject(parquetPaths, _projectReferenceDatabasePath);
 
                 LoadingOverlay.Hide();
 
@@ -416,15 +427,24 @@ namespace SCPBrowser
                     // Refresh plate filter
                     await PlateFilterControl.LoadPlatesAsync(_currentProjectPath);
 
-                    // Get the last imported parquet file and reload data
-                    var lastImportedFile = await _parquetService.GetLastImportedParquetFileAsync();
-                    if (!string.IsNullOrEmpty(lastImportedFile))
+                    // Get ALL imported parquet files and reload data
+                    var allImportedFiles = await _parquetService.GetAllImportedParquetFilesAsync();
+                    if (allImportedFiles != null && allImportedFiles.Count > 0)
                     {
-                        string parquetPath = Path.Combine(projectDirectory, "imports", lastImportedFile);
-                        if (File.Exists(parquetPath))
+                        List<string> parquetPaths = new List<string>();
+                        foreach (var fileName in allImportedFiles)
                         {
-                            LoadingOverlay.SetProgress($"Loading {lastImportedFile}...");
-                            await MainControlTab.LoadDataFromProject(parquetPath, _projectReferenceDatabasePath);
+                            string parquetPath = Path.Combine(projectDirectory, "imports", fileName);
+                            if (File.Exists(parquetPath))
+                            {
+                                parquetPaths.Add(parquetPath);
+                            }
+                        }
+
+                        if (parquetPaths.Count > 0)
+                        {
+                            LoadingOverlay.SetProgress($"Loading {parquetPaths.Count} parquet file(s)...");
+                            await MainControlTab.LoadDataFromProject(parquetPaths, _projectReferenceDatabasePath);
                         }
                     }
 

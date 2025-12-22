@@ -126,6 +126,120 @@ namespace SCPBrowser.Services
         }
 
         /// <summary>
+        /// Gets all imported parquet file names
+        /// </summary>
+        public async Task<List<string>> GetAllImportedParquetFilesAsync()
+        {
+            var fileNames = new List<string>();
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                SELECT file_name 
+                FROM parquet_imports 
+                ORDER BY import_timestamp ASC";
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            fileNames.Add(reader.GetString(0));
+                        }
+                    }
+                }
+            }
+
+            return fileNames;
+        }
+
+        /// <summary>
+        /// Loads multiple parquet files and merges them into a single ProteomicsData object
+        /// </summary>
+        public async Task<ProteomicsData> LoadMultipleParquetFilesAsync(List<string> filePaths, ColumnMapping mapping)
+        {
+            if (filePaths == null || filePaths.Count == 0)
+                return new ProteomicsData();
+
+            // Load the first file as the base
+            var mergedData = await LoadParquetFileAsync(filePaths[0], mapping);
+
+            // Merge additional files
+            for (int i = 1; i < filePaths.Count; i++)
+            {
+                var additionalData = await LoadParquetFileAsync(filePaths[i], mapping);
+
+                // Merge RawFileNames
+                foreach (var rawFile in additionalData.RawFileNames)
+                {
+                    if (!mergedData.RawFileNames.Contains(rawFile))
+                        mergedData.RawFileNames.Add(rawFile);
+                }
+
+                // Merge ProteinCountPerFile
+                foreach (var kvp in additionalData.ProteinCountPerFile)
+                {
+                    mergedData.ProteinCountPerFile[kvp.Key] = kvp.Value;
+                }
+
+                // Merge PeptideCountPerFile
+                foreach (var kvp in additionalData.PeptideCountPerFile)
+                {
+                    mergedData.PeptideCountPerFile[kvp.Key] = kvp.Value;
+                }
+
+                // Merge TotalIonCurrentPerFile
+                foreach (var kvp in additionalData.TotalIonCurrentPerFile)
+                {
+                    mergedData.TotalIonCurrentPerFile[kvp.Key] = kvp.Value;
+                }
+
+                // Merge TargetProteinRatioPerFile
+                foreach (var kvp in additionalData.TargetProteinRatioPerFile)
+                {
+                    mergedData.TargetProteinRatioPerFile[kvp.Key] = kvp.Value;
+                }
+
+                // Merge BiologicalConditionPerFile
+                foreach (var kvp in additionalData.BiologicalConditionPerFile)
+                {
+                    mergedData.BiologicalConditionPerFile[kvp.Key] = kvp.Value;
+                }
+
+                // Merge ProteinQuantMatrix
+                foreach (var proteinKvp in additionalData.ProteinQuantMatrix)
+                {
+                    if (!mergedData.ProteinQuantMatrix.ContainsKey(proteinKvp.Key))
+                    {
+                        mergedData.ProteinQuantMatrix[proteinKvp.Key] = new Dictionary<string, double>();
+                    }
+
+                    foreach (var fileKvp in proteinKvp.Value)
+                    {
+                        mergedData.ProteinQuantMatrix[proteinKvp.Key][fileKvp.Key] = fileKvp.Value;
+                    }
+                }
+
+                // Merge ProteinToGeneMap
+                foreach (var kvp in additionalData.ProteinToGeneMap)
+                {
+                    mergedData.ProteinToGeneMap[kvp.Key] = kvp.Value;
+                }
+            }
+
+            // Recalculate totals
+            mergedData.TotalRawFiles = mergedData.RawFileNames.Count;
+            mergedData.TotalProteinGroups = mergedData.ProteinQuantMatrix.Count;
+            mergedData.TotalPeptides = mergedData.PeptideCountPerFile.Values.Sum();
+
+            return mergedData;
+        }
+
+        /// <summary>
         /// Gets the most recent import ID
         /// </summary>
         public async Task<int?> GetMostRecentImportIdAsync()

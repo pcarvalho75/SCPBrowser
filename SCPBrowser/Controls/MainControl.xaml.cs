@@ -23,6 +23,7 @@ namespace SCPBrowser
         private readonly GoEnrichmentManager _goEnrichmentManager;
         private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
         private string _projectDatabasePath;
+        private List<string> _allParquetFilePaths;
 
         public MainControl()
         {
@@ -189,17 +190,18 @@ namespace SCPBrowser
         }
 
 
-        public async Task LoadDataFromProject(string parquetFilePath, string databasePath)
+        public async Task LoadDataFromProject(List<string> parquetFilePaths, string databasePath)
         {
             _projectDatabasePath = databasePath; // Store it
 
-            if (string.IsNullOrEmpty(parquetFilePath))
+            if (parquetFilePaths == null || parquetFilePaths.Count == 0)
             {
                 // No data has been imported yet
                 StatusPanel.Visibility = Visibility.Collapsed;
                 TotalRunsText.Text = "0";
                 TotalProteinsText.Text = "0";
                 TotalPeptidesText.Text = "0";
+                TotalPlatesText.Text = "0";
                 StatusText.Text = "Project open. Please import a Parquet file to see data.";
                 ReloadButton.IsEnabled = false;
 
@@ -217,30 +219,12 @@ namespace SCPBrowser
                 return;
             }
 
-            if (!File.Exists(parquetFilePath))
-            {
-                // File was imported but now missing
-                StatusPanel.Visibility = Visibility.Collapsed;
-                TotalRunsText.Text = "0";
-                TotalProteinsText.Text = "0";
-                TotalPeptidesText.Text = "0";
-                StatusText.Text = $"Error: Data file not found at {Path.GetFileName(parquetFilePath)}";
-                ReloadButton.IsEnabled = false;
+            // Store first file path for reload functionality
+            _currentFilePath = parquetFilePaths[0];
+            _currentFileDirectory = Path.GetDirectoryName(parquetFilePaths[0]);
 
-                MessageBox.Show(
-                    $"Associated data file not found:\n\n{Path.GetFileName(parquetFilePath)}\n\n" +
-                    $"Expected location:\n{parquetFilePath}\n\n" +
-                    "The file may have been moved or deleted. Please re-import your data.",
-                    "Data File Missing",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-
-                return;
-            }
-
-            // File exists - load it normally
-            _currentFilePath = parquetFilePath;
-            _currentFileDirectory = Path.GetDirectoryName(parquetFilePath);
+            // Store all paths for potential future use
+            _allParquetFilePaths = parquetFilePaths;
 
             await LoadDataAsync();
         }
@@ -263,7 +247,7 @@ namespace SCPBrowser
                 var mainWindow = Window.GetWindow(this) as MainWindow;
                 if (mainWindow != null)
                 {
-                    mainWindow.LoadingOverlay.SetMessage("Loading Parquet File...");
+                    mainWindow.LoadingOverlay.SetMessage("Loading Parquet Files...");
                     mainWindow.LoadingOverlay.SetProgress("Reading data structure...");
                     mainWindow.LoadingOverlay.Show();
                 }
@@ -293,15 +277,41 @@ namespace SCPBrowser
                     mainWindow.LoadingOverlay.SetProgress("Parsing proteomics data...");
                 }
 
-                _currentData = await _dataService.LoadParquetFileAsync(_currentFilePath, mapping);
-
-                _currentData = await _dataService.LoadParquetFileAsync(_currentFilePath, mapping);
+                // Load from multiple files if available, otherwise single file
+                if (_allParquetFilePaths != null && _allParquetFilePaths.Count > 1)
+                {
+                    if (mainWindow != null)
+                    {
+                        mainWindow.LoadingOverlay.SetProgress($"Loading {_allParquetFilePaths.Count} parquet files...");
+                    }
+                    _currentData = await _dataService.LoadMultipleParquetFilesAsync(_allParquetFilePaths, mapping);
+                }
+                else
+                {
+                    _currentData = await _dataService.LoadParquetFileAsync(_currentFilePath, mapping);
+                }
 
                 // Populate biological conditions from database if available
                 if (!string.IsNullOrEmpty(_projectDatabasePath))
                 {
                     var dataServiceWithDb = new ParquetDataService(_projectDatabasePath);
                     await dataServiceWithDb.PopulateBiologicalConditionsAsync(_currentData);
+                }
+
+                TotalRunsText.Text = _currentData.TotalRawFiles.ToString();
+                TotalProteinsText.Text = _currentData.TotalProteinGroups.ToString();
+                TotalPeptidesText.Text = _currentData.TotalPeptides.ToString();
+
+                // Set plate count
+                if (!string.IsNullOrEmpty(_projectDatabasePath))
+                {
+                    var plateService = new PlateService(_projectDatabasePath);
+                    var plates = await plateService.GetPlatesAsync();
+                    TotalPlatesText.Text = plates.Count.ToString();
+                }
+                else
+                {
+                    TotalPlatesText.Text = _allParquetFilePaths?.Count.ToString() ?? "1";
                 }
 
                 TotalRunsText.Text = _currentData.TotalRawFiles.ToString();

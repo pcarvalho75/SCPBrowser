@@ -126,6 +126,37 @@ namespace SCPBrowser.Services
         }
 
         /// <summary>
+        /// Gets a mapping from raw file names to raw file IDs
+        /// </summary>
+        public async Task<Dictionary<string, int>> GetRawFileNameToIdMappingAsync()
+        {
+            var mapping = new Dictionary<string, int>();
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "SELECT raw_file_id, raw_file_name FROM raw_files";
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            int rawFileId = reader.GetInt32(0);
+                            string rawFileName = reader.GetString(1);
+                            mapping[rawFileName] = rawFileId;
+                        }
+                    }
+                }
+            }
+
+            return mapping;
+        }
+
+        /// <summary>
         /// Gets all imported parquet file names
         /// </summary>
         public async Task<List<string>> GetAllImportedParquetFilesAsync()

@@ -19,12 +19,17 @@ namespace SCPBrowser
         private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
         private Dictionary<string, Color> _goTermColorMap;
         private List<DataPoint> _currentSelectedPoints = new List<DataPoint>();
+        private Dictionary<string, int> _runNameToRawFileId = new Dictionary<string, int>();
+        private HashSet<string> _excludedRunNames = new HashSet<string>();
 
         private HashSet<string> _checkedBioConditions = new HashSet<string>();
         private HashSet<string> _checkedCellTypes = new HashSet<string>();
         private bool _suppressCheckboxEvents = false;
-        // Add this new event
+
         public event EventHandler CellTypePredictionsRequested;
+        public event EventHandler SelectionChangedForBioTessera;
+        public event EventHandler<RunInclusionChangedEventArgs> RunInclusionChanged;
+        public event EventHandler ClearAllExclusionsRequested;
         private bool _isLassoActive = false;
 
         public PeptideTicControl()
@@ -34,7 +39,44 @@ namespace SCPBrowser
             ScatterPlot.SelectionChanged += ScatterPlot_SelectionChanged;
             SelectedPointsGridPanel.GridSelectionChanged += SelectedPointsGridPanel_GridSelectionChanged;
 
+            SelectedPointsGridPanel.RunInclusionChanged += SelectedPointsGridPanel_RunInclusionChanged;
+            SelectedPointsGridPanel.ClearAllExclusionsRequested += SelectedPointsGridPanel_ClearAllExclusionsRequested;
+
             _isInitialized = true;
+        }
+
+        /// <summary>
+        /// Sets the excluded run names (loaded from database on project open)
+        /// </summary>
+        public void SetExcludedRuns(HashSet<string> excludedRunNames)
+        {
+            _excludedRunNames = excludedRunNames ?? new HashSet<string>();
+        }
+
+        /// <summary>
+        /// Sets the mapping from run names to raw file IDs for exclusion tracking
+        /// </summary>
+        public void SetRawFileIdMapping(Dictionary<string, int> mapping)
+        {
+            _runNameToRawFileId = mapping ?? new Dictionary<string, int>();
+        }
+
+        private void SelectedPointsGridPanel_RunInclusionChanged(object sender, RunInclusionChangedEventArgs e)
+        {
+            // Bubble up to MainWindow for database persistence
+            RunInclusionChanged?.Invoke(this, e);
+
+            // Trigger BioTessera update
+            SelectionChangedForBioTessera?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void SelectedPointsGridPanel_ClearAllExclusionsRequested(object sender, EventArgs e)
+        {
+            // Bubble up to MainWindow for database persistence
+            ClearAllExclusionsRequested?.Invoke(this, e);
+
+            // Trigger BioTessera update
+            SelectionChangedForBioTessera?.Invoke(this, EventArgs.Empty);
         }
 
         public void UpdateChart(ProteomicsData data)
@@ -79,7 +121,7 @@ namespace SCPBrowser
             // No longer needed - RunDetailPanel was removed
         }
 
-        public void SetCellTypePredictions(Dictionary<string, CellTypePredictionResult> predictions, Dictionary<string, Color> colorMap)
+        public void SetCellTypePredictions(Dictionary<string, CellTypePredictionResult> predictions, Dictionary<string, Color> colorMap, bool selectCellTypeMode = false)
         {
             _cellTypePredictions = predictions;
             _cellTypeColorMap = colorMap;
@@ -87,8 +129,14 @@ namespace SCPBrowser
 
             if (_currentData != null)
             {
-                // If cell type mode is selected, populate the checkboxes now that we have the color map
-                if (ColorByCellTypeRadio.IsChecked == true && _cellTypeColorMap != null && _cellTypeColorMap.Count > 0)
+                // Auto-select Cell Type mode if requested and predictions are available
+                if (selectCellTypeMode && predictions != null && predictions.Count > 0)
+                {
+                    ColorByCellTypeRadio.IsChecked = true;
+                    // ColorMode_Changed will be triggered automatically, which populates checkboxes
+                }
+                // If cell type mode is already selected, populate the checkboxes
+                else if (ColorByCellTypeRadio.IsChecked == true && _cellTypeColorMap != null && _cellTypeColorMap.Count > 0)
                 {
                     PopulateCellTypeCheckboxes();
                     BioConditionPanel.Visibility = Visibility.Visible;
@@ -267,9 +315,19 @@ namespace SCPBrowser
             if (colorMap == null || colorMap.Count == 0)
                 return;
 
+            // If no items are currently checked, check all by default
+            bool checkAllByDefault = checkedItems.Count == 0;
+
             foreach (var item in colorMap.OrderBy(kvp => kvp.Key))
             {
-                bool isChecked = checkedItems.Contains(item.Key);
+                // Check by default if no previous selection, otherwise use existing state
+                bool isChecked = checkAllByDefault || checkedItems.Contains(item.Key);
+
+                // Add to checkedItems if checking by default
+                if (checkAllByDefault)
+                {
+                    checkedItems.Add(item.Key);
+                }
 
                 var checkBox = new CheckBox
                 {
@@ -452,6 +510,7 @@ namespace SCPBrowser
             {
                 var gridData = e.SelectedPoints.Select(p => new SelectedPointData
                 {
+                    RawFileId = _runNameToRawFileId.TryGetValue(p.RunName, out var id) ? id : 0,
                     RunName = p.RunName,
                     PeptideCount = p.PeptideCount,
                     TicValue = p.TicValue,
@@ -459,10 +518,12 @@ namespace SCPBrowser
                     TrypsinRatioPercent = $"{p.TrypsinRatio * 100:F2}%",
                     CellType = p.PredictedCellType ?? "",
                     BiologicalCondition = p.BiologicalCondition ?? "",
-                    CompositeScore = p.PredictionScore != null ? $"{p.PredictionScore.CompositeScore:F3}" : ""
+                    CompositeScore = p.PredictionScore != null ? $"{p.PredictionScore.CompositeScore:F3}" : "",
+                    IsIncluded = !_excludedRunNames.Contains(p.RunName)
                 }).ToList();
 
                 SelectedPointsGridPanel.UpdateGrid(gridData);
+                UpdateSelectionRuleText();
                 ClearSelectionButton.IsEnabled = true;
             }
             else
@@ -493,8 +554,126 @@ namespace SCPBrowser
                 }
 
                 SelectedPointsGridPanel.ClearGrid();
+                UpdateSelectionRuleText();
                 ClearSelectionButton.IsEnabled = false;
             }
+
+            // Notify MainWindow for BioTessera update
+            SelectionChangedForBioTessera?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Updates the selection rule text display in the bottom panel
+        /// </summary>
+        private void UpdateSelectionRuleText()
+        {
+            int selectedCount = _currentSelectedPoints?.Count ?? 0;
+
+            if (selectedCount == 0)
+            {
+                SelectedPointsGridPanel.UpdateSelectionRuleText("📋 No selection - draw a lasso or check cell types/conditions to filter");
+                return;
+            }
+
+            string ruleText;
+
+            if (_isLassoActive)
+            {
+                // Lasso mode
+                string bioConditionPart = GetBioConditionRulePart();
+                if (string.IsNullOrEmpty(bioConditionPart))
+                {
+                    ruleText = $"📋 Lasso selection → {selectedCount} runs  [Cell type filter disabled]";
+                }
+                else
+                {
+                    ruleText = $"📋 Lasso ∩ {bioConditionPart} → {selectedCount} runs  [Cell type filter disabled]";
+                }
+            }
+            else
+            {
+                // Checkbox mode
+                string cellTypePart = GetCellTypeRulePart();
+                string bioConditionPart = GetBioConditionRulePart();
+
+                if (string.IsNullOrEmpty(cellTypePart) && string.IsNullOrEmpty(bioConditionPart))
+                {
+                    ruleText = $"📋 All runs → {selectedCount} runs";
+                }
+                else if (string.IsNullOrEmpty(bioConditionPart))
+                {
+                    ruleText = $"📋 {cellTypePart} → {selectedCount} runs";
+                }
+                else if (string.IsNullOrEmpty(cellTypePart))
+                {
+                    ruleText = $"📋 {bioConditionPart} → {selectedCount} runs";
+                }
+                else
+                {
+                    ruleText = $"📋 {cellTypePart} ∩ {bioConditionPart} → {selectedCount} runs";
+                }
+            }
+
+            SelectedPointsGridPanel.UpdateSelectionRuleText(ruleText);
+        }
+
+        private string GetCellTypeRulePart()
+        {
+            if (_checkedCellTypes.Count == 0 || _cellTypeColorMap == null || _cellTypeColorMap.Count == 0)
+                return null;
+
+            if (_checkedCellTypes.Count == _cellTypeColorMap.Count)
+                return "All Cell Types";
+
+            var sorted = _checkedCellTypes.OrderBy(c => c).ToList();
+            if (sorted.Count <= 3)
+            {
+                return "(" + string.Join(" ∪ ", sorted) + ")";
+            }
+            else
+            {
+                return $"({sorted.Count} cell types)";
+            }
+        }
+
+        private string GetBioConditionRulePart()
+        {
+            if (_checkedBioConditions.Count == 0)
+                return null;
+
+            var bioConditionColorMap = GenerateBioConditionColorMap();
+            if (bioConditionColorMap == null || bioConditionColorMap.Count == 0)
+                return null;
+
+            if (_checkedBioConditions.Count == bioConditionColorMap.Count)
+                return "All Conditions";
+
+            var sorted = _checkedBioConditions.OrderBy(c => c).ToList();
+            if (sorted.Count <= 3)
+            {
+                return "(" + string.Join(" ∪ ", sorted) + ")";
+            }
+            else
+            {
+                return $"({sorted.Count} conditions)";
+            }
+        }
+
+        /// <summary>
+        /// Gets the names of currently selected runs (from lasso or checkbox selection), excluding any excluded runs
+        /// </summary>
+        public HashSet<string> GetSelectedRunNames()
+        {
+            if (_currentSelectedPoints == null || _currentSelectedPoints.Count == 0)
+                return null; // null means "use all runs"
+
+            var selectedRuns = new HashSet<string>(
+                _currentSelectedPoints
+                    .Select(p => p.RunName)
+                    .Where(name => !_excludedRunNames.Contains(name))
+            );
+
+            return selectedRuns.Count > 0 ? selectedRuns : null;
         }
 
         private void SelectedPointsGridPanel_GridSelectionChanged(object sender, SelectedPointData selectedData)

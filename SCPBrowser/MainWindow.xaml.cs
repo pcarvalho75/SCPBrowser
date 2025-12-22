@@ -26,6 +26,8 @@ namespace SCPBrowser
         private string _projectReferenceDatabasePath;
         private GoTermResolver _goTermResolver;
         private BioTessera.GO.GoStatusService _goStatusService;
+        private System.Windows.Threading.DispatcherTimer _bioTesseraDebounceTimer;
+        private const int BioTesseraDebounceDelayMs = 400;
 
         // Data filtering fields
         private ProteomicsData _originalData; // Unfiltered data from parquet file
@@ -278,8 +280,11 @@ namespace SCPBrowser
 
             try
             {
+                // Get selected runs from PeptideTicTab (null means all runs)
+                var selectedRuns = PeptideTicTab.GetSelectedRunNames();
+
                 // Convert SCPBrowser data to BioTessera proteins
-                var proteins = ProteomicsDataConverter.Convert(data);
+                var proteins = ProteomicsDataConverter.Convert(data, selectedRuns);
 
                 if (proteins.Count == 0)
                 {
@@ -290,17 +295,35 @@ namespace SCPBrowser
                 // Resolve GO terms from central database
                 _goTermResolver.ResolveGoTerms(proteins);
 
-
                 // Load into BioTessera and generate
                 BioTesseraTab.LoadProteins(proteins);
                 await BioTesseraTab.GenerateAsync();
 
-                Console.WriteLine($"[BioTessera] Updated with {proteins.Count} proteins");
+                var runInfo = selectedRuns != null ? $" (filtered to {selectedRuns.Count} runs)" : "";
+                Console.WriteLine($"[BioTessera] Updated with {proteins.Count} proteins{runInfo}");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[BioTessera] Error updating tab: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Triggers a debounced BioTessera update. Multiple rapid calls will only result in one update.
+        /// </summary>
+        private void TriggerDebouncedBioTesseraUpdate()
+        {
+            _bioTesseraDebounceTimer?.Stop();
+            _bioTesseraDebounceTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(BioTesseraDebounceDelayMs)
+            };
+            _bioTesseraDebounceTimer.Tick += async (s, e) =>
+            {
+                _bioTesseraDebounceTimer.Stop();
+                await UpdateBioTesseraTabAsync();
+            };
+            _bioTesseraDebounceTimer.Start();
         }
 
         private async void ClearCellTypeClassifications_Click(object sender, RoutedEventArgs e)
@@ -639,7 +662,18 @@ namespace SCPBrowser
 
             // When MainControlTab finishes loading, populate other tabs with the same data
             PeptideTicTab.UpdateChart(MainControlTab.GetCurrentData());
+            // Load raw file ID mapping for exclusion tracking
+            var rawFileIdMapping = await _parquetService.GetRawFileNameToIdMappingAsync();
+            PeptideTicTab.SetRawFileIdMapping(rawFileIdMapping);
+
+            // Load existing exclusions from database
+            var excludedRunNames = await _parquetService.GetExcludedRunNamesAsync();
+            PeptideTicTab.SetExcludedRuns(excludedRunNames);
+            Console.WriteLine($"Loaded {excludedRunNames.Count} excluded runs from database");
+
             ProteinMatrixTab.UpdateMatrix(MainControlTab.GetCurrentData());
+
+
 
             // Set image base directory
             PeptideTicTab.SetImageBaseDirectory(MainControlTab.GetCurrentFileDirectory());
@@ -662,9 +696,100 @@ namespace SCPBrowser
             PeptideTicTab.CellTypePredictionsRequested -= PeptideTicTab_CellTypePredictionsRequested;
             PeptideTicTab.CellTypePredictionsRequested += PeptideTicTab_CellTypePredictionsRequested;
 
+            // Wire up selection changes for BioTessera updates
+            PeptideTicTab.SelectionChangedForBioTessera -= PeptideTicTab_SelectionChangedForBioTessera;
+            PeptideTicTab.SelectionChangedForBioTessera += PeptideTicTab_SelectionChangedForBioTessera;
+
+            // Wire up exclusion events for database persistence
+            PeptideTicTab.RunInclusionChanged -= PeptideTicTab_RunInclusionChanged;
+            PeptideTicTab.RunInclusionChanged += PeptideTicTab_RunInclusionChanged;
+            PeptideTicTab.ClearAllExclusionsRequested -= PeptideTicTab_ClearAllExclusionsRequested;
+            PeptideTicTab.ClearAllExclusionsRequested += PeptideTicTab_ClearAllExclusionsRequested;
+
             await UpdateBioTesseraTabAsync();
 
             Console.WriteLine($"Cell type classification enabled: {cellTypeAvailable}");
+
+            // Auto-run cell type classification if transcriptomic database is available
+            if (cellTypeAvailable)
+            {
+                Console.WriteLine("Auto-running cell type classification...");
+                await AutoRunCellTypeClassificationAsync();
+            }
+        }
+
+        private void PeptideTicTab_SelectionChangedForBioTessera(object sender, EventArgs e)
+        {
+            TriggerDebouncedBioTesseraUpdate();
+        }
+
+        /// <summary>
+        /// Automatically runs cell type classification when project loads
+        /// </summary>
+        private async Task AutoRunCellTypeClassificationAsync()
+        {
+            try
+            {
+                var proteomicsData = MainControlTab.GetCurrentData();
+                if (proteomicsData == null)
+                {
+                    Console.WriteLine("No proteomics data available for auto-classification");
+                    return;
+                }
+
+                // Get the most recent import ID
+                int? importId = await _parquetService.GetMostRecentImportIdAsync();
+                if (!importId.HasValue)
+                {
+                    Console.WriteLine("No import ID found for auto-classification");
+                    return;
+                }
+
+                // Create a simple progress reporter that doesn't show the overlay
+                var progressReporter = new SilentProgressReporter();
+
+                // Get predictions from MainControl (which uses CellTypeClassificationManager)
+                var predictions = await MainControlTab.GetCellTypePredictionsAsync(
+                    proteomicsData,
+                    _projectReferenceDatabasePath,
+                    importId.Value,
+                    progressReporter);
+
+                if (predictions == null || predictions.Count == 0)
+                {
+                    Console.WriteLine("No cell type predictions generated");
+                    return;
+                }
+
+                // Get color map
+                var colorMap = MainControlTab.GetCellTypeColorMap();
+
+                // Pass predictions to PeptideTicTab (this will also select Cell Type mode)
+                PeptideTicTab.SetCellTypePredictions(predictions, colorMap, selectCellTypeMode: true);
+
+                Console.WriteLine($"Auto cell type classification complete: {predictions.Count} runs classified");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during auto cell type classification: {ex.Message}");
+                // Don't show error to user - this is a background operation
+            }
+        }
+
+        /// <summary>
+        /// Silent progress reporter that doesn't update UI
+        /// </summary>
+        private class SilentProgressReporter : IProgressReporter
+        {
+            public void ReportMessage(string message)
+            {
+                Console.WriteLine($"[AutoClassify] {message}");
+            }
+
+            public void ReportProgress(string progress)
+            {
+                // Silent
+            }
         }
 
         /// <summary>
@@ -853,6 +978,40 @@ namespace SCPBrowser
                     _loadingOverlay.SetProgress(progressDetail);
                     await Task.Delay(10);
                 }, System.Windows.Threading.DispatcherPriority.Render);
+            }
+        }
+
+        private async void PeptideTicTab_RunInclusionChanged(object sender, RunInclusionChangedEventArgs e)
+        {
+            try
+            {
+                if (e.IsIncluded)
+                {
+                    await _parquetService.IncludeRunAsync(e.RawFileId);
+                    Console.WriteLine($"[Exclusion] Included run: {e.RunName} (ID: {e.RawFileId})");
+                }
+                else
+                {
+                    await _parquetService.ExcludeRunAsync(e.RawFileId);
+                    Console.WriteLine($"[Exclusion] Excluded run: {e.RunName} (ID: {e.RawFileId})");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Exclusion] Error updating exclusion: {ex.Message}");
+            }
+        }
+
+        private async void PeptideTicTab_ClearAllExclusionsRequested(object sender, EventArgs e)
+        {
+            try
+            {
+                await _parquetService.ClearAllExclusionsAsync();
+                Console.WriteLine("[Exclusion] Cleared all exclusions");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Exclusion] Error clearing exclusions: {ex.Message}");
             }
         }
 

@@ -502,7 +502,7 @@ namespace SCPBrowser
                 {
                     selectedPoints.Add(point);
                     point.Visual.Stroke = new SolidColorBrush(Color.FromRgb(220, 38, 38));
-                    point.Visual.StrokeThickness = 2;
+                    point.Visual.StrokeThickness = 1;
                 }
                 else
                 {

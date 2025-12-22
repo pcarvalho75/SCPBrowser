@@ -4,7 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:SCPBrowser"
-             xmlns:scottPlot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
+             xmlns:scottPlot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF" xmlns:controls="clr-namespace:SCPBrowser.Controls"
              mc:Ignorable="d" 
              d:DesignHeight="600" d:DesignWidth="900" Background="WhiteSmoke">
     <Grid Margin="10">
@@ -118,9 +118,9 @@
         </StackPanel>
 
         <GroupBox Header="Protein Groups per Raw File" 
-                  Grid.Row="3" 
-                  Margin="0,10,0,0">
-            <scottPlot:WpfPlot x:Name="ProteinChart"/>
+          Grid.Row="3" 
+          Margin="0,10,0,0">
+            <controls:ProteinHistogramControl x:Name="ProteinHistogram"/>
         </GroupBox>
 
         <TextBlock x:Name="StatusText" 

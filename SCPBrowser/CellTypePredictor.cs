@@ -338,8 +338,7 @@ namespace SCPBrowser
             //Console.WriteLine($"[DEBUG-HYPER] CellType: {cellType}, N={N}, K={K}, n={n}, k={k}");
 
             if (K == 0 || n == 0)
-            {
-                Console.WriteLine($"[DEBUG-HYPER] Returning 1.0 because K={K} or n={n}");
+            { 
                 return 1.0;
             }
 

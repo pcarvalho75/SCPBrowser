@@ -4,7 +4,6 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
-using ScottPlot;
 using SCPBrowser.GOTools;
 using SCPBrowser.Services;
 
@@ -391,49 +390,8 @@ namespace SCPBrowser
 
         public void UpdateChart(ProteomicsData data)
         {
-            ProteinChart.Plot.Clear();
-
-            if (data.ProteinCountPerFile.Count == 0)
-            {
-                StatusText.Text = "No data to display";
-
-                // Clear axis labels too
-                ProteinChart.Plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.NumericManual(Array.Empty<Tick>());
-                ProteinChart.Plot.Axes.Left.Label.Text = "Number of Protein Groups";
-                ProteinChart.Plot.Axes.Bottom.Label.Text = "Raw File";
-
-                ProteinChart.Refresh();
-                return;
-            }
-
-            var sortedData = data.ProteinCountPerFile
-                .OrderByDescending(kvp => kvp.Value)
-                .ToList();
-
-            var positions = Enumerable.Range(0, sortedData.Count).Select(i => (double)i).ToArray();
-            var values = sortedData.Select(kvp => (double)kvp.Value).ToArray();
-            var labels = sortedData.Select(kvp => kvp.Key).ToArray();
-
-            var barPlot = ProteinChart.Plot.Add.Bars(positions, values);
-
-            foreach (var bar in barPlot.Bars)
-            {
-                bar.FillColor = ScottPlot.Color.FromHex("#2563eb");
-            }
-
-            ProteinChart.Plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.NumericManual(
-                positions.Select((pos, idx) => new Tick(pos, labels[idx])).ToArray()
-            );
-
-            ProteinChart.Plot.Axes.Bottom.TickLabelStyle.Rotation = 45;
-            ProteinChart.Plot.Axes.Bottom.TickLabelStyle.Alignment = Alignment.MiddleLeft;
-
-            ProteinChart.Plot.Axes.Left.Label.Text = "Number of Protein Groups";
-            ProteinChart.Plot.Axes.Bottom.Label.Text = "Raw File";
-
-            ProteinChart.Plot.Axes.Margins(bottom: 0);
-
-            ProteinChart.Refresh();
+            _currentData = data;
+            ProteinHistogram.UpdateChart(data);
         }
 
         public ProteomicsData GetCurrentData()

@@ -7,14 +7,47 @@
              d:DesignHeight="250" d:DesignWidth="1000">
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
+        <!-- Selection Rule Header -->
+        <Border Grid.Row="0" 
+                Background="#f0f9ff" 
+                BorderBrush="#bae6fd" 
+                BorderThickness="1" 
+                Padding="10,8"
+                Margin="0,0,0,5">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="SelectionRuleText" 
+                           Grid.Column="0"
+                           Text="📋 All runs included (no filter)"
+                           FontSize="13"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"/>
+
+                <Button x:Name="ClearExclusionsButton"
+                        Grid.Column="1"
+                        Content="Clear Exclusions"
+                        Click="ClearExclusionsButton_Click"
+                        Padding="10,5"
+                        Margin="10,0,0,0"
+                        Visibility="Collapsed"
+                        ToolTip="Remove all individual run exclusions"/>
+            </Grid>
+        </Border>
+
+        <!-- Data Grid -->
         <DataGrid x:Name="SelectedPointsGrid"
-                  Grid.Row="0"
+                  Grid.Row="1"
                   AutoGenerateColumns="False"
-                  IsReadOnly="True"
+                  IsReadOnly="False"
                   CanUserAddRows="False"
                   CanUserDeleteRows="False"
                   CanUserReorderColumns="True"
@@ -36,19 +69,23 @@
                 </Style>
             </DataGrid.ColumnHeaderStyle>
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Run Name" Binding="{Binding RunName}" Width="*"/>
-                <DataGridTextColumn Header="Condition" Binding="{Binding BiologicalCondition}" Width="120"/>
-                <DataGridTextColumn Header="Peptides" Binding="{Binding PeptideCount, StringFormat=N0}" Width="80"/>
-                <DataGridTextColumn Header="TIC" Binding="{Binding TicValue, StringFormat=E2}" Width="100"/>
-                <DataGridTextColumn Header="Proteins" Binding="{Binding ProteinCount, StringFormat=N0}" Width="80"/>
-                <DataGridTextColumn Header="Target Ratio" Binding="{Binding TrypsinRatioPercent}" Width="90"/>
-                <DataGridTextColumn Header="Cell Type" Binding="{Binding CellType}" Width="120"/>
-                <DataGridTextColumn Header="Score" Binding="{Binding CompositeScore}" Width="70"/>
+                <DataGridCheckBoxColumn Header="✓" 
+                                        Binding="{Binding IsIncluded, UpdateSourceTrigger=PropertyChanged}" 
+                                        Width="40"
+                                        IsReadOnly="False"/>
+                <DataGridTextColumn Header="Run Name" Binding="{Binding RunName}" Width="*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Condition" Binding="{Binding BiologicalCondition}" Width="120" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Peptides" Binding="{Binding PeptideCount, StringFormat=N0}" Width="80" IsReadOnly="True"/>
+                <DataGridTextColumn Header="TIC" Binding="{Binding TicValue, StringFormat=E2}" Width="100" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Proteins" Binding="{Binding ProteinCount, StringFormat=N0}" Width="80" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Target Ratio" Binding="{Binding TrypsinRatioPercent}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Cell Type" Binding="{Binding CellType}" Width="120" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Score" Binding="{Binding CompositeScore}" Width="70" IsReadOnly="True"/>
             </DataGrid.Columns>
         </DataGrid>
 
         <TextBlock x:Name="SelectionStatusText" 
-                   Grid.Row="1"
+                   Grid.Row="2"
                    Margin="10,5,0,5"
                    Text="Click a point or drag to select multiple points."
                    FontStyle="Italic"

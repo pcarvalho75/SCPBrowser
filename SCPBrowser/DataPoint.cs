@@ -25,6 +25,7 @@ namespace SCPBrowser
 
     public class SelectedPointData
     {
+        public int RawFileId { get; set; }
         public string RunName { get; set; }
         public int PeptideCount { get; set; }
         public double TicValue { get; set; }
@@ -33,5 +34,6 @@ namespace SCPBrowser
         public string CellType { get; set; }
         public string BiologicalCondition { get; set; }
         public string CompositeScore { get; set; }
+        public bool IsIncluded { get; set; } = true;
     }
 }

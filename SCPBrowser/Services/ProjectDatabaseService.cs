@@ -153,6 +153,15 @@ namespace SCPBrowser.Services
                 FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
             );
 
+            -- ==================== RUN EXCLUSIONS ====================
+            
+            -- Excluded runs (for filtering data sent to BioTessera)
+            CREATE TABLE IF NOT EXISTS excluded_runs (
+                raw_file_id INTEGER PRIMARY KEY,
+                excluded_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
+            );
+
             -- ==================== INDICES ====================
             
             -- Project data indices
@@ -229,6 +238,31 @@ namespace SCPBrowser.Services
                     specificity_score REAL NOT NULL,
                     hypergeometric_pvalue REAL NOT NULL,
                     classified_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
+                );
+            ";
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Ensures the excluded_runs table exists (for existing databases created before this feature)
+        /// </summary>
+        public async Task EnsureExcludedRunsTableExistsAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS excluded_runs (
+                    raw_file_id INTEGER PRIMARY KEY,
+                    excluded_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
                 );
             ";

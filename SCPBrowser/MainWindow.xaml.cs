@@ -129,6 +129,8 @@ namespace SCPBrowser
                     // Ensure new tables exist (migration for existing projects)
                     await _projectDatabaseService.EnsureCellTypeClassificationsTableExistsAsync();
 
+                    await _projectDatabaseService.EnsureExcludedRunsTableExistsAsync();
+
                     // Load project info
                     projectInfo = await _projectDatabaseService.GetProjectInfoAsync();
 

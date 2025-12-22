@@ -80,6 +80,8 @@ namespace SCPBrowser.Services
         public Dictionary<string, string> BiologicalConditionPerFile { get; set; } = new();
     }
 
+
+
     public class ColumnMapping
     {
         public string RawFileColumn { get; set; } = string.Empty;
@@ -859,6 +861,155 @@ namespace SCPBrowser.Services
                     command.Parameters.AddWithValue("@rawFileId", rawFileId);
                     command.Parameters.AddWithValue("@plateId", plateId.HasValue ? plateId.Value : DBNull.Value);
                     await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        // ==================== RUN EXCLUSION METHODS ====================
+
+        /// <summary>
+        /// Gets all excluded run IDs for the current import
+        /// </summary>
+        public async Task<HashSet<int>> GetExcludedRunIdsAsync()
+        {
+            var excludedIds = new HashSet<int>();
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "SELECT raw_file_id FROM excluded_runs";
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            excludedIds.Add(reader.GetInt32(0));
+                        }
+                    }
+                }
+            }
+
+            return excludedIds;
+        }
+
+        /// <summary>
+        /// Gets excluded run IDs as raw file names for easier filtering
+        /// </summary>
+        public async Task<HashSet<string>> GetExcludedRunNamesAsync()
+        {
+            var excludedNames = new HashSet<string>();
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                SELECT rf.raw_file_name 
+                FROM excluded_runs er
+                INNER JOIN raw_files rf ON er.raw_file_id = rf.raw_file_id
+            ";
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            excludedNames.Add(reader.GetString(0));
+                        }
+                    }
+                }
+            }
+
+            return excludedNames;
+        }
+
+        /// <summary>
+        /// Excludes a run from BioTessera selection
+        /// </summary>
+        public async Task ExcludeRunAsync(int rawFileId)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                INSERT OR IGNORE INTO excluded_runs (raw_file_id, excluded_at)
+                VALUES (@rawFileId, @excludedAt)
+            ";
+                    command.Parameters.AddWithValue("@rawFileId", rawFileId);
+                    command.Parameters.AddWithValue("@excludedAt", DateTime.Now.ToString("o"));
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Includes a previously excluded run (removes exclusion)
+        /// </summary>
+        public async Task IncludeRunAsync(int rawFileId)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "DELETE FROM excluded_runs WHERE raw_file_id = @rawFileId";
+                    command.Parameters.AddWithValue("@rawFileId", rawFileId);
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Clears all run exclusions
+        /// </summary>
+        public async Task ClearAllExclusionsAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "DELETE FROM excluded_runs";
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Checks if a specific run is excluded
+        /// </summary>
+        public async Task<bool> IsRunExcludedAsync(int rawFileId)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "SELECT COUNT(*) FROM excluded_runs WHERE raw_file_id = @rawFileId";
+                    command.Parameters.AddWithValue("@rawFileId", rawFileId);
+
+                    var result = await command.ExecuteScalarAsync();
+                    return Convert.ToInt32(result) > 0;
                 }
             }
         }

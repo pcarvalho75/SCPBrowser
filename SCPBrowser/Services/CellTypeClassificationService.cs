@@ -31,15 +31,14 @@ namespace SCPBrowser.Services
                 {
                     try
                     {
-                        // Get raw file ID mapping
+                        // Get raw file ID mapping (all imports, since data may come from multiple parquet files)
                         var rawFileMap = new Dictionary<string, int>();
                         using (var command = connection.CreateCommand())
                         {
                             command.CommandText = @"
-                                SELECT raw_file_id, raw_file_name 
-                                FROM raw_files 
-                                WHERE import_id = @importId
-                            ";
+        SELECT raw_file_id, raw_file_name 
+        FROM raw_files
+    ";
                             command.Parameters.AddWithValue("@importId", importId);
 
                             using (var reader = await command.ExecuteReaderAsync())

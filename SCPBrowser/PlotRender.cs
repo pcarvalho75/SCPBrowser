@@ -21,7 +21,7 @@ namespace SCPBrowser
         private const double PlotMarginTop = 20;
         private const double PlotMarginBottom = 60;
 
-        private const double MarkerSize = 8;
+        private const double MarkerSize = 10;
         private const int NumTicksX = 5;
         private const int NumTicksY = 5;
 

@@ -320,7 +320,7 @@ namespace SCPBrowser
 
             // Draw data points
             _dataPoints = new List<DataPoint>();
-            const double MarkerSize = 8;
+            const double MarkerSize = 10;
 
             for (int i = 0; i < rawFiles.Count; i++)
             {
@@ -709,7 +709,7 @@ namespace SCPBrowser
 
             // Draw data points
             _dataPoints = new List<DataPoint>();
-            const double MarkerSize = 8;
+            const double MarkerSize = 10;
 
             for (int i = 0; i < rawFiles.Count; i++)
             {
@@ -799,7 +799,7 @@ namespace SCPBrowser
       Dictionary<string, Color> colorMap, Dictionary<string, string> bioConditions)
         {
             var dataPoints = new List<DataPoint>();
-            const double MarkerSize = 8;
+            const double MarkerSize = 10;
 
             for (int i = 0; i < rawFiles.Count; i++)
             {
@@ -920,7 +920,7 @@ namespace SCPBrowser
             Dictionary<string, Color> colorMap, Dictionary<string, CellTypePredictionResult> predictions)
         {
             var dataPoints = new List<DataPoint>();
-            const double MarkerSize = 8;
+            const double MarkerSize = 10;
             var unassignedColor = Color.FromRgb(200, 200, 200);
 
             for (int i = 0; i < rawFiles.Count; i++)
@@ -1252,10 +1252,10 @@ namespace SCPBrowser
             foreach (var point in _dataPoints)
             {
                 point.Visual.Fill = new SolidColorBrush(point.BaseColor);
-                point.Visual.Width = 8;
-                point.Visual.Height = 8;
-                Canvas.SetLeft(point.Visual, point.XScreen - 4);
-                Canvas.SetTop(point.Visual, point.YScreen - 4);
+                point.Visual.Width = 10;
+                point.Visual.Height = 10;
+                Canvas.SetLeft(point.Visual, point.XScreen - 5);
+                Canvas.SetTop(point.Visual, point.YScreen - 5);
             }
         }
 
@@ -1269,6 +1269,14 @@ namespace SCPBrowser
 
             ClearHoverEffect();
             TooltipBorder.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// Returns true if there is an active polygon (lasso) selection
+        /// </summary>
+        public bool HasPolygonSelection()
+        {
+            return _selectionManager.PolygonPointsScreen.Count >= 3;
         }
 
         private void PlotCanvas_SizeChanged(object sender, SizeChangedEventArgs e)

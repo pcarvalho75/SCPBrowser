@@ -25,6 +25,7 @@ namespace SCPBrowser
         private bool _suppressCheckboxEvents = false;
         // Add this new event
         public event EventHandler CellTypePredictionsRequested;
+        private bool _isLassoActive = false;
 
         public PeptideTicControl()
         {
@@ -39,6 +40,24 @@ namespace SCPBrowser
         public void UpdateChart(ProteomicsData data)
         {
             UpdateChart(data, clearSelections: true);
+        }
+
+        /// <summary>
+        /// Enables or disables cell type checkboxes based on lasso state
+        /// </summary>
+        private void SetCellTypeCheckboxesEnabled(bool enabled)
+        {
+            if (ColorByCellTypeRadio.IsChecked != true)
+                return;
+
+            foreach (var child in BioConditionCheckboxes.Children)
+            {
+                if (child is CheckBox cb)
+                {
+                    cb.IsEnabled = enabled;
+                    cb.Opacity = enabled ? 1.0 : 0.5;
+                }
+            }
         }
 
         public void UpdateChart(ProteomicsData data, bool clearSelections)
@@ -395,6 +414,10 @@ namespace SCPBrowser
                 SelectedPointsGridPanel.ClearGrid();
                 ClearSelectionButton.IsEnabled = false;
                 _currentSelectedPoints.Clear();
+
+                // Reset lasso state and re-enable checkboxes
+                _isLassoActive = false;
+                SetCellTypeCheckboxesEnabled(true);
             }
             finally
             {
@@ -405,6 +428,25 @@ namespace SCPBrowser
         private void ScatterPlot_SelectionChanged(object sender, PlotSelectionChangedEventArgs e)
         {
             _currentSelectedPoints = e.SelectedPoints;
+
+            // Detect if this is a lasso selection (polygon-based) or checkbox selection
+            bool wasLassoActive = _isLassoActive;
+            _isLassoActive = ScatterPlot.HasPolygonSelection();
+
+            // Handle lasso state change
+            if (_isLassoActive != wasLassoActive)
+            {
+                if (_isLassoActive && ColorByCellTypeRadio.IsChecked == true)
+                {
+                    // Lasso just became active - disable cell type checkboxes
+                    SetCellTypeCheckboxesEnabled(false);
+                }
+                else if (!_isLassoActive)
+                {
+                    // Lasso cleared - re-enable cell type checkboxes
+                    SetCellTypeCheckboxesEnabled(true);
+                }
+            }
 
             if (e.SelectedPoints.Count > 0)
             {

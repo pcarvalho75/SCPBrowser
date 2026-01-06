@@ -881,17 +881,6 @@ namespace SCPBrowser
                 this.Title = originalTitle;
                 this.Cursor = System.Windows.Input.Cursors.Arrow;
 
-                // Show success message
-                MessageBox.Show(
-                    $"Import completed successfully!\n\n" +
-                    $"Plate: {SelectedPlate.PlateName}\n" +
-                    $"Raw Files: {RawFiles.Count}\n" +
-                    $"Conditions: {uniqueConditions.Count}\n" +
-                    $"Proteins Tracked: {importInfo.ProteinCount}",
-                    "Import Complete",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-
                 ImportSuccessful = true;
                 DialogResult = true;
             }

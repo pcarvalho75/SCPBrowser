@@ -30,6 +30,7 @@ namespace SCPBrowser
         private const int BioTesseraDebounceDelayMs = 400;
         private const string SETTING_PROTEIN_CUTOFF = "ProteinCutoff";
         private ProteomicsData _plateFilteredData; // Filtered by plates only (for bar chart display)
+        private Dictionary<string, int> _rawFileToPlateId;
 
         // Data filtering fields
         private ProteomicsData _originalData; // Unfiltered data from parquet file
@@ -163,6 +164,7 @@ namespace SCPBrowser
                 // Load and show plate filter control
                 LoadingOverlay.SetProgress("Loading plates...");
                 await PlateFilterControl.LoadPlatesAsync(projectDbPath);
+                await LoadRawFileToPlateMapping();
                 PlateFilterControl.Visibility = Visibility.Visible;
                 Console.WriteLine("PlateFilterControl loaded and visible");
                 PlateFilterControl.PlateSelectionChanged += PlateFilterControl_PlateSelectionChanged;
@@ -256,6 +258,9 @@ namespace SCPBrowser
                 LoadingOverlay.SetMessage("Applying Filter");
                 LoadingOverlay.SetProgress("Filtering by protein count...");
                 LoadingOverlay.Show();
+
+                // Allow UI to render the overlay
+                await Task.Delay(50);
 
                 // Save to database
                 if (_projectDatabaseService != null)
@@ -364,7 +369,7 @@ namespace SCPBrowser
 
             // Bar chart shows plate-filtered data (all bars) with visual cutoff
             var dataForBarChart = _plateFilteredData ?? _filteredData;
-            MainControlTab.UpdateChart(dataForBarChart);
+            MainControlTab.UpdateChart(dataForBarChart, _rawFileToPlateId);
 
             // Other tabs get fully filtered data (excluding below-cutoff)
             PeptideTicTab.UpdateChart(_filteredData, clearSelections: false);
@@ -424,6 +429,28 @@ namespace SCPBrowser
                 await UpdateBioTesseraTabAsync();
             };
             _bioTesseraDebounceTimer.Start();
+        }
+
+        /// <summary>
+        /// Loads the mapping of raw file names to plate IDs
+        /// </summary>
+        private async Task LoadRawFileToPlateMapping()
+        {
+            _rawFileToPlateId = new Dictionary<string, int>();
+
+            if (_parquetService == null)
+                return;
+
+            var rawFiles = await _parquetService.GetRawFilesAsync();
+            foreach (var rf in rawFiles)
+            {
+                if (rf.PlateId.HasValue)
+                {
+                    _rawFileToPlateId[rf.RawFileName] = rf.PlateId.Value;
+                }
+            }
+
+            Console.WriteLine($"Loaded plate mapping for {_rawFileToPlateId.Count} raw files");
         }
 
         private async void ClearCellTypeClassifications_Click(object sender, RoutedEventArgs e)

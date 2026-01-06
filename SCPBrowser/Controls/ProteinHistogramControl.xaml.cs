@@ -10,12 +10,27 @@ namespace SCPBrowser.Controls
     {
         private int _currentCutoff = 800;
 
+        // Plate color palette
+        private static readonly string[] PlateColors = new[]
+        {
+            "#2563eb", // Blue
+            "#dc2626", // Red
+            "#16a34a", // Green
+            "#9333ea", // Purple
+            "#ea580c", // Orange
+            "#0891b2", // Cyan
+            "#c026d3", // Fuchsia
+            "#4f46e5", // Indigo
+            "#059669", // Emerald
+            "#d97706"  // Amber
+        };
+
         public ProteinHistogramControl()
         {
             InitializeComponent();
         }
 
-        public void UpdateChart(ProteomicsData data, int cutoff = 800)
+        public void UpdateChart(ProteomicsData data, int cutoff = 800, Dictionary<string, int> rawFileToPlateId = null)
         {
             _currentCutoff = cutoff;
             ProteinChart.Plot.Clear();
@@ -37,6 +52,17 @@ namespace SCPBrowser.Controls
             var values = sortedData.Select(kvp => (double)kvp.Value).ToArray();
             var labels = sortedData.Select(kvp => kvp.Key).ToArray();
 
+            // Build plate ID to color index mapping
+            var plateIdToColorIndex = new Dictionary<int, int>();
+            if (rawFileToPlateId != null)
+            {
+                var uniquePlateIds = rawFileToPlateId.Values.Distinct().OrderBy(id => id).ToList();
+                for (int i = 0; i < uniquePlateIds.Count; i++)
+                {
+                    plateIdToColorIndex[uniquePlateIds[i]] = i % PlateColors.Length;
+                }
+            }
+
             // Draw yellow overlay rectangle (below cutoff region)
             double xMin = -0.5;
             double xMax = positions.Length - 0.5;
@@ -47,16 +73,27 @@ namespace SCPBrowser.Controls
             // Draw bars
             var barPlot = ProteinChart.Plot.Add.Bars(positions, values);
 
-            // Color bars: gray if below cutoff, blue if above
+            // Color bars: gray if below cutoff, plate color if above
             for (int i = 0; i < barPlot.Bars.Count; i++)
             {
+                string rawFileName = labels[i];
+
                 if (values[i] < cutoff)
                 {
                     barPlot.Bars[i].FillColor = ScottPlot.Color.FromHex("#9ca3af"); // Gray
                 }
                 else
                 {
-                    barPlot.Bars[i].FillColor = ScottPlot.Color.FromHex("#2563eb"); // Blue
+                    // Get plate color
+                    string colorHex = "#2563eb"; // Default blue
+                    if (rawFileToPlateId != null && rawFileToPlateId.TryGetValue(rawFileName, out int plateId))
+                    {
+                        if (plateIdToColorIndex.TryGetValue(plateId, out int colorIndex))
+                        {
+                            colorHex = PlateColors[colorIndex];
+                        }
+                    }
+                    barPlot.Bars[i].FillColor = ScottPlot.Color.FromHex(colorHex);
                 }
             }
 

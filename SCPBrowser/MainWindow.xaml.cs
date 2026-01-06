@@ -164,6 +164,15 @@ namespace SCPBrowser
                 PlateFilterControl.Visibility = Visibility.Visible;
                 Console.WriteLine("PlateFilterControl loaded and visible");
                 PlateFilterControl.PlateSelectionChanged += PlateFilterControl_PlateSelectionChanged;
+                // Subscribe to protein cutoff changes
+                MainControlTab.ProteinCutoffChanged += MainControlTab_ProteinCutoffChanged;
+
+                // Load saved protein cutoff
+                var savedCutoff = await _projectDatabaseService.GetSettingAsync(SETTING_PROTEIN_CUTOFF, "800");
+                if (int.TryParse(savedCutoff, out int cutoffValue))
+                {
+                    MainControlTab.ProteinCutoff = cutoffValue;
+                }
 
                 UpdateWindowTitle(projectInfo.ProjectName);
 
@@ -236,6 +245,83 @@ namespace SCPBrowser
             }
         }
 
+        private async void MainControlTab_ProteinCutoffChanged(object sender, int newCutoff)
+        {
+            try
+            {
+                Console.WriteLine($"Protein cutoff changed: {newCutoff}");
+
+                // Save to database
+                if (_projectDatabaseService != null)
+                {
+                    await _projectDatabaseService.SetSettingAsync(SETTING_PROTEIN_CUTOFF, newCutoff.ToString());
+                }
+
+                // Re-apply filters
+                if (_originalData != null)
+                {
+                    var selectedPlateIds = PlateFilterControl.GetSelectedPlateIds();
+                    _filteredData = await FilterDataByPlatesAsync(_originalData, selectedPlateIds);
+                    _filteredData = FilterDataByProteinCutoff(_filteredData, newCutoff);
+                    RefreshAllTabsWithFilteredData();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error applying protein cutoff: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Filters proteomics data to exclude raw files below the protein cutoff
+        /// </summary>
+        private ProteomicsData FilterDataByProteinCutoff(ProteomicsData data, int cutoff)
+        {
+            if (data == null)
+                return null;
+
+            // Get raw files that meet the cutoff
+            var passingRawFiles = data.ProteinCountPerFile
+                .Where(kvp => kvp.Value >= cutoff)
+                .Select(kvp => kvp.Key)
+                .ToHashSet();
+
+            Console.WriteLine($"Protein cutoff filter: {passingRawFiles.Count}/{data.RawFileNames.Count} raw files pass cutoff of {cutoff}");
+
+            // Create filtered data
+            var filteredData = new ProteomicsData
+            {
+                RawFileNames = data.RawFileNames.Where(rf => passingRawFiles.Contains(rf)).ToList(),
+                ProteinCountPerFile = data.ProteinCountPerFile.Where(kvp => passingRawFiles.Contains(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                PeptideCountPerFile = data.PeptideCountPerFile.Where(kvp => passingRawFiles.Contains(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                TotalIonCurrentPerFile = data.TotalIonCurrentPerFile.Where(kvp => passingRawFiles.Contains(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                TargetProteinRatioPerFile = data.TargetProteinRatioPerFile.Where(kvp => passingRawFiles.Contains(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                BiologicalConditionPerFile = data.BiologicalConditionPerFile.Where(kvp => passingRawFiles.Contains(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                ProteinQuantMatrix = new Dictionary<string, Dictionary<string, double>>(),
+                ProteinToGeneMap = new Dictionary<string, string>(data.ProteinToGeneMap)
+            };
+
+            // Filter ProteinQuantMatrix
+            foreach (var protein in data.ProteinQuantMatrix.Keys)
+            {
+                var filteredRawFiles = data.ProteinQuantMatrix[protein]
+                    .Where(kvp => passingRawFiles.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                if (filteredRawFiles.Count > 0)
+                {
+                    filteredData.ProteinQuantMatrix[protein] = filteredRawFiles;
+                }
+            }
+
+            // Update totals
+            filteredData.TotalRawFiles = filteredData.RawFileNames.Count;
+            filteredData.TotalProteinGroups = filteredData.ProteinQuantMatrix.Count;
+            filteredData.TotalPeptides = data.TotalPeptides; // Keep original
+
+            return filteredData;
+        }
+
         private async void PlateFilterControl_PlateSelectionChanged(object sender, PlateSelectionChangedEventArgs e)
         {
             try
@@ -249,6 +335,7 @@ namespace SCPBrowser
                 }
 
                 _filteredData = await FilterDataByPlatesAsync(_originalData, e.SelectedPlateIds);
+                _filteredData = FilterDataByProteinCutoff(_filteredData, MainControlTab.ProteinCutoff);
                 RefreshAllTabsWithFilteredData();
             }
             catch (Exception ex)

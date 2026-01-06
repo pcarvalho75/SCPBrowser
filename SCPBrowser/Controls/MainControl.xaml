@@ -79,22 +79,22 @@
                 </StackPanel>
             </Border>
 
-            <Border Background="#fef3c7" 
-            BorderBrush="#d97706" 
-            BorderThickness="1" 
-            CornerRadius="4" 
-            Padding="15,10"
-            Margin="0,0,10,0">
+            <Border Background="#f0fdfa" 
+        BorderBrush="#0d9488" 
+        BorderThickness="1" 
+        CornerRadius="4" 
+        Padding="15,10"
+        Margin="0,0,10,0">
                 <StackPanel>
                     <TextBlock Text="Protein Groups" 
-                       FontSize="11" 
-                       Foreground="#64748b" 
-                       FontWeight="SemiBold"/>
+                   FontSize="11" 
+                   Foreground="#64748b" 
+                   FontWeight="SemiBold"/>
                     <TextBlock x:Name="TotalProteinsText" 
-                       Text="0" 
-                       FontSize="24" 
-                       FontWeight="Bold" 
-                       Foreground="#d97706"/>
+                   Text="0" 
+                   FontSize="24" 
+                   FontWeight="Bold" 
+                   Foreground="#0d9488"/>
                 </StackPanel>
             </Border>
 
@@ -115,6 +115,10 @@
                        Foreground="#16a34a"/>
                 </StackPanel>
             </Border>
+
+            <controls:NumericUpDownControl x:Name="ProteinCutoffControl"
+                                   Margin="10,0,0,0"
+                                   ValueChanged="ProteinCutoffControl_ValueChanged"/>
         </StackPanel>
 
         <GroupBox Header="Protein Groups per Raw File" 

@@ -23,6 +23,14 @@ namespace SCPBrowser
         private Dictionary<string, RunGoEnrichmentResult> _goEnrichmentResults;
         private string _projectDatabasePath;
         private List<string> _allParquetFilePaths;
+        public event EventHandler<int> ProteinCutoffChanged;
+        private const string SETTING_PROTEIN_CUTOFF = "ProteinCutoff";
+
+        public int ProteinCutoff
+        {
+            get => ProteinCutoffControl.Value;
+            set => ProteinCutoffControl.Value = value;
+        }
 
         public MainControl()
         {
@@ -32,6 +40,17 @@ namespace SCPBrowser
             _goEnrichmentManager = new GoEnrichmentManager();
         }
 
+
+        private void ProteinCutoffControl_ValueChanged(object sender, int newValue)
+        {
+            if (_currentData != null)
+            {
+                ProteinHistogram.UpdateChart(_currentData, newValue);
+            }
+
+            // Bubble up to MainWindow
+            ProteinCutoffChanged?.Invoke(this, newValue);
+        }
 
         /// <summary>
         /// Reloads the transcriptomic reference database (call after importing new omic data)
@@ -391,7 +410,7 @@ namespace SCPBrowser
         public void UpdateChart(ProteomicsData data)
         {
             _currentData = data;
-            ProteinHistogram.UpdateChart(data);
+            ProteinHistogram.UpdateChart(data, ProteinCutoffControl.Value);
         }
 
         public ProteomicsData GetCurrentData()

@@ -44,6 +44,85 @@ namespace SCPBrowser.Services
         }
 
         /// <summary>
+        /// Ensures the project_settings table exists
+        /// </summary>
+        public async Task EnsureProjectSettingsTableExistsAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS project_settings (
+                    setting_key TEXT PRIMARY KEY,
+                    setting_value TEXT NOT NULL,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+            ";
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets a project setting value
+        /// </summary>
+        public async Task<string> GetSettingAsync(string key, string defaultValue = null)
+        {
+            await EnsureProjectSettingsTableExistsAsync();
+
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "SELECT setting_value FROM project_settings WHERE setting_key = @key";
+                    command.Parameters.AddWithValue("@key", key);
+
+                    var result = await command.ExecuteScalarAsync();
+                    return result?.ToString() ?? defaultValue;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sets a project setting value
+        /// </summary>
+        public async Task SetSettingAsync(string key, string value)
+        {
+            await EnsureProjectSettingsTableExistsAsync();
+
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                INSERT INTO project_settings (setting_key, setting_value, updated_at)
+                VALUES (@key, @value, @timestamp)
+                ON CONFLICT(setting_key) DO UPDATE SET 
+                    setting_value = @value,
+                    updated_at = @timestamp
+            ";
+                    command.Parameters.AddWithValue("@key", key);
+                    command.Parameters.AddWithValue("@value", value);
+                    command.Parameters.AddWithValue("@timestamp", DateTime.Now.ToString("o"));
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
         /// Writes cell type profiles to the database
         /// </summary>
         public async Task WriteTranscriptomicDataAsync(

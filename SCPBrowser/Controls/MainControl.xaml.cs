@@ -24,7 +24,7 @@ namespace SCPBrowser
         private string _projectDatabasePath;
         private List<string> _allParquetFilePaths;
         public event EventHandler<int> ProteinCutoffChanged;
-        private const string SETTING_PROTEIN_CUTOFF = "ProteinCutoff";
+
 
         public int ProteinCutoff
         {

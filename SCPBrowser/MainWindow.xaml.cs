@@ -28,6 +28,8 @@ namespace SCPBrowser
         private BioTessera.GO.GoStatusService _goStatusService;
         private System.Windows.Threading.DispatcherTimer _bioTesseraDebounceTimer;
         private const int BioTesseraDebounceDelayMs = 400;
+        private const string SETTING_PROTEIN_CUTOFF = "ProteinCutoff";
+        private ProteomicsData _plateFilteredData; // Filtered by plates only (for bar chart display)
 
         // Data filtering fields
         private ProteomicsData _originalData; // Unfiltered data from parquet file
@@ -251,6 +253,10 @@ namespace SCPBrowser
             {
                 Console.WriteLine($"Protein cutoff changed: {newCutoff}");
 
+                LoadingOverlay.SetMessage("Applying Filter");
+                LoadingOverlay.SetProgress("Filtering by protein count...");
+                LoadingOverlay.Show();
+
                 // Save to database
                 if (_projectDatabaseService != null)
                 {
@@ -261,13 +267,16 @@ namespace SCPBrowser
                 if (_originalData != null)
                 {
                     var selectedPlateIds = PlateFilterControl.GetSelectedPlateIds();
-                    _filteredData = await FilterDataByPlatesAsync(_originalData, selectedPlateIds);
-                    _filteredData = FilterDataByProteinCutoff(_filteredData, newCutoff);
+                    _plateFilteredData = await FilterDataByPlatesAsync(_originalData, selectedPlateIds);
+                    _filteredData = FilterDataByProteinCutoff(_plateFilteredData, newCutoff);
                     RefreshAllTabsWithFilteredData();
                 }
+
+                LoadingOverlay.Hide();
             }
             catch (Exception ex)
             {
+                LoadingOverlay.Hide();
                 Console.WriteLine($"Error applying protein cutoff: {ex.Message}");
             }
         }
@@ -334,8 +343,8 @@ namespace SCPBrowser
                     return;
                 }
 
-                _filteredData = await FilterDataByPlatesAsync(_originalData, e.SelectedPlateIds);
-                _filteredData = FilterDataByProteinCutoff(_filteredData, MainControlTab.ProteinCutoff);
+                _plateFilteredData = await FilterDataByPlatesAsync(_originalData, e.SelectedPlateIds);
+                _filteredData = FilterDataByProteinCutoff(_plateFilteredData, MainControlTab.ProteinCutoff);
                 RefreshAllTabsWithFilteredData();
             }
             catch (Exception ex)
@@ -353,7 +362,11 @@ namespace SCPBrowser
 
             Console.WriteLine($"Refreshing all tabs with filtered data: {_filteredData.TotalRawFiles} runs");
 
-            MainControlTab.UpdateChart(_filteredData);
+            // Bar chart shows plate-filtered data (all bars) with visual cutoff
+            var dataForBarChart = _plateFilteredData ?? _filteredData;
+            MainControlTab.UpdateChart(dataForBarChart);
+
+            // Other tabs get fully filtered data (excluding below-cutoff)
             PeptideTicTab.UpdateChart(_filteredData, clearSelections: false);
             ProteinMatrixTab.UpdateMatrix(_filteredData);
             await UpdateBioTesseraTabAsync();

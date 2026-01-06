@@ -242,68 +242,107 @@ This adds the PlateFilterControl above the TabControl
                                Foreground="#334155"
                                Margin="0,0,0,15"/>
 
+
                             <!-- Recent Projects List -->
                             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                                 <StackPanel>
                                     <ItemsControl x:Name="RecentProjectsList">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Button Click="RecentProject_Click"
-                                                Tag="{Binding}"
-                                                Margin="0,0,0,8"
-                                                HorizontalContentAlignment="Left"
-                                                Background="White"
-                                                BorderBrush="#cbd5e1"
-                                                BorderThickness="1"
-                                                Padding="12"
-                                                Cursor="Hand">
-                                                    <Button.Template>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border Background="{TemplateBinding Background}"
-                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                                            CornerRadius="6"
-                                                            Padding="{TemplateBinding Padding}">
-                                                                <Grid>
-                                                                    <Grid.RowDefinitions>
-                                                                        <RowDefinition Height="Auto"/>
-                                                                        <RowDefinition Height="Auto"/>
-                                                                    </Grid.RowDefinitions>
-                                                                    <TextBlock Grid.Row="0"
-                                                                       Text="{Binding Converter={StaticResource FileNameConverter}}"
-                                                                       FontWeight="SemiBold"
-                                                                       FontSize="12"
-                                                                       Foreground="#0f172a"
-                                                                       TextTrimming="CharacterEllipsis"/>
-                                                                    <TextBlock Grid.Row="1"
-                                                                       Text="{Binding Converter={StaticResource DirectoryConverter}}"
-                                                                       FontSize="10"
-                                                                       Foreground="#94a3b8"
-                                                                       TextTrimming="CharacterEllipsis"
-                                                                       Margin="0,3,0,0"/>
-                                                                </Grid>
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter Property="Background" Value="#f1f5f9"/>
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Button.Template>
-                                                </Button>
+                                                <Grid Margin="0,0,0,8">
+                                                    <!-- Main project button -->
+                                                    <Button Click="RecentProject_Click"
+                                Tag="{Binding}"
+                                HorizontalContentAlignment="Left"
+                                Background="White"
+                                BorderBrush="#cbd5e1"
+                                BorderThickness="1"
+                                Padding="12,12,28,12"
+                                Cursor="Hand">
+                                                        <Button.Template>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            CornerRadius="6"
+                                            Padding="{TemplateBinding Padding}">
+                                                                    <Grid>
+                                                                        <Grid.RowDefinitions>
+                                                                            <RowDefinition Height="Auto"/>
+                                                                            <RowDefinition Height="Auto"/>
+                                                                        </Grid.RowDefinitions>
+                                                                        <TextBlock Grid.Row="0"
+                                                       Text="{Binding Converter={StaticResource FileNameConverter}}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="12"
+                                                       Foreground="#0f172a"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                                                        <TextBlock Grid.Row="1"
+                                                       Text="{Binding Converter={StaticResource DirectoryConverter}}"
+                                                       FontSize="10"
+                                                       Foreground="#94a3b8"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,3,0,0"/>
+                                                                    </Grid>
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter Property="Background" Value="#f1f5f9"/>
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Button.Template>
+                                                    </Button>
+
+                                                    <!-- Remove button (top-right corner) -->
+                                                    <Button Click="RemoveRecentProject_Click"
+                                Tag="{Binding}"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Top"
+                                Margin="0,4,4,0"
+                                Width="20"
+                                Height="20"
+                                Cursor="Hand"
+                                ToolTip="Remove from recent projects">
+                                                        <Button.Template>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border x:Name="RemoveBorder"
+                                            Background="#f1f5f9"
+                                            CornerRadius="10"
+                                            Width="20"
+                                            Height="20">
+                                                                    <TextBlock x:Name="RemoveX"
+                                                   Text="×"
+                                                   FontSize="14"
+                                                   FontWeight="Bold"
+                                                   Foreground="#94a3b8"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,-2,0,0"/>
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="RemoveBorder" Property="Background" Value="#fee2e2"/>
+                                                                        <Setter TargetName="RemoveX" Property="Foreground" Value="#dc2626"/>
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Button.Template>
+                                                    </Button>
+                                                </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
 
                                     <!-- No Recent Projects Message -->
                                     <TextBlock x:Name="NoRecentProjectsText"
-                                       Text="No recent projects yet"
-                                       FontSize="11"
-                                       Foreground="#94a3b8"
-                                       FontStyle="Italic"
-                                       TextAlignment="Center"
-                                       Margin="0,40,0,0"
-                                       Visibility="Collapsed"/>
+                   Text="No recent projects yet"
+                   FontSize="11"
+                   Foreground="#94a3b8"
+                   FontStyle="Italic"
+                   TextAlignment="Center"
+                   Margin="0,40,0,0"
+                   Visibility="Collapsed"/>
                                 </StackPanel>
                             </ScrollViewer>
                         </Grid>

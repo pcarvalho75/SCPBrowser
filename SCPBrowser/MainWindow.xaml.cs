@@ -1124,6 +1124,22 @@ namespace SCPBrowser
             }
         }
 
+        private void RemoveRecentProject_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is string projectPath)
+            {
+                // Remove from settings
+                if (Settings.Default.RecentProjects != null && Settings.Default.RecentProjects.Contains(projectPath))
+                {
+                    Settings.Default.RecentProjects.Remove(projectPath);
+                    Settings.Default.Save();
+                }
+
+                // Refresh the UI
+                LoadRecentProjectsUI();
+            }
+        }
+
         // ==================== GENE ONTOLOGY STATUS CHECK ====================
         private void CheckGoStatus()
         {

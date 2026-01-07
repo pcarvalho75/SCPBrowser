@@ -30,7 +30,7 @@ namespace SCPBrowser.Controls
             InitializeComponent();
         }
 
-        public void UpdateChart(ProteomicsData data, int cutoff = 800, Dictionary<string, int> rawFileToPlateId = null)
+        public void UpdateChart(ProteomicsData data, int cutoff = 800, Dictionary<string, int> rawFileToPlateId = null, Dictionary<int, string> plateIdToName = null)
         {
             _currentCutoff = cutoff;
             ProteinChart.Plot.Clear();
@@ -102,6 +102,28 @@ namespace SCPBrowser.Controls
             cutoffLine.Color = ScottPlot.Color.FromHex("#b45309");
             cutoffLine.LineWidth = 2;
             cutoffLine.LinePattern = LinePattern.Dashed;
+
+            // Add plate legend
+            if (plateIdToName != null && plateIdToColorIndex.Count > 0)
+            {
+                ProteinChart.Plot.Legend.ManualItems.Clear();
+
+                foreach (var kvp in plateIdToColorIndex.OrderBy(x => x.Key))
+                {
+                    int plateId = kvp.Key;
+                    int colorIndex = kvp.Value;
+                    string plateName = plateIdToName.TryGetValue(plateId, out string name) ? name : $"Plate {plateId}";
+
+                    ProteinChart.Plot.Legend.ManualItems.Add(new LegendItem
+                    {
+                        LabelText = plateName,
+                        FillColor = ScottPlot.Color.FromHex(PlateColors[colorIndex])
+                    });
+                }
+
+                ProteinChart.Plot.Legend.IsVisible = true;
+                ProteinChart.Plot.Legend.Alignment = Alignment.UpperRight;
+            }
 
             // Configure axes
             ProteinChart.Plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.NumericManual(

@@ -21,6 +21,10 @@ namespace SCPBrowser.Services
         private Dictionary<string, int> _rawFileToPlateId;
         private List<HvpResult> _hvpResults;
 
+        private Dictionary<int, string> _plateIdToName;
+
+        public Dictionary<int, string> PlateIdToName => _plateIdToName;
+
         // Filter settings
         private int _proteinCutoff = 800;
         private List<int> _selectedPlateIds = new List<int>();
@@ -64,9 +68,10 @@ namespace SCPBrowser.Services
         /// <summary>
         /// Loads the mapping of raw file names to plate IDs
         /// </summary>
-        public async Task LoadPlateMappingAsync(ParquetDataService parquetService)
+        public async Task LoadPlateMappingAsync(ParquetDataService parquetService, PlateService plateService = null)
         {
             _rawFileToPlateId = new Dictionary<string, int>();
+            _plateIdToName = new Dictionary<int, string>();
 
             if (parquetService == null)
                 return;
@@ -80,7 +85,17 @@ namespace SCPBrowser.Services
                 }
             }
 
-            Console.WriteLine($"DataFilterService: Loaded plate mapping for {_rawFileToPlateId.Count} raw files");
+            // Load plate names if plate service is provided
+            if (plateService != null)
+            {
+                var plates = await plateService.GetPlatesAsync();
+                foreach (var plate in plates)
+                {
+                    _plateIdToName[plate.PlateId] = plate.PlateName;
+                }
+            }
+
+            Console.WriteLine($"DataFilterService: Loaded plate mapping for {_rawFileToPlateId.Count} raw files, {_plateIdToName.Count} plates");
         }
 
         /// <summary>
@@ -261,20 +276,16 @@ namespace SCPBrowser.Services
             };
         }
 
-        /// <summary>
-        /// Clears all data and resets filters
-        /// </summary>
         public void Clear()
         {
             _originalData = null;
             _plateFilteredData = null;
             _filteredData = null;
             _rawFileToPlateId = null;
+            _plateIdToName = null;
             _hvpResults = null;
             _selectedPlateIds = new List<int>();
             _proteinCutoff = 800;
-
-            Console.WriteLine("DataFilterService: Cleared all data and filters");
         }
     }
 }

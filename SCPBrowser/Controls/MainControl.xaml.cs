@@ -25,6 +25,7 @@ namespace SCPBrowser
         private List<string> _allParquetFilePaths;
         public event EventHandler<int> ProteinCutoffChanged;
         private Dictionary<string, int> _rawFileToPlateId;
+        private Dictionary<int, string> _plateIdToName;
 
 
         public int ProteinCutoff
@@ -46,7 +47,7 @@ namespace SCPBrowser
         {
             if (_currentData != null)
             {
-                ProteinHistogram.UpdateChart(_currentData, newValue, _rawFileToPlateId);
+                ProteinHistogram.UpdateChart(_currentData, newValue, _rawFileToPlateId, _plateIdToName);
             }
 
             // Bubble up to MainWindow
@@ -408,11 +409,12 @@ namespace SCPBrowser
             return predictions;
         }
 
-        public void UpdateChart(ProteomicsData data, Dictionary<string, int> rawFileToPlateId = null)
+        public void UpdateChart(ProteomicsData data, Dictionary<string, int> rawFileToPlateId = null, Dictionary<int, string> plateIdToName = null)
         {
             _currentData = data;
             _rawFileToPlateId = rawFileToPlateId;
-            ProteinHistogram.UpdateChart(data, ProteinCutoffControl.Value, rawFileToPlateId);
+            _plateIdToName = plateIdToName;
+            ProteinHistogram.UpdateChart(data, ProteinCutoffControl.Value, rawFileToPlateId, plateIdToName);
         }
 
         public ProteomicsData GetCurrentData()

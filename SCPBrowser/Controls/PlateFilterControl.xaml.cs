@@ -211,7 +211,28 @@ namespace SCPBrowser
 
         public string FileCountText => $"({FileCount} files)";
 
-        public string ToolTip => $"{PlateName}\n{FileCount} raw files\nClick to toggle visibility";
+        public string ToolTip
+        {
+            get
+            {
+                var lines = new List<string> { PlateName, $"{FileCount} raw files" };
+
+                if (PlateInfo != null)
+                {
+                    if (!string.IsNullOrEmpty(PlateInfo.RunDate))
+                        lines.Add($"Run Date: {PlateInfo.RunDate}");
+                    if (!string.IsNullOrEmpty(PlateInfo.InstrumentName))
+                        lines.Add($"Instrument: {PlateInfo.InstrumentName}");
+                    if (!string.IsNullOrEmpty(PlateInfo.OperatorName))
+                        lines.Add($"Operator: {PlateInfo.OperatorName}");
+                    if (!string.IsNullOrEmpty(PlateInfo.Description))
+                        lines.Add($"Description: {PlateInfo.Description}");
+                }
+
+                lines.Add("Click to toggle visibility");
+                return string.Join("\n", lines);
+            }
+        }
 
         public bool IsSelected
         {

@@ -168,7 +168,7 @@ namespace SCPBrowser
                 // Load and show plate filter control
                 LoadingOverlay.SetProgress("Loading plates...");
                 await PlateFilterControl.LoadPlatesAsync(projectDbPath);
-                await _dataFilterService.LoadPlateMappingAsync(_parquetService);
+                await _dataFilterService.LoadPlateMappingAsync(_parquetService, _plateService);
                 PlateFilterControl.Visibility = Visibility.Visible;
                 Console.WriteLine("PlateFilterControl loaded and visible");
 
@@ -329,7 +329,7 @@ namespace SCPBrowser
 
             // Bar chart shows plate-filtered data (all bars) with visual cutoff
             var dataForBarChart = _dataFilterService.PlateFilteredData ?? _dataFilterService.FilteredData;
-            MainControlTab.UpdateChart(dataForBarChart, _dataFilterService.RawFileToPlateId);
+            MainControlTab.UpdateChart(dataForBarChart, _dataFilterService.RawFileToPlateId, _dataFilterService.PlateIdToName);
 
             // Pass HVP results to PeptideTicTab before updating chart
             PeptideTicTab.SetHvpResults(_dataFilterService.HvpResults);

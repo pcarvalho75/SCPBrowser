@@ -115,10 +115,11 @@ namespace SCPBrowser
             _fullDataTable.Columns.Add("Protein Group", typeof(string));
 
             // Column 2: Variance Standardized (HVP score) - only if we have HVP data
+            // FIX: Changed "Var. Std." to "Var_Std" because dots in column names break WPF binding paths
             bool hasHvpData = _hvpLookup != null && _hvpLookup.Count > 0;
             if (hasHvpData)
             {
-                _fullDataTable.Columns.Add("Var. Std.", typeof(double));
+                _fullDataTable.Columns.Add("Var_Std", typeof(double));
             }
 
             // Remaining columns: Raw files
@@ -138,11 +139,11 @@ namespace SCPBrowser
                 {
                     if (_hvpLookup.TryGetValue(protein, out double varStd))
                     {
-                        row["Var. Std."] = varStd;
+                        row["Var_Std"] = varStd;
                     }
                     else
                     {
-                        row["Var. Std."] = DBNull.Value;
+                        row["Var_Std"] = DBNull.Value;
                     }
                 }
 
@@ -181,12 +182,15 @@ namespace SCPBrowser
                     textColumn.Width = new DataGridLength(250, DataGridLengthUnitType.Pixel);
                 }
             }
-            else if (e.PropertyName == "Var. Std.")
+            else if (e.PropertyName == "Var_Std") // FIX: Matched new safe column name
             {
                 // HVP column - special formatting
                 var textColumn = e.Column as DataGridTextColumn;
                 if (textColumn != null)
                 {
+                    // Set the visual header back to "Var. Std." for the user
+                    textColumn.Header = "Var. Std.";
+
                     textColumn.Width = new DataGridLength(80, DataGridLengthUnitType.Pixel);
                     if (textColumn.Binding is System.Windows.Data.Binding binding)
                     {

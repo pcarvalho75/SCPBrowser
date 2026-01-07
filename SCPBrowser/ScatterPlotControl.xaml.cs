@@ -415,10 +415,10 @@ namespace SCPBrowser
                 Canvas.SetTop(ellipse, screenY - MarkerSize / 2);
                 PlotCanvas.Children.Add(ellipse);
 
-                int peptideCount = data.PeptideCountPerFile.ContainsKey(rawFiles[i]) ? data.PeptideCountPerFile[rawFiles[i]] : 0;
-                double ticValue = data.TotalIonCurrentPerFile.ContainsKey(rawFiles[i]) ? data.TotalIonCurrentPerFile[rawFiles[i]] : 0;
-                int proteinCount = data.ProteinCountPerFile.ContainsKey(rawFiles[i]) ? data.ProteinCountPerFile[rawFiles[i]] : 0;
-                double trypsinRatio = data.TargetProteinRatioPerFile.ContainsKey(rawFiles[i]) ? data.TargetProteinRatioPerFile[rawFiles[i]] : 0;
+                data.PeptideCountPerFile.TryGetValue(rawFiles[i], out int peptideCount);
+                data.TotalIonCurrentPerFile.TryGetValue(rawFiles[i], out double ticValue);
+                data.ProteinCountPerFile.TryGetValue(rawFiles[i], out int proteinCount);
+                data.TargetProteinRatioPerFile.TryGetValue(rawFiles[i], out double trypsinRatio);
 
                 var dataPoint = new DataPoint
                 {
@@ -821,10 +821,10 @@ namespace SCPBrowser
                 PlotCanvas.Children.Add(ellipse);
 
                 // Get additional data for DataPoint
-                int peptideCount = data.PeptideCountPerFile.ContainsKey(rawFiles[i]) ? data.PeptideCountPerFile[rawFiles[i]] : 0;
-                double ticValue = data.TotalIonCurrentPerFile.ContainsKey(rawFiles[i]) ? data.TotalIonCurrentPerFile[rawFiles[i]] : 0;
-                int proteinCount = data.ProteinCountPerFile.ContainsKey(rawFiles[i]) ? data.ProteinCountPerFile[rawFiles[i]] : 0;
-                double trypsinRatio = data.TargetProteinRatioPerFile.ContainsKey(rawFiles[i]) ? data.TargetProteinRatioPerFile[rawFiles[i]] : 0;
+                data.PeptideCountPerFile.TryGetValue(rawFiles[i], out int peptideCount);
+                data.TotalIonCurrentPerFile.TryGetValue(rawFiles[i], out double ticValue);
+                data.ProteinCountPerFile.TryGetValue(rawFiles[i], out int proteinCount);
+                data.TargetProteinRatioPerFile.TryGetValue(rawFiles[i], out double trypsinRatio);
 
                 var dataPoint = new DataPoint
                 {

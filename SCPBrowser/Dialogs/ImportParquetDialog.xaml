@@ -398,20 +398,27 @@ Use * for wildcards (e.g., *_1mo_*)"/>
                 <DataGrid Grid.Row="3"
                           x:Name="RawFilesDataGrid"
                           AutoGenerateColumns="False"
- 
+
                           CanUserAddRows="False"
                           CanUserDeleteRows="False"
                           CanUserReorderColumns="False"
-                       
+
                            SelectionMode="Extended"
                           HeadersVisibility="Column"
                           GridLinesVisibility="Horizontal"
                           RowStyle="{StaticResource HighlightableDataGridRow}"
-                  
+
                           BorderBrush="#e2e8f0"
                           BorderThickness="1"
                           CellEditEnding="RawFilesDataGrid_CellEditEnding"
-                          RowHeight="32">
+                          RowHeight="32"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          VirtualizingPanel.ScrollUnit="Pixel"
+                          EnableRowVirtualization="True"
+                          EnableColumnVirtualization="True"
+                          ScrollViewer.IsDeferredScrollingEnabled="True"
+                          ScrollViewer.CanContentScroll="True">
 
                     <DataGrid.ColumnHeaderStyle>
                         <Style TargetType="DataGridColumnHeader">

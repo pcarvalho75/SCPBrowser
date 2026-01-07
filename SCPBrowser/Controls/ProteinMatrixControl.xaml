@@ -53,7 +53,14 @@
                   SelectionUnit="Cell"
                   AlternatingRowBackground="#f9fafb"
                   RowBackground="White"
-                  AutoGeneratingColumn="ProteinMatrixGrid_AutoGeneratingColumn">
+                  AutoGeneratingColumn="ProteinMatrixGrid_AutoGeneratingColumn"
+                  VirtualizingPanel.IsVirtualizing="True"
+                  VirtualizingPanel.VirtualizationMode="Recycling"
+                  VirtualizingPanel.ScrollUnit="Pixel"
+                  EnableRowVirtualization="True"
+                  EnableColumnVirtualization="True"
+                  ScrollViewer.IsDeferredScrollingEnabled="True"
+                  ScrollViewer.CanContentScroll="True">
             <DataGrid.ColumnHeaderStyle>
                 <Style TargetType="DataGridColumnHeader">
                     <Setter Property="Background" Value="#e2e8f0"/>

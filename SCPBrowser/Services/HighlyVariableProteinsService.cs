@@ -401,6 +401,7 @@ namespace SCPBrowser.Services
         /// <summary>
         /// LOESS (Locally Estimated Scatterplot Smoothing) implementation.
         /// Fits a local quadratic polynomial at each point using tricube weighting.
+        /// Optimized to use O(n log n) sorting once instead of O(n²) per-point sorting.
         /// </summary>
         /// <param name="x">Independent variable (log10 mean)</param>
         /// <param name="y">Dependent variable (log10 variance)</param>
@@ -418,22 +419,45 @@ namespace SCPBrowser.Services
             int windowSize = (int)(span * n);
             windowSize = Math.Max(3, windowSize);   // At least 3 points for quadratic fit
             windowSize = Math.Min(windowSize, n);   // At most n points (prevents IndexOutOfRange)
+            int halfWindow = windowSize / 2;
 
             var fitted = new double[n];
-            var indices = Enumerable.Range(0, n).ToArray();
+
+            // OPTIMIZATION: Sort once by x values, then use sliding window approach
+            // This reduces complexity from O(n² log n) to O(n log n)
+            var sortedIndices = Enumerable.Range(0, n)
+                .OrderBy(i => x[i])
+                .ToArray();
+
+            // Create reverse lookup: original index -> sorted position
+            var sortedPosition = new int[n];
+            for (int i = 0; i < n; i++)
+                sortedPosition[sortedIndices[i]] = i;
+
+            // Pre-allocate arrays for local regression (reuse to reduce allocations)
+            var x_local = new double[windowSize];
+            var y_local = new double[windowSize];
+            var w_local = new double[windowSize];
 
             for (int i = 0; i < n; i++)
             {
                 double xi = x[i];
+                int sortedPos = sortedPosition[i];
 
-                // Find k nearest neighbors by x distance
-                var nearestIndices = indices
-                    .Select(j => new { Index = j, Dist = Math.Abs(x[j] - xi) })
-                    .OrderBy(p => p.Dist)
-                    .Take(windowSize)
-                    .ToList();
+                // Find window bounds using sorted order (O(1) instead of O(n log n))
+                int windowStart = Math.Max(0, sortedPos - halfWindow);
+                int windowEnd = Math.Min(n - 1, sortedPos + halfWindow);
 
-                int actualK = nearestIndices.Count;
+                // Ensure we have exactly windowSize points if possible
+                if (windowEnd - windowStart + 1 < windowSize)
+                {
+                    if (windowStart == 0)
+                        windowEnd = Math.Min(n - 1, windowSize - 1);
+                    else if (windowEnd == n - 1)
+                        windowStart = Math.Max(0, n - windowSize);
+                }
+
+                int actualK = windowEnd - windowStart + 1;
 
                 // Safety: need at least 3 points for quadratic fit
                 if (actualK < 3)
@@ -442,27 +466,29 @@ namespace SCPBrowser.Services
                     continue;
                 }
 
-                // Maximum distance for weight calculation
-                double maxDist = nearestIndices.Last().Dist;
+                // Find maximum distance for weight normalization
+                double maxDist = 0;
+                for (int k = 0; k < actualK; k++)
+                {
+                    int idx = sortedIndices[windowStart + k];
+                    double dist = Math.Abs(x[idx] - xi);
+                    if (dist > maxDist) maxDist = dist;
+                }
                 if (maxDist < 1e-10) maxDist = 1.0;
 
                 // Extract local data and weights
-                var x_local = new double[actualK];
-                var y_local = new double[actualK];
-                var w_local = new double[actualK];
-
                 for (int k = 0; k < actualK; k++)
                 {
-                    int idx = nearestIndices[k].Index;
+                    int idx = sortedIndices[windowStart + k];
                     x_local[k] = x[idx];
                     y_local[k] = y[idx];
-                    w_local[k] = TricubeWeight(nearestIndices[k].Dist / maxDist);
+                    w_local[k] = TricubeWeight(Math.Abs(x[idx] - xi) / maxDist);
                 }
 
-                fitted[i] = WeightedLocalRegression(xi, x_local, y_local, w_local);
+                fitted[i] = WeightedLocalRegression(xi, x_local, y_local, w_local, actualK);
 
                 // Report progress during LOESS (most expensive step)
-                if (i % 100 == 0)
+                if (i % 500 == 0)
                 {
                     int progress = 30 + (int)(60.0 * i / n);
                     ReportProgress(progress);
@@ -476,15 +502,16 @@ namespace SCPBrowser.Services
         /// Weighted local polynomial regression (degree 2 = quadratic).
         /// Solves the weighted least squares problem using Cramer's rule.
         /// </summary>
-        private double WeightedLocalRegression(double xi, double[] x, double[] y, double[] w)
+        private double WeightedLocalRegression(double xi, double[] x, double[] y, double[] w, int count = -1)
         {
             // Build weighted normal equations for quadratic fit: y = a + b*x + c*x²
             // Matrix form: (X'WX)β = X'Wy
 
+            int n = count > 0 ? count : x.Length;
             double sumW = 0, sumWX = 0, sumWX2 = 0, sumWX3 = 0, sumWX4 = 0;
             double sumWY = 0, sumWXY = 0, sumWX2Y = 0;
 
-            for (int i = 0; i < x.Length; i++)
+            for (int i = 0; i < n; i++)
             {
                 double wi = w[i];
                 double xi_val = x[i];

@@ -23,6 +23,9 @@ namespace SCPBrowser.Services
 
         private Dictionary<int, string> _plateIdToName;
 
+        // Caching flags
+        private bool _plateMappingLoaded = false;
+
         public Dictionary<int, string> PlateIdToName => _plateIdToName;
 
         // Filter settings
@@ -66,17 +69,24 @@ namespace SCPBrowser.Services
         }
 
         /// <summary>
-        /// Loads the mapping of raw file names to plate IDs
+        /// Loads the mapping of raw file names to plate IDs (cached after first load)
         /// </summary>
         public async Task LoadPlateMappingAsync(ParquetDataService parquetService, PlateService plateService = null)
         {
+            // Use cache if already loaded
+            if (_plateMappingLoaded && _rawFileToPlateId != null && _rawFileToPlateId.Count > 0)
+            {
+                Console.WriteLine("DataFilterService: Using cached plate mapping");
+                return;
+            }
+
             _rawFileToPlateId = new Dictionary<string, int>();
             _plateIdToName = new Dictionary<int, string>();
 
             if (parquetService == null)
                 return;
 
-            var rawFiles = await parquetService.GetRawFilesAsync();
+            var rawFiles = await parquetService.GetRawFilesAsync().ConfigureAwait(false);
             foreach (var rf in rawFiles)
             {
                 if (rf.PlateId.HasValue)
@@ -88,14 +98,26 @@ namespace SCPBrowser.Services
             // Load plate names if plate service is provided
             if (plateService != null)
             {
-                var plates = await plateService.GetPlatesAsync();
+                var plates = await plateService.GetPlatesAsync().ConfigureAwait(false);
                 foreach (var plate in plates)
                 {
                     _plateIdToName[plate.PlateId] = plate.PlateName;
                 }
             }
 
+            _plateMappingLoaded = true;
             Console.WriteLine($"DataFilterService: Loaded plate mapping for {_rawFileToPlateId.Count} raw files, {_plateIdToName.Count} plates");
+        }
+
+        /// <summary>
+        /// Invalidates the cached plate mapping (call after data import)
+        /// </summary>
+        public void InvalidatePlateMappingCache()
+        {
+            _plateMappingLoaded = false;
+            _rawFileToPlateId?.Clear();
+            _plateIdToName?.Clear();
+            Console.WriteLine("DataFilterService: Plate mapping cache invalidated");
         }
 
         /// <summary>

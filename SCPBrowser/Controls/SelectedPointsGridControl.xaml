@@ -43,7 +43,7 @@
             </Grid>
         </Border>
 
-        <!-- Data Grid -->
+        <!-- Data Grid with Virtualization for smooth scrolling with 1000+ items -->
         <DataGrid x:Name="SelectedPointsGrid"
                   Grid.Row="1"
                   AutoGenerateColumns="False"
@@ -58,7 +58,14 @@
                   SelectionMode="Single"
                   SelectionChanged="SelectedPointsGrid_SelectionChanged"
                   AlternatingRowBackground="#f9fafb"
-                  RowBackground="White">
+                  RowBackground="White"
+                  VirtualizingPanel.IsVirtualizing="True"
+                  VirtualizingPanel.VirtualizationMode="Recycling"
+                  VirtualizingPanel.ScrollUnit="Pixel"
+                  EnableRowVirtualization="True"
+                  EnableColumnVirtualization="True"
+                  ScrollViewer.IsDeferredScrollingEnabled="True"
+                  ScrollViewer.CanContentScroll="True">
             <DataGrid.ColumnHeaderStyle>
                 <Style TargetType="DataGridColumnHeader">
                     <Setter Property="Background" Value="#e2e8f0"/>

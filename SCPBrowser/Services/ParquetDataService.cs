@@ -930,7 +930,11 @@ namespace SCPBrowser.Services
         /// </summary>
         private async Task BulkInsertProteinQuantAsync(List<ProteinQuantSummary> proteinStats)
         {
+            if (proteinStats == null || proteinStats.Count == 0)
+                return;
+
             var connectionString = $"Data Source={_projectDbPath}";
+            const int batchSize = 500; // SQLite performs well with batches of 500
 
             using (var connection = new SqliteConnection(connectionString))
             {
@@ -940,32 +944,50 @@ namespace SCPBrowser.Services
                 {
                     try
                     {
-                        foreach (var stat in proteinStats)
+                        // Use a prepared command with parameter reuse for much better performance
+                        using (var command = connection.CreateCommand())
                         {
-                            using (var command = connection.CreateCommand())
+                            command.CommandText = @"
+                                INSERT INTO protein_quant_summary
+                                (protein_id, raw_file_id, median_intensity, mean_intensity, detection_count)
+                                VALUES
+                                (@proteinId, @rawFileId, @median, @mean, @count)
+                            ";
+
+                            var proteinIdParam = command.Parameters.Add("@proteinId", SqliteType.Integer);
+                            var rawFileIdParam = command.Parameters.Add("@rawFileId", SqliteType.Integer);
+                            var medianParam = command.Parameters.Add("@median", SqliteType.Real);
+                            var meanParam = command.Parameters.Add("@mean", SqliteType.Real);
+                            var countParam = command.Parameters.Add("@count", SqliteType.Integer);
+
+                            command.Prepare(); // Pre-compile the statement for faster execution
+
+                            int count = 0;
+                            foreach (var stat in proteinStats)
                             {
-                                command.CommandText = @"
-                            INSERT INTO protein_quant_summary 
-                            (protein_id, raw_file_id, median_intensity, mean_intensity, detection_count)
-                            VALUES 
-                            (@proteinId, @rawFileId, @median, @mean, @count)
-                        ";
+                                proteinIdParam.Value = stat.ProteinId;
+                                rawFileIdParam.Value = stat.RawFileId;
+                                medianParam.Value = stat.MedianIntensity;
+                                meanParam.Value = stat.MeanIntensity;
+                                countParam.Value = stat.DetectionCount;
 
-                                command.Parameters.AddWithValue("@proteinId", stat.ProteinId);
-                                command.Parameters.AddWithValue("@rawFileId", stat.RawFileId);
-                                command.Parameters.AddWithValue("@median", stat.MedianIntensity);
-                                command.Parameters.AddWithValue("@mean", stat.MeanIntensity);
-                                command.Parameters.AddWithValue("@count", stat.DetectionCount);
+                                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
 
-                                await command.ExecuteNonQueryAsync();
+                                // Periodic commit for very large datasets to avoid memory pressure
+                                if (++count % batchSize == 0)
+                                {
+                                    await transaction.CommitAsync().ConfigureAwait(false);
+                                    transaction.Dispose();
+                                    using var newTransaction = connection.BeginTransaction();
+                                }
                             }
                         }
 
-                        await transaction.CommitAsync();
+                        await transaction.CommitAsync().ConfigureAwait(false);
                     }
                     catch
                     {
-                        await transaction.RollbackAsync();
+                        await transaction.RollbackAsync().ConfigureAwait(false);
                         throw;
                     }
                 }

@@ -27,9 +27,12 @@ namespace SCPBrowser
         private GoTermResolver _goTermResolver;
         private BioTessera.GO.GoStatusService _goStatusService;
         private System.Windows.Threading.DispatcherTimer _bioTesseraDebounceTimer;
+        private System.Windows.Threading.DispatcherTimer _proteinCutoffDebounceTimer;
         private const int BioTesseraDebounceDelayMs = 400;
+        private const int ProteinCutoffDebounceDelayMs = 300;
         private const string SETTING_PROTEIN_CUTOFF = "ProteinCutoff";
         private DataFilterService _dataFilterService;
+        private int _pendingProteinCutoff;
 
 
         // Public properties for controls to access
@@ -269,7 +272,24 @@ namespace SCPBrowser
             }
         }
 
-        private async void MainControlTab_ProteinCutoffChanged(object sender, int newCutoff)
+        private void MainControlTab_ProteinCutoffChanged(object sender, int newCutoff)
+        {
+            // Use debouncing to avoid excessive filter operations when dragging slider
+            _pendingProteinCutoff = newCutoff;
+            _proteinCutoffDebounceTimer?.Stop();
+            _proteinCutoffDebounceTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(ProteinCutoffDebounceDelayMs)
+            };
+            _proteinCutoffDebounceTimer.Tick += async (s, e) =>
+            {
+                _proteinCutoffDebounceTimer.Stop();
+                await ApplyProteinCutoffAsync(_pendingProteinCutoff);
+            };
+            _proteinCutoffDebounceTimer.Start();
+        }
+
+        private async Task ApplyProteinCutoffAsync(int newCutoff)
         {
             try
             {

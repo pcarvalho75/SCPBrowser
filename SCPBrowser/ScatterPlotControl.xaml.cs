@@ -31,6 +31,9 @@ namespace SCPBrowser
         // Checkbox filter sets for persistent selection
         public HashSet<string> CheckedCellTypes { get; set; }
         public HashSet<string> CheckedBioConditions { get; set; }
+
+        // HVP for dimensionality reduction
+        public List<HvpResult> HvpResults { get; set; }
     }
 
     public class PlotSelectionChangedEventArgs : EventArgs
@@ -60,6 +63,7 @@ namespace SCPBrowser
         public event EventHandler<PlotSelectionChangedEventArgs> SelectionChanged;
         public event EventHandler<PointInteractionEventArgs> PointHovered;
         public event EventHandler<PointInteractionEventArgs> PointClicked;
+        private HashSet<string> _hvpProteinIds;
 
         public ScatterPlotControl()
         {
@@ -90,13 +94,31 @@ namespace SCPBrowser
 
             try
             {
-                // Clear PCA/UMAP if data changed
-                if (_currentData != data)
+                // Extract HVP protein IDs from options
+                HashSet<string> newHvpIds = null;
+                if (options?.HvpResults != null && options.HvpResults.Count > 0)
+                {
+                    newHvpIds = new HashSet<string>(
+                        options.HvpResults
+                            .Where(h => h.IsHighlyVariable)
+                            .Select(h => h.ProteinId));
+                }
+
+                // Clear PCA/UMAP if data changed OR if HVP set changed
+                bool hvpChanged = !HvpSetsEqual(_hvpProteinIds, newHvpIds);
+                if (_currentData != data || hvpChanged)
                 {
                     _pcaResult = null;
                     _pcaProteinNames = null;
                     _umapResult = null;
+
+                    if (hvpChanged)
+                    {
+                        Console.WriteLine($"HVP set changed: {_hvpProteinIds?.Count ?? 0} -> {newHvpIds?.Count ?? 0}");
+                    }
                 }
+
+                _hvpProteinIds = newHvpIds;
 
                 _currentData = data;
                 _currentOptions = options;
@@ -152,6 +174,14 @@ namespace SCPBrowser
             }
         }
 
+        private bool HvpSetsEqual(HashSet<string> a, HashSet<string> b)
+        {
+            if (a == null && b == null) return true;
+            if (a == null || b == null) return false;
+            if (a.Count != b.Count) return false;
+            return a.SetEquals(b);
+        }
+
         /// <summary>
         /// Gets PCA loadings data for display. Returns null if PCA hasn't been computed.
         /// </summary>
@@ -174,7 +204,21 @@ namespace SCPBrowser
             try
             {
                 var rawFiles = data.RawFileNames.ToList();
-                var proteins = data.ProteinQuantMatrix.Keys.ToList();
+
+                // Determine which proteins to use - HVPs if available, otherwise all
+                List<string> proteins;
+                if (_hvpProteinIds != null && _hvpProteinIds.Count > 0)
+                {
+                    proteins = data.ProteinQuantMatrix.Keys
+                        .Where(p => _hvpProteinIds.Contains(p))
+                        .ToList();
+                    Console.WriteLine($"UMAP: Using {proteins.Count} highly variable proteins");
+                }
+                else
+                {
+                    proteins = data.ProteinQuantMatrix.Keys.ToList();
+                    Console.WriteLine($"UMAP: Using all {proteins.Count} proteins (no HVP filter)");
+                }
 
                 int nSamples = rawFiles.Count;
                 int nProteins = proteins.Count;
@@ -223,7 +267,6 @@ namespace SCPBrowser
                 }
 
                 _umapResult = umap.GetEmbedding();
-
             }
             catch (Exception ex)
             {
@@ -411,7 +454,21 @@ namespace SCPBrowser
             try
             {
                 var rawFiles = data.RawFileNames.ToList();
-                var proteins = data.ProteinQuantMatrix.Keys.ToList();
+
+                // Determine which proteins to use - HVPs if available, otherwise all
+                List<string> proteins;
+                if (_hvpProteinIds != null && _hvpProteinIds.Count > 0)
+                {
+                    proteins = data.ProteinQuantMatrix.Keys
+                        .Where(p => _hvpProteinIds.Contains(p))
+                        .ToList();
+                    Console.WriteLine($"PCA: Using {proteins.Count} highly variable proteins");
+                }
+                else
+                {
+                    proteins = data.ProteinQuantMatrix.Keys.ToList();
+                    Console.WriteLine($"PCA: Using all {proteins.Count} proteins (no HVP filter)");
+                }
 
                 int nSamples = rawFiles.Count;
                 int nProteins = proteins.Count;

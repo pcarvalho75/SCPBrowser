@@ -324,9 +324,15 @@ namespace SCPBrowser
             var dataForBarChart = _dataFilterService.PlateFilteredData ?? _dataFilterService.FilteredData;
             MainControlTab.UpdateChart(dataForBarChart, _dataFilterService.RawFileToPlateId);
 
+            // Pass HVP results to PeptideTicTab before updating chart
+            PeptideTicTab.SetHvpResults(_dataFilterService.HvpResults);
+
             // Other tabs get fully filtered data (excluding below-cutoff)
             PeptideTicTab.UpdateChart(_dataFilterService.FilteredData, clearSelections: false);
-            ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData);
+
+            // Pass HVP results to protein matrix tab
+            ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
+
             await UpdateBioTesseraTabAsync();
         }
 
@@ -746,7 +752,7 @@ namespace SCPBrowser
             PeptideTicTab.SetExcludedRuns(excludedRunNames);
             Console.WriteLine($"Loaded {excludedRunNames.Count} excluded runs from database");
 
-            ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData);
+            ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
 
             // Set image base directory
             PeptideTicTab.SetImageBaseDirectory(MainControlTab.GetCurrentFileDirectory());

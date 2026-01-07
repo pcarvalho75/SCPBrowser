@@ -31,6 +31,7 @@ namespace SCPBrowser
         public event EventHandler<RunInclusionChangedEventArgs> RunInclusionChanged;
         public event EventHandler ClearAllExclusionsRequested;
         private bool _isLassoActive = false;
+        private List<HvpResult> _hvpResults;
 
         public PeptideTicControl()
         {
@@ -43,6 +44,14 @@ namespace SCPBrowser
             SelectedPointsGridPanel.ClearAllExclusionsRequested += SelectedPointsGridPanel_ClearAllExclusionsRequested;
 
             _isInitialized = true;
+        }
+
+        /// <summary>
+        /// Sets the HVP results for use in PCA/UMAP dimensionality reduction
+        /// </summary>
+        public void SetHvpResults(List<HvpResult> hvpResults)
+        {
+            _hvpResults = hvpResults;
         }
 
         /// <summary>
@@ -412,7 +421,8 @@ namespace SCPBrowser
                 BioConditionPerFile = _currentData.BiologicalConditionPerFile,
                 BioConditionColorMap = GenerateBioConditionColorMap(),
                 CheckedCellTypes = _checkedCellTypes,
-                CheckedBioConditions = _checkedBioConditions
+                CheckedBioConditions = _checkedBioConditions,
+                HvpResults = _hvpResults  // Add this line
             };
 
             ScatterPlot.UpdatePlot(_currentData, options);

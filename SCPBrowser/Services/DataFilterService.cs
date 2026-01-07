@@ -19,6 +19,7 @@ namespace SCPBrowser.Services
         private ProteomicsData _plateFilteredData;
         private ProteomicsData _filteredData;
         private Dictionary<string, int> _rawFileToPlateId;
+        private List<HvpResult> _hvpResults;
 
         // Filter settings
         private int _proteinCutoff = 800;
@@ -29,6 +30,7 @@ namespace SCPBrowser.Services
         public ProteomicsData PlateFilteredData => _plateFilteredData;
         public ProteomicsData FilteredData => _filteredData;
         public Dictionary<string, int> RawFileToPlateId => _rawFileToPlateId;
+        public List<HvpResult> HvpResults => _hvpResults;
 
         // Filter settings properties
         public int ProteinCutoff
@@ -98,10 +100,46 @@ namespace SCPBrowser.Services
             // Step 2: Filter by protein cutoff
             _filteredData = FilterByProteinCutoff(_plateFilteredData, _proteinCutoff);
 
+            // Step 3: Compute HVP on filtered data
+            ComputeHvpResults();
+
             Console.WriteLine($"DataFilterService: Filters applied - {_filteredData.TotalRawFiles} raw files pass all filters");
 
             // Notify listeners
             FilteredDataChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Computes Highly Variable Proteins for the current filtered data
+        /// </summary>
+        private void ComputeHvpResults()
+        {
+            _hvpResults = null;
+
+            if (_filteredData == null || _filteredData.ProteinQuantMatrix.Count == 0)
+            {
+                Console.WriteLine("DataFilterService: No data for HVP computation");
+                return;
+            }
+
+            try
+            {
+                var hvpService = new HighlyVariableProteinsService();
+                _hvpResults = hvpService.FindHighlyVariableProteins(
+                    _filteredData.ProteinQuantMatrix,
+                    nTopProteins: 2000,
+                    loessSpan: 0.3,
+                    minDetectionRate: 0.05,
+                    minAbsoluteDetections: 20);
+
+                int hvpCount = _hvpResults?.Count(h => h.IsHighlyVariable) ?? 0;
+                Console.WriteLine($"DataFilterService: HVP computed - {hvpCount} highly variable proteins identified");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"DataFilterService: HVP computation failed - {ex.Message}");
+                _hvpResults = null;
+            }
         }
 
         /// <summary>
@@ -155,32 +193,42 @@ namespace SCPBrowser.Services
         }
 
         /// <summary>
-        /// Filters ProteomicsData to only include specified raw files
+        /// Filters proteomics data to only include specific raw files
         /// </summary>
-        private ProteomicsData FilterDataByRawFiles(ProteomicsData source, HashSet<string> rawFilesToInclude)
+        private ProteomicsData FilterDataByRawFiles(ProteomicsData source, HashSet<string> allowedRawFiles)
         {
             var filtered = new ProteomicsData
             {
-                RawFileNames = source.RawFileNames.Where(rf => rawFilesToInclude.Contains(rf)).ToList(),
-                ProteinCountPerFile = source.ProteinCountPerFile.Where(kvp => rawFilesToInclude.Contains(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
-                PeptideCountPerFile = source.PeptideCountPerFile.Where(kvp => rawFilesToInclude.Contains(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
-                TotalIonCurrentPerFile = source.TotalIonCurrentPerFile.Where(kvp => rawFilesToInclude.Contains(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
-                TargetProteinRatioPerFile = source.TargetProteinRatioPerFile.Where(kvp => rawFilesToInclude.Contains(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
-                BiologicalConditionPerFile = source.BiologicalConditionPerFile.Where(kvp => rawFilesToInclude.Contains(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
-                ProteinQuantMatrix = new Dictionary<string, Dictionary<string, double>>(),
-                ProteinToGeneMap = new Dictionary<string, string>(source.ProteinToGeneMap)
+                RawFileNames = source.RawFileNames.Where(rf => allowedRawFiles.Contains(rf)).ToList(),
+                ProteinCountPerFile = source.ProteinCountPerFile
+                    .Where(kvp => allowedRawFiles.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                PeptideCountPerFile = source.PeptideCountPerFile
+                    .Where(kvp => allowedRawFiles.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                TotalIonCurrentPerFile = source.TotalIonCurrentPerFile
+                    .Where(kvp => allowedRawFiles.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                TargetProteinRatioPerFile = source.TargetProteinRatioPerFile
+                    .Where(kvp => allowedRawFiles.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                BiologicalConditionPerFile = source.BiologicalConditionPerFile
+                    .Where(kvp => allowedRawFiles.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                ProteinToGeneMap = new Dictionary<string, string>(source.ProteinToGeneMap),
+                ProteinQuantMatrix = new Dictionary<string, Dictionary<string, double>>()
             };
 
-            // Filter ProteinQuantMatrix
-            foreach (var protein in source.ProteinQuantMatrix.Keys)
+            // Filter protein quant matrix
+            foreach (var protein in source.ProteinQuantMatrix)
             {
-                var filteredRawFiles = source.ProteinQuantMatrix[protein]
-                    .Where(kvp => rawFilesToInclude.Contains(kvp.Key))
+                var filteredRawFiles = protein.Value
+                    .Where(kvp => allowedRawFiles.Contains(kvp.Key))
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
                 if (filteredRawFiles.Count > 0)
                 {
-                    filtered.ProteinQuantMatrix[protein] = filteredRawFiles;
+                    filtered.ProteinQuantMatrix[protein.Key] = filteredRawFiles;
                 }
             }
 
@@ -222,6 +270,7 @@ namespace SCPBrowser.Services
             _plateFilteredData = null;
             _filteredData = null;
             _rawFileToPlateId = null;
+            _hvpResults = null;
             _selectedPlateIds = new List<int>();
             _proteinCutoff = 800;
 

@@ -39,6 +39,13 @@ namespace SCPBrowser
         public MainWindow()
         {
             InitializeComponent();
+
+            // Subscribe to PeptideTicTab events
+            PeptideTicTab.CellTypePredictionsRequested += PeptideTicTab_CellTypePredictionsRequested;
+            PeptideTicTab.SelectionChangedForBioTessera += PeptideTicTab_SelectionChangedForBioTessera;
+            PeptideTicTab.RunInclusionChanged += PeptideTicTab_RunInclusionChanged;
+            PeptideTicTab.ClearAllExclusionsRequested += PeptideTicTab_ClearAllExclusionsRequested;
+
             _goTermResolver = new GoTermResolver(9606); // Human default
             UpdateWindowTitle();
 

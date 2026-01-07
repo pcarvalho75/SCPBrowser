@@ -258,8 +258,15 @@ namespace SCPBrowser
 
         private async void DataFilterService_FilteredDataChanged(object sender, EventArgs e)
         {
-            Console.WriteLine($"DataFilterService: FilteredDataChanged event received");
-            await RefreshAllTabsWithFilteredDataAsync();
+            try
+            {
+                Console.WriteLine($"DataFilterService: FilteredDataChanged event received");
+                await RefreshAllTabsWithFilteredDataAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in FilteredDataChanged handler: {ex.Message}");
+            }
         }
 
         private async void MainControlTab_ProteinCutoffChanged(object sender, int newCutoff)
@@ -315,8 +322,11 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 Console.WriteLine($"Error filtering data: {ex.Message}");
-                MessageBox.Show($"Error filtering data:\n\n{ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show($"Error filtering data:\n\n{ex.Message}", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                });
             }
         }
 
@@ -431,6 +441,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error clearing classifications: {ex.Message}");
                 MessageBox.Show($"Error clearing classifications:\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -599,10 +610,19 @@ namespace SCPBrowser
 
         private async void ProjectBrowser_Click(object sender, RoutedEventArgs e)
         {
-            if (!_hasOpenProject)
-                return;
+            try
+            {
+                if (!_hasOpenProject)
+                    return;
 
-            await ProjectBrowserDialog.ShowWithDatabaseAsync(_projectReferenceDatabasePath);
+                await ProjectBrowserDialog.ShowWithDatabaseAsync(_projectReferenceDatabasePath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error opening project browser: {ex.Message}");
+                MessageBox.Show($"Error opening project browser:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void About_Click(object sender, RoutedEventArgs e)
@@ -737,46 +757,55 @@ namespace SCPBrowser
 
         private async void MainControlTab_DataLoaded(object sender, EventArgs e)
         {
-            // Store original data in filter service
-            var originalData = MainControlTab.GetCurrentData();
-            _dataFilterService.SetOriginalData(originalData);
-            _dataFilterService.SelectedPlateIds = PlateFilterControl.GetSelectedPlateIds();
+            try
+            {
+                // Store original data in filter service
+                var originalData = MainControlTab.GetCurrentData();
+                _dataFilterService.SetOriginalData(originalData);
+                _dataFilterService.SelectedPlateIds = PlateFilterControl.GetSelectedPlateIds();
 
-            Console.WriteLine($"Stored original data: {originalData?.TotalRawFiles ?? 0} runs");
+                Console.WriteLine($"Stored original data: {originalData?.TotalRawFiles ?? 0} runs");
 
-            // Apply initial filters
-            await _dataFilterService.ApplyFiltersAsync(_parquetService);
+                // Apply initial filters
+                await _dataFilterService.ApplyFiltersAsync(_parquetService);
 
-            // When MainControlTab finishes loading, populate other tabs with the same data
-            PeptideTicTab.UpdateChart(_dataFilterService.FilteredData);
+                // When MainControlTab finishes loading, populate other tabs with the same data
+                PeptideTicTab.UpdateChart(_dataFilterService.FilteredData);
 
-            // Load raw file ID mapping for exclusion tracking
-            var rawFileIdMapping = await _parquetService.GetRawFileNameToIdMappingAsync();
-            PeptideTicTab.SetRawFileIdMapping(rawFileIdMapping);
+                // Load raw file ID mapping for exclusion tracking
+                var rawFileIdMapping = await _parquetService.GetRawFileNameToIdMappingAsync();
+                PeptideTicTab.SetRawFileIdMapping(rawFileIdMapping);
 
-            // Load existing exclusions from database
-            var excludedRunNames = await _parquetService.GetExcludedRunNamesAsync();
-            PeptideTicTab.SetExcludedRuns(excludedRunNames);
-            Console.WriteLine($"Loaded {excludedRunNames.Count} excluded runs from database");
+                // Load existing exclusions from database
+                var excludedRunNames = await _parquetService.GetExcludedRunNamesAsync();
+                PeptideTicTab.SetExcludedRuns(excludedRunNames);
+                Console.WriteLine($"Loaded {excludedRunNames.Count} excluded runs from database");
 
-            ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
+                ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
 
-            // Set image base directory
-            PeptideTicTab.SetImageBaseDirectory(MainControlTab.GetCurrentFileDirectory());
+                // Set image base directory
+                PeptideTicTab.SetImageBaseDirectory(MainControlTab.GetCurrentFileDirectory());
 
-            // Enable cell type classification if transcriptomic database is loaded
-            bool cellTypeAvailable = MainControlTab.IsTranscriptomicDatabaseLoaded();
-            PeptideTicTab.EnableCellTypeClassification(cellTypeAvailable);
+                // Enable cell type classification if transcriptomic database is loaded
+                bool cellTypeAvailable = MainControlTab.IsTranscriptomicDatabaseLoaded();
+                PeptideTicTab.EnableCellTypeClassification(cellTypeAvailable);
 
-            // Pass GO enrichment results to PeptideTicTab
-            var goResults = MainControlTab.GetGoEnrichmentResults();
-            var goColorMap = MainControlTab.GetGoTermColorMap();
-            var currentData = MainControlTab.GetCurrentData();
-            PeptideTicTab.EnableBioConditionClassification(currentData != null && currentData.BiologicalConditionPerFile.Count > 0);
+                // Pass GO enrichment results to PeptideTicTab
+                var goResults = MainControlTab.GetGoEnrichmentResults();
+                var goColorMap = MainControlTab.GetGoTermColorMap();
+                var currentData = MainControlTab.GetCurrentData();
+                PeptideTicTab.EnableBioConditionClassification(currentData != null && currentData.BiologicalConditionPerFile.Count > 0);
 
-            PeptideTicTab.SetGoEnrichmentResults(goResults, goColorMap);
+                PeptideTicTab.SetGoEnrichmentResults(goResults, goColorMap);
 
-            Console.WriteLine($"GO enrichment results passed: {goResults?.Count ?? 0} runs");
+                Console.WriteLine($"GO enrichment results passed: {goResults?.Count ?? 0} runs");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in DataLoaded handler: {ex.Message}");
+                MessageBox.Show($"Error loading data:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void PeptideTicTab_SelectionChangedForBioTessera(object sender, EventArgs e)
@@ -956,6 +985,11 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 Console.WriteLine($"[Exclusion] Error updating exclusion: {ex.Message}");
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show($"Error updating run exclusion:\n\n{ex.Message}", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                });
             }
         }
 
@@ -969,6 +1003,11 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 Console.WriteLine($"[Exclusion] Error clearing exclusions: {ex.Message}");
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show($"Error clearing exclusions:\n\n{ex.Message}", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                });
             }
         }
 
@@ -1047,37 +1086,46 @@ namespace SCPBrowser
 
         private async void RecentProject_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.Tag is string projectPath)
+            try
             {
-                Console.WriteLine($"Recent project clicked: {projectPath}");
-
-                // Check if the file still exists
-                if (!File.Exists(projectPath))
+                if (sender is Button button && button.Tag is string projectPath)
                 {
-                    var result = MessageBox.Show(
-                        $"This project file no longer exists:\n\n{projectPath}\n\nRemove it from recent projects?",
-                        "Project Not Found",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Warning);
+                    Console.WriteLine($"Recent project clicked: {projectPath}");
 
-                    if (result == MessageBoxResult.Yes)
+                    // Check if the file still exists
+                    if (!File.Exists(projectPath))
                     {
-                        // Remove from settings
-                        if (Settings.Default.RecentProjects != null && Settings.Default.RecentProjects.Contains(projectPath))
+                        var result = MessageBox.Show(
+                            $"This project file no longer exists:\n\n{projectPath}\n\nRemove it from recent projects?",
+                            "Project Not Found",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Warning);
+
+                        if (result == MessageBoxResult.Yes)
                         {
-                            Settings.Default.RecentProjects.Remove(projectPath);
-                            Settings.Default.Save();
+                            // Remove from settings
+                            if (Settings.Default.RecentProjects != null && Settings.Default.RecentProjects.Contains(projectPath))
+                            {
+                                Settings.Default.RecentProjects.Remove(projectPath);
+                                Settings.Default.Save();
+                            }
+
+                            // Refresh the UI
+                            LoadRecentProjectsUI();
                         }
 
-                        // Refresh the UI
-                        LoadRecentProjectsUI();
+                        return;
                     }
 
-                    return;
+                    // Open the project
+                    await OpenProjectAsync(projectPath);
                 }
-
-                // Open the project
-                await OpenProjectAsync(projectPath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error opening recent project: {ex.Message}");
+                MessageBox.Show($"Error opening project:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

@@ -30,6 +30,9 @@ namespace SCPBrowser
             if (_database.CellTypeProfiles == null || _database.CellTypeProfiles.Count == 0)
                 throw new ArgumentException("Database must contain cell type profiles", nameof(database));
 
+            if (markerSpecificityThreshold < 0 || markerSpecificityThreshold > 1)
+                throw new ArgumentOutOfRangeException(nameof(markerSpecificityThreshold), "Marker specificity threshold must be between 0 and 1");
+
             // Pre-calculate gene specificity and marker sets for efficient prediction
             _geneSpecificity = CalculateGeneSpecificity();
             _cellTypeMarkers = DefineCellTypeMarkers(markerSpecificityThreshold);

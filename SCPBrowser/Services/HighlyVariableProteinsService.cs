@@ -131,7 +131,9 @@ namespace SCPBrowser.Services
 
             // 2. Robust Input Validation
             // Check ALL proteins for negative values (indicates log-transformed data)
-            bool hasNegatives = proteinMatrix.AsParallel().Any(p => p.Value.Values.Any(v => v < 0));
+            // Create a snapshot to avoid race condition with concurrent modifications
+            var proteinMatrixSnapshot = proteinMatrix.ToList();
+            bool hasNegatives = proteinMatrixSnapshot.AsParallel().Any(p => p.Value.Values.Any(v => v < 0));
             if (hasNegatives)
             {
                 throw new ArgumentException(

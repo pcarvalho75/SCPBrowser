@@ -101,7 +101,7 @@ namespace SCPBrowser
                     FetchStatusText.Text = $"Fetching protein info: {p.Current}/{p.Total}...";
                 });
 
-                var results = await _uniProtService.GetProteinInfoBatchAsync(proteinIds, progress);
+                var results = await _uniProtService.GetProteinInfoBatchAsync(proteinIds, progress).ConfigureAwait(true);
 
                 // Update cache
                 foreach (var kvp in results)
@@ -125,11 +125,12 @@ namespace SCPBrowser
                 FetchStatusText.Text = $"Loaded info for {results.Count} proteins";
 
                 // Hide status after 2 seconds
-                await Task.Delay(2000);
+                await Task.Delay(2000).ConfigureAwait(true);
                 FetchStatusText.Visibility = Visibility.Collapsed;
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error fetching protein info: {ex.Message}");
                 FetchStatusText.Text = $"Error fetching protein info: {ex.Message}";
             }
         }

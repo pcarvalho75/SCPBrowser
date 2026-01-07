@@ -98,7 +98,7 @@ namespace SCPBrowser
             try
             {
                 // Load plates
-                var plates = await _plateService.GetPlatesAsync();
+                var plates = await _plateService.GetPlatesAsync().ConfigureAwait(true);
                 Plates.Clear();
                 foreach (var plate in plates)
                 {
@@ -137,7 +137,7 @@ namespace SCPBrowser
         {
             try
             {
-                var plates = await _plateService.GetPlatesAsync();
+                var plates = await _plateService.GetPlatesAsync().ConfigureAwait(true);
                 Plates.Clear();
                 foreach (var plate in plates)
                 {
@@ -151,6 +151,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error loading plates: {ex.Message}");
                 MessageBox.Show(
                     $"Error loading plates:\n\n{ex.Message}",
                     "Error",
@@ -436,7 +437,7 @@ namespace SCPBrowser
         {
             try
             {
-                int plateId = await _plateService.CreatePlateAsync(plateInfo);
+                int plateId = await _plateService.CreatePlateAsync(plateInfo).ConfigureAwait(true);
                 plateInfo.PlateId = plateId;
 
                 Plates.Add(plateInfo);
@@ -450,6 +451,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error creating plate: {ex.Message}");
                 MessageBox.Show(
                     $"Error creating plate:\n\n{ex.Message}",
                     "Error",

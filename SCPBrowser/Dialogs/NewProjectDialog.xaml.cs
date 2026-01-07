@@ -73,16 +73,49 @@ namespace SCPBrowser
                 }
 
                 // Create project directory if it doesn't exist
-                if (!Directory.Exists(ProjectLocation))
+                try
                 {
-                    Directory.CreateDirectory(ProjectLocation);
+                    if (!Directory.Exists(ProjectLocation))
+                    {
+                        Directory.CreateDirectory(ProjectLocation);
+                    }
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    MessageBox.Show(
+                        "Access denied. You don't have permission to create a directory at this location.",
+                        "Permission Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                    return;
+                }
+                catch (IOException ex)
+                {
+                    MessageBox.Show(
+                        $"Error creating project directory:\n\n{ex.Message}",
+                        "Directory Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                    return;
                 }
 
                 // Create imports subdirectory
                 string importsPath = Path.Combine(ProjectLocation, "imports");
-                if (!Directory.Exists(importsPath))
+                try
                 {
-                    Directory.CreateDirectory(importsPath);
+                    if (!Directory.Exists(importsPath))
+                    {
+                        Directory.CreateDirectory(importsPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        $"Error creating imports directory:\n\n{ex.Message}",
+                        "Directory Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                    return;
                 }
 
                 // Check if project.db already exists
@@ -100,7 +133,19 @@ namespace SCPBrowser
                         return;
                     }
 
-                    File.Delete(projectDbPath);
+                    try
+                    {
+                        File.Delete(projectDbPath);
+                    }
+                    catch (IOException ex)
+                    {
+                        MessageBox.Show(
+                            $"Error deleting existing project database:\n\n{ex.Message}\n\nThe file may be in use by another application.",
+                            "File Error",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Error);
+                        return;
+                    }
                 }
 
                 // Create the project database

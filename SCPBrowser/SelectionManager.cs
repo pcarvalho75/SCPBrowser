@@ -132,7 +132,8 @@ namespace SCPBrowser
 
         public void ClearSelection()
         {
-            Console.WriteLine($"SELECTION CLEARED BY: {new System.Diagnostics.StackTrace().GetFrame(1).GetMethod().Name}");
+            var callerMethod = new System.Diagnostics.StackTrace().GetFrame(1)?.GetMethod()?.Name ?? "Unknown";
+            Console.WriteLine($"SELECTION CLEARED BY: {callerMethod}");
             _polygonPointsScreen.Clear();
             _polygonPointsData.Clear();
             _selectionPolygon.Visibility = Visibility.Collapsed;

@@ -211,28 +211,40 @@ namespace SCPBrowser.Services
                         mergedData.RawFileNames.Add(rawFile);
                 }
 
-                // Merge ProteinCountPerFile
+                // Merge ProteinCountPerFile (accumulate if key exists)
                 foreach (var kvp in additionalData.ProteinCountPerFile)
                 {
-                    mergedData.ProteinCountPerFile[kvp.Key] = kvp.Value;
+                    if (mergedData.ProteinCountPerFile.ContainsKey(kvp.Key))
+                        mergedData.ProteinCountPerFile[kvp.Key] += kvp.Value;
+                    else
+                        mergedData.ProteinCountPerFile[kvp.Key] = kvp.Value;
                 }
 
-                // Merge PeptideCountPerFile
+                // Merge PeptideCountPerFile (accumulate if key exists)
                 foreach (var kvp in additionalData.PeptideCountPerFile)
                 {
-                    mergedData.PeptideCountPerFile[kvp.Key] = kvp.Value;
+                    if (mergedData.PeptideCountPerFile.ContainsKey(kvp.Key))
+                        mergedData.PeptideCountPerFile[kvp.Key] += kvp.Value;
+                    else
+                        mergedData.PeptideCountPerFile[kvp.Key] = kvp.Value;
                 }
 
-                // Merge TotalIonCurrentPerFile
+                // Merge TotalIonCurrentPerFile (accumulate if key exists)
                 foreach (var kvp in additionalData.TotalIonCurrentPerFile)
                 {
-                    mergedData.TotalIonCurrentPerFile[kvp.Key] = kvp.Value;
+                    if (mergedData.TotalIonCurrentPerFile.ContainsKey(kvp.Key))
+                        mergedData.TotalIonCurrentPerFile[kvp.Key] += kvp.Value;
+                    else
+                        mergedData.TotalIonCurrentPerFile[kvp.Key] = kvp.Value;
                 }
 
-                // Merge TargetProteinRatioPerFile
+                // Merge TargetProteinRatioPerFile (take average if key exists)
                 foreach (var kvp in additionalData.TargetProteinRatioPerFile)
                 {
-                    mergedData.TargetProteinRatioPerFile[kvp.Key] = kvp.Value;
+                    if (mergedData.TargetProteinRatioPerFile.ContainsKey(kvp.Key))
+                        mergedData.TargetProteinRatioPerFile[kvp.Key] = (mergedData.TargetProteinRatioPerFile[kvp.Key] + kvp.Value) / 2.0;
+                    else
+                        mergedData.TargetProteinRatioPerFile[kvp.Key] = kvp.Value;
                 }
 
                 // Merge BiologicalConditionPerFile
@@ -295,7 +307,10 @@ namespace SCPBrowser.Services
                     if (result == null || result == DBNull.Value)
                         return null;
 
-                    return Convert.ToInt32(result);
+                    if (int.TryParse(result.ToString(), out int importId))
+                        return importId;
+
+                    return null;
                 }
             }
         }
@@ -419,9 +434,8 @@ namespace SCPBrowser.Services
                                         if (!proteinQuantMatrix.ContainsKey(protein))
                                             proteinQuantMatrix[protein] = new Dictionary<string, double>();
 
-                                        if (ticValue != null)
+                                        if (ticValue != null && double.TryParse(ticValue.ToString(), out double tic))
                                         {
-                                            double tic = Convert.ToDouble(ticValue);
                                             if (!proteinQuantMatrix[protein].ContainsKey(rawFile))
                                                 proteinQuantMatrix[protein][rawFile] = 0;
                                             proteinQuantMatrix[protein][rawFile] += tic;
@@ -434,10 +448,9 @@ namespace SCPBrowser.Services
                                         peptidesByFile[rawFile].Add(peptide);
                                     }
 
-                                    if (ticValue != null)
+                                    if (ticValue != null && double.TryParse(ticValue.ToString(), out double ticVal))
                                     {
-                                        double tic = Convert.ToDouble(ticValue);
-                                        ticByFile[rawFile] += tic;
+                                        ticByFile[rawFile] += ticVal;
 
                                         if (mapping.TargetProteinIdentifiers != null &&
                                             mapping.TargetProteinIdentifiers.Count > 0 &&
@@ -446,7 +459,7 @@ namespace SCPBrowser.Services
                                             if (mapping.TargetProteinIdentifiers.Any(target =>
                                                 proteinIds.Contains(target, StringComparison.OrdinalIgnoreCase)))
                                             {
-                                                targetProteinTicByFile[rawFile] += tic;
+                                                targetProteinTicByFile[rawFile] += ticVal;
                                             }
                                         }
                                     }
@@ -514,7 +527,7 @@ namespace SCPBrowser.Services
                     command.Parameters.AddWithValue("@mapping", importInfo.ColumnMappingJson);
 
                     var result = await command.ExecuteScalarAsync();
-                    return Convert.ToInt32(result);
+                    return result != null && int.TryParse(result.ToString(), out int id) ? id : 0;
                 }
             }
         }
@@ -558,7 +571,7 @@ namespace SCPBrowser.Services
                                 command.Parameters.AddWithValue("@tic", rawFile.TotalIonCurrent);
 
                                 var result = await command.ExecuteScalarAsync();
-                                int rawFileId = Convert.ToInt32(result);
+                                int rawFileId = result != null && int.TryParse(result.ToString(), out int parsedId) ? parsedId : 0;
 
                                 // Update the raw file object with its database ID
                                 rawFile.RawFileId = rawFileId;
@@ -703,7 +716,7 @@ namespace SCPBrowser.Services
                     command.Parameters.AddWithValue("@fileName", fileName);
 
                     var result = await command.ExecuteScalarAsync();
-                    return Convert.ToInt32(result) > 0;
+                    return result != null && int.TryParse(result.ToString(), out int count) && count > 0;
                 }
             }
         }
@@ -730,8 +743,7 @@ namespace SCPBrowser.Services
                             command.CommandText = "SELECT import_id FROM parquet_imports WHERE file_name = @fileName";
                             command.Parameters.AddWithValue("@fileName", fileName);
                             var result = await command.ExecuteScalarAsync();
-                            if (result == null) return;
-                            importId = Convert.ToInt32(result);
+                            if (result == null || !int.TryParse(result.ToString(), out importId)) return;
                         }
 
                         // Delete raw files first (foreign key constraint)
@@ -1154,7 +1166,7 @@ namespace SCPBrowser.Services
                     command.Parameters.AddWithValue("@rawFileId", rawFileId);
 
                     var result = await command.ExecuteScalarAsync();
-                    return Convert.ToInt32(result) > 0;
+                    return result != null && int.TryParse(result.ToString(), out int excludedCount) && excludedCount > 0;
                 }
             }
         }

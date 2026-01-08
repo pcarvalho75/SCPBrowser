@@ -16,40 +16,31 @@
 
         <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,10">
             <TextBlock Text="View:" 
-                       VerticalAlignment="Center"
-                       Margin="0,0,5,0"
-                       FontWeight="SemiBold"/>
+           VerticalAlignment="Center"
+           Margin="0,0,5,0"
+           FontWeight="SemiBold"/>
 
-            <RadioButton x:Name="ViewPeptideTicRadio"
-                         Content="Peptide vs TIC"
-                         IsChecked="True"
-                         GroupName="ViewMode"
-                         Margin="0,0,15,0"
-                         VerticalAlignment="Center"
-                         Checked="ViewMode_Changed"/>
-
-            <RadioButton x:Name="ViewPcaRadio"
-                         Content="PCA"
-                         GroupName="ViewMode"
-                         Margin="0,0,30,0"
-                         VerticalAlignment="Center"
-                         Checked="ViewMode_Changed"/>
+            <ComboBox x:Name="ViewModeComboBox"
+          Style="{StaticResource ToolbarComboBox}"
+          ItemContainerStyle="{StaticResource ToolbarComboBoxItem}"
+          SelectedIndex="0"
+          SelectionChanged="ViewModeComboBox_SelectionChanged"
+          ToolTip="Select visualization mode"
+          Margin="0,0,10,0">
+                <ComboBoxItem Content="Peptide vs TIC" Tag="PeptideTic"/>
+                <ComboBoxItem Content="PCA" Tag="PCA"/>
+                <ComboBoxItem Content="UMAP" Tag="UMAP"/>
+            </ComboBox>
 
             <Button x:Name="ShowLoadingsButton"
-                Content="Loadings"
-                Click="ShowLoadingsButton_Click"
-                Padding="6,2"
-                Margin="0,0,15,0"
-                VerticalAlignment="Center"
-                IsEnabled="False"
-                ToolTip="Show which proteins drive PC1 and PC2 separation"/>    
-
-            <RadioButton x:Name="ViewUmapRadio"
-             Content="UMAP"
-             GroupName="ViewMode"
-             Margin="0,0,30,0"
-             VerticalAlignment="Center"
-             Checked="ViewMode_Changed"/>
+        Content="Loadings"
+        Click="ShowLoadingsButton_Click"
+        Padding="6,2"
+        Margin="0,0,15,0"
+        VerticalAlignment="Center"
+        IsEnabled="False"
+        Visibility="Collapsed"
+        ToolTip="Show which proteins drive PC1 and PC2 separation"/>
 
             <!-- HVP Feature Selection -->
             <CheckBox x:Name="UseHvpCheckBox"
@@ -104,35 +95,32 @@
                       Checked="LogLogCheckBox_Changed" VerticalAlignment="Center"
                       Unchecked="LogLogCheckBox_Changed"/>
 
+            <CheckBox x:Name="BatchCorrectionCheckBox"
+          Content="Batch Correction"
+          IsChecked="False"
+          IsEnabled="False"
+          Margin="0,0,20,0"
+          VerticalAlignment="Center"
+          Checked="BatchCorrectionCheckBox_Changed"
+          Unchecked="BatchCorrectionCheckBox_Changed"
+          ToolTip="Apply ComBat batch correction before dimensionality reduction (Johnson et al., 2007)"/>
+
             <TextBlock Text="Color by:" 
-                       VerticalAlignment="Center"
-                       Margin="0,0,5,0"
-                       FontWeight="SemiBold"/>
+           VerticalAlignment="Center"
+           Margin="0,0,5,0"
+           FontWeight="SemiBold"/>
 
-            <RadioButton x:Name="ColorByTrypsinRadio"
-                         Content="Target Protein Ratio"
-                         IsChecked="True"
-                         GroupName="ColorMode"
-                         Margin="0,0,15,0"
-                         VerticalAlignment="Center"
-                         Checked="ColorMode_Changed"/>
-
-            <RadioButton x:Name="ColorByCellTypeRadio"
-                         Content="Cell Type"
-                         GroupName="ColorMode"
-                         Margin="0,0,20,0"
-                         VerticalAlignment="Center"
-                         Checked="ColorMode_Changed"
-                         IsEnabled="False"/>
-
-            <RadioButton x:Name="ColorByBioConditionRadio"
-                         Content="Biological Condition"
-                         GroupName="ColorMode"
-                         Margin="0,0,20,0"
-                         VerticalAlignment="Center"
-                         Checked="ColorMode_Changed"
-                         IsEnabled="False"/>
-
+            <ComboBox x:Name="ColorModeComboBox"
+          Style="{StaticResource ToolbarComboBox}"
+          ItemContainerStyle="{StaticResource ToolbarComboBoxItem}"
+          SelectedIndex="0"
+          SelectionChanged="ColorModeComboBox_SelectionChanged"
+          ToolTip="Select coloring mode for data points"
+          Margin="0,0,15,0">
+                <ComboBoxItem x:Name="ColorByBioConditionItem" Content="Biological Condition" Tag="BioCondition" IsEnabled="False" IsSelected="True"/>
+                <ComboBoxItem Content="Target Protein Ratio" Tag="TargetRatio"/>
+                <ComboBoxItem x:Name="ColorByCellTypeItem" Content="Cell Type" Tag="CellType" IsEnabled="False"/>
+            </ComboBox>
             <Button x:Name="ClearSelectionButton"
                     Content="Clear Selection"
                     Click="ClearSelectionButton_Click"

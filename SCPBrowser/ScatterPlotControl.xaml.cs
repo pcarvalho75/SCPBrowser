@@ -34,6 +34,9 @@ namespace SCPBrowser
 
         // HVP for dimensionality reduction
         public List<HvpResult> HvpResults { get; set; }
+
+        // Batch effect correction
+        public bool ApplyBatchCorrection { get; set; } = false;
     }
 
     public class PlotSelectionChangedEventArgs : EventArgs

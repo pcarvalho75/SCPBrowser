@@ -47,6 +47,61 @@ namespace SCPBrowser
             _isInitialized = true;
         }
 
+        private void ViewModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isInitialized)
+                return;
+
+            var selectedItem = ViewModeComboBox.SelectedItem as ComboBoxItem;
+            if (selectedItem == null)
+                return;
+
+            string mode = selectedItem.Tag?.ToString() ?? "PeptideTic";
+
+            bool isPcaMode = mode == "PCA";
+            bool isUmapMode = mode == "UMAP";
+            bool isDimensionalityReduction = isPcaMode || isUmapMode;
+
+            // Disable Log-Log scale for PCA/UMAP (doesn't apply)
+            LogLogCheckBox.IsEnabled = !isDimensionalityReduction;
+
+            // Enable Batch Correction only for PCA/UMAP
+            BatchCorrectionCheckBox.IsEnabled = isDimensionalityReduction;
+
+            // Show Loadings button only in PCA mode
+            ShowLoadingsButton.Visibility = isPcaMode ? Visibility.Visible : Visibility.Collapsed;
+            ShowLoadingsButton.IsEnabled = isPcaMode;
+
+            // Enable HVP controls only in PCA/UMAP mode (and if we have HVP data)
+            bool hasHvpData = _hvpResults != null && _hvpResults.Count > 0;
+            UseHvpCheckBox.IsEnabled = isDimensionalityReduction && hasHvpData;
+
+            // Disable the count controls if checkbox is disabled or unchecked
+            bool hvpActive = UseHvpCheckBox.IsEnabled && UseHvpCheckBox.IsChecked == true;
+            HvpCountTextBox.IsEnabled = hvpActive;
+            HvpCountUp.IsEnabled = hvpActive;
+            HvpCountDown.IsEnabled = hvpActive;
+
+            // Update header text
+            if (isPcaMode)
+            {
+                PlotGroupBoxHeader.Text = "PCA - Principal Component Analysis";
+            }
+            else if (isUmapMode)
+            {
+                PlotGroupBoxHeader.Text = "UMAP - Uniform Manifold Approximation and Projection";
+            }
+            else
+            {
+                PlotGroupBoxHeader.Text = "Peptides vs Total Ion Current per Raw File";
+            }
+
+            if (_currentData != null)
+            {
+                RefreshChart();
+            }
+        }
+
         /// <summary>
         /// Sets the HVP results for use in PCA/UMAP dimensionality reduction
         /// </summary>
@@ -99,7 +154,9 @@ namespace SCPBrowser
         /// </summary>
         private void SetCellTypeCheckboxesEnabled(bool enabled)
         {
-            if (ColorByCellTypeRadio.IsChecked != true)
+            var selectedItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
+            string colorMode = selectedItem?.Tag?.ToString() ?? "TargetRatio";
+            if (colorMode != "CellType")
                 return;
 
             foreach (var child in BioConditionCheckboxes.Children)
@@ -135,18 +192,21 @@ namespace SCPBrowser
         {
             _cellTypePredictions = predictions;
             _cellTypeColorMap = colorMap;
-            ColorByCellTypeRadio.IsEnabled = predictions != null && predictions.Count > 0;
+            ColorByCellTypeItem.IsEnabled = predictions != null && predictions.Count > 0;
 
             if (_currentData != null)
             {
                 // Auto-select Cell Type mode if requested and predictions are available
                 if (selectCellTypeMode && predictions != null && predictions.Count > 0)
                 {
-                    ColorByCellTypeRadio.IsChecked = true;
-                    // ColorMode_Changed will be triggered automatically, which populates checkboxes
+                    ColorModeComboBox.SelectedIndex = 1; // Cell Type
+                    // ColorModeComboBox_SelectionChanged will be triggered automatically, which populates checkboxes
                 }
+
                 // If cell type mode is already selected, populate the checkboxes
-                else if (ColorByCellTypeRadio.IsChecked == true && _cellTypeColorMap != null && _cellTypeColorMap.Count > 0)
+                var selectedItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
+                string colorMode = selectedItem?.Tag?.ToString() ?? "TargetRatio";
+                if (colorMode == "CellType" && _cellTypeColorMap != null && _cellTypeColorMap.Count > 0)
                 {
                     PopulateCellTypeCheckboxes();
                     BioConditionPanel.Visibility = Visibility.Visible;
@@ -158,58 +218,13 @@ namespace SCPBrowser
 
         public void EnableCellTypeClassification(bool isAvailable)
         {
-            ColorByCellTypeRadio.IsEnabled = isAvailable;
+            ColorByCellTypeItem.IsEnabled = isAvailable;
         }
 
         public void SetGoEnrichmentResults(Dictionary<string, RunGoEnrichmentResult> results, Dictionary<string, Color> colorMap)
         {
             _goEnrichmentResults = results;
             _goTermColorMap = colorMap;
-        }
-
-        private void ViewMode_Changed(object sender, RoutedEventArgs e)
-        {
-            if (!_isInitialized)
-                return;
-
-            bool isPcaMode = ViewPcaRadio.IsChecked == true;
-            bool isUmapMode = ViewUmapRadio.IsChecked == true;
-            bool isDimensionalityReduction = isPcaMode || isUmapMode;
-
-            // Disable Log-Log scale for PCA/UMAP (doesn't apply)
-            LogLogCheckBox.IsEnabled = !isDimensionalityReduction;
-
-            // Enable Loadings button only in PCA mode
-            ShowLoadingsButton.IsEnabled = isPcaMode;
-
-            // Enable HVP controls only in PCA/UMAP mode (and if we have HVP data)
-            bool hasHvpData = _hvpResults != null && _hvpResults.Count > 0;
-            UseHvpCheckBox.IsEnabled = isDimensionalityReduction && hasHvpData;
-
-            // Disable the count controls if checkbox is disabled or unchecked
-            bool hvpActive = UseHvpCheckBox.IsEnabled && UseHvpCheckBox.IsChecked == true;
-            HvpCountTextBox.IsEnabled = hvpActive;
-            HvpCountUp.IsEnabled = hvpActive;
-            HvpCountDown.IsEnabled = hvpActive;
-
-            // Update header text
-            if (isPcaMode)
-            {
-                PlotGroupBoxHeader.Text = "PCA - Principal Component Analysis";
-            }
-            else if (isUmapMode)
-            {
-                PlotGroupBoxHeader.Text = "UMAP - Uniform Manifold Approximation and Projection";
-            }
-            else
-            {
-                PlotGroupBoxHeader.Text = "Peptides vs Total Ion Current per Raw File";
-            }
-
-            if (_currentData != null)
-            {
-                RefreshChart();
-            }
         }
 
         private void ShowLoadingsButton_Click(object sender, RoutedEventArgs e)
@@ -232,6 +247,44 @@ namespace SCPBrowser
             };
 
             dialog.ShowDialog();
+        }
+
+        private void ColorModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isInitialized || ColorModeComboBox == null)
+                return;
+
+            var selectedItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
+            if (selectedItem == null)
+                return;
+
+            string mode = selectedItem.Tag?.ToString() ?? "TargetRatio";
+
+            if (mode == "CellType")
+            {
+                if (_cellTypePredictions == null || _cellTypePredictions.Count == 0)
+                {
+                    CellTypePredictionsRequested?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+
+                PopulateCellTypeCheckboxes();
+                BioConditionPanel.Visibility = Visibility.Visible;
+            }
+            else if (mode == "BioCondition")
+            {
+                PopulateBioConditionCheckboxes();
+                BioConditionPanel.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                BioConditionPanel.Visibility = Visibility.Collapsed;
+            }
+
+            if (_currentData != null)
+            {
+                RefreshChart();
+            }
         }
 
         private Dictionary<string, Color> GenerateBioConditionColorMap()
@@ -280,39 +333,7 @@ namespace SCPBrowser
 
         public void EnableBioConditionClassification(bool isAvailable)
         {
-            ColorByBioConditionRadio.IsEnabled = isAvailable;
-        }
-
-        private void ColorMode_Changed(object sender, RoutedEventArgs e)
-        {
-            if (!_isInitialized || ColorByCellTypeRadio == null)
-                return;
-
-            if (ColorByCellTypeRadio.IsChecked == true)
-            {
-                if (_cellTypePredictions == null || _cellTypePredictions.Count == 0)
-                {
-                    CellTypePredictionsRequested?.Invoke(this, EventArgs.Empty);
-                    return;
-                }
-
-                PopulateCellTypeCheckboxes();
-                BioConditionPanel.Visibility = Visibility.Visible;
-            }
-            else if (ColorByBioConditionRadio.IsChecked == true)
-            {
-                PopulateBioConditionCheckboxes();
-                BioConditionPanel.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                BioConditionPanel.Visibility = Visibility.Collapsed;
-            }
-
-            if (_currentData != null)
-            {
-                RefreshChart();
-            }
+            ColorByBioConditionItem.IsEnabled = isAvailable;
         }
 
 
@@ -419,17 +440,24 @@ namespace SCPBrowser
                 return;
             }
 
+            var selectedViewItem = ViewModeComboBox.SelectedItem as ComboBoxItem;
+            string viewMode = selectedViewItem?.Tag?.ToString() ?? "PeptideTic";
+
+            var selectedColorItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
+            string colorMode = selectedColorItem?.Tag?.ToString() ?? "TargetRatio";
+
             var options = new ScatterPlotOptions
             {
                 UseLogLog = LogLogCheckBox.IsChecked == true,
-                UsePcaView = ViewPcaRadio.IsChecked == true,
-                UseUmapView = ViewUmapRadio.IsChecked == true,
-                UseCellTypeColoring = ColorByCellTypeRadio.IsChecked == true,
+                UsePcaView = viewMode == "PCA",
+                UseUmapView = viewMode == "UMAP",
+                ApplyBatchCorrection = BatchCorrectionCheckBox.IsChecked == true,
+                UseCellTypeColoring = colorMode == "CellType",
                 CellTypePredictions = _cellTypePredictions,
                 CellTypeColorMap = _cellTypeColorMap,
                 GoEnrichmentResults = _goEnrichmentResults,
                 GoTermColorMap = _goTermColorMap,
-                UseBioConditionColoring = ColorByBioConditionRadio.IsChecked == true,
+                UseBioConditionColoring = colorMode == "BioCondition",
                 BioConditionPerFile = _currentData.BiologicalConditionPerFile,
                 BioConditionColorMap = GenerateBioConditionColorMap(),
                 CheckedCellTypes = _checkedCellTypes,
@@ -443,7 +471,9 @@ namespace SCPBrowser
 
         private List<HvpResult> GetFilteredHvpResults()
         {
-            bool isPcaOrUmap = ViewPcaRadio.IsChecked == true || ViewUmapRadio.IsChecked == true;
+            var selectedItem = ViewModeComboBox.SelectedItem as ComboBoxItem;
+            string viewMode = selectedItem?.Tag?.ToString() ?? "PeptideTic";
+            bool isPcaOrUmap = viewMode == "PCA" || viewMode == "UMAP";
 
             if (!isPcaOrUmap || _hvpResults == null || _hvpResults.Count == 0)
             {
@@ -549,7 +579,10 @@ namespace SCPBrowser
             // Handle lasso state change
             if (_isLassoActive != wasLassoActive)
             {
-                if (_isLassoActive && ColorByCellTypeRadio.IsChecked == true)
+                var selectedItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
+                string colorMode = selectedItem?.Tag?.ToString() ?? "TargetRatio";
+
+                if (_isLassoActive && colorMode == "CellType")
                 {
                     // Lasso just became active - disable cell type checkboxes
                     SetCellTypeCheckboxesEnabled(false);
@@ -615,6 +648,14 @@ namespace SCPBrowser
 
             // Notify MainWindow for BioTessera update
             SelectionChangedForBioTessera?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void BatchCorrectionCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_currentData != null)
+            {
+                RefreshChart();
+            }
         }
 
         /// <summary>

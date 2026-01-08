@@ -53,6 +53,7 @@
                   SelectionUnit="Cell"
                   AlternatingRowBackground="#f9fafb"
                   RowBackground="White"
+                  LoadingRow="ProteinMatrixGrid_LoadingRow"
                   AutoGeneratingColumn="ProteinMatrixGrid_AutoGeneratingColumn"
                   VirtualizingPanel.IsVirtualizing="True"
                   VirtualizingPanel.VirtualizationMode="Recycling"

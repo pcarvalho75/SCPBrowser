@@ -51,11 +51,52 @@
              VerticalAlignment="Center"
              Checked="ViewMode_Changed"/>
 
+            <!-- HVP Feature Selection -->
+            <CheckBox x:Name="UseHvpCheckBox"
+          Content="Top HVPs:"
+          VerticalAlignment="Center"
+          Margin="0,0,3,0"
+          IsEnabled="False"
+          Checked="UseHvpCheckBox_Changed"
+          Unchecked="UseHvpCheckBox_Changed"
+          ToolTip="Use only highly variable proteins for dimensionality reduction"/>
+
+            <Border x:Name="HvpCountBorder"
+        Background="#f1f5f9"
+        BorderBrush="#94a3b8"
+        BorderThickness="1"
+        CornerRadius="2"
+        Padding="2,0"
+        VerticalAlignment="Center"
+        Margin="0,0,15,0">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="HvpCountDown" Content="−" FontSize="9" Padding="3,0" 
+                Click="HvpCountDown_Click" Background="Transparent" BorderThickness="0" 
+                Foreground="#64748b" Cursor="Hand" IsEnabled="False"/>
+                    <TextBox x:Name="HvpCountTextBox"
+                 Text="500"
+                 Width="32"
+                 FontSize="11"
+                 Foreground="#475569"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 VerticalAlignment="Center"
+                 HorizontalContentAlignment="Center"
+                 PreviewTextInput="HvpCountTextBox_PreviewTextInput"
+                 LostFocus="HvpCountTextBox_LostFocus"
+                 KeyDown="HvpCountTextBox_KeyDown"
+                 IsEnabled="False"/>
+                    <Button x:Name="HvpCountUp" Content="+" FontSize="9" Padding="3,0"
+                Click="HvpCountUp_Click" Background="Transparent" BorderThickness="0" 
+                Foreground="#64748b" Cursor="Hand" IsEnabled="False"/>
+                </StackPanel>
+            </Border>
+
             <CheckBox x:Name="LogLogCheckBox"
                       Content="Log-Log Scale"
                       IsChecked="True"
                       Margin="0,0,20,0"
-                      Checked="LogLogCheckBox_Changed"
+                      Checked="LogLogCheckBox_Changed" VerticalAlignment="Center"
                       Unchecked="LogLogCheckBox_Changed"/>
 
             <TextBlock Text="Color by:" 

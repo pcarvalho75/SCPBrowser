@@ -32,6 +32,7 @@ namespace SCPBrowser
         public event EventHandler ClearAllExclusionsRequested;
         private bool _isLassoActive = false;
         private List<HvpResult> _hvpResults;
+        private int _hvpCount = 500;
 
         public PeptideTicControl()
         {
@@ -173,12 +174,23 @@ namespace SCPBrowser
 
             bool isPcaMode = ViewPcaRadio.IsChecked == true;
             bool isUmapMode = ViewUmapRadio.IsChecked == true;
+            bool isDimensionalityReduction = isPcaMode || isUmapMode;
 
             // Disable Log-Log scale for PCA/UMAP (doesn't apply)
-            LogLogCheckBox.IsEnabled = !isPcaMode && !isUmapMode;
+            LogLogCheckBox.IsEnabled = !isDimensionalityReduction;
 
             // Enable Loadings button only in PCA mode
             ShowLoadingsButton.IsEnabled = isPcaMode;
+
+            // Enable HVP controls only in PCA/UMAP mode (and if we have HVP data)
+            bool hasHvpData = _hvpResults != null && _hvpResults.Count > 0;
+            UseHvpCheckBox.IsEnabled = isDimensionalityReduction && hasHvpData;
+
+            // Disable the count controls if checkbox is disabled or unchecked
+            bool hvpActive = UseHvpCheckBox.IsEnabled && UseHvpCheckBox.IsChecked == true;
+            HvpCountTextBox.IsEnabled = hvpActive;
+            HvpCountUp.IsEnabled = hvpActive;
+            HvpCountDown.IsEnabled = hvpActive;
 
             // Update header text
             if (isPcaMode)
@@ -422,11 +434,44 @@ namespace SCPBrowser
                 BioConditionColorMap = GenerateBioConditionColorMap(),
                 CheckedCellTypes = _checkedCellTypes,
                 CheckedBioConditions = _checkedBioConditions,
-                HvpResults = _hvpResults  // Add this line
+                HvpResults = GetFilteredHvpResults()
             };
 
             ScatterPlot.UpdatePlot(_currentData, options);
             UpdatePlotHeader(_currentData.PeptideCountPerFile.Count, options);
+        }
+
+        private List<HvpResult> GetFilteredHvpResults()
+        {
+            bool isPcaOrUmap = ViewPcaRadio.IsChecked == true || ViewUmapRadio.IsChecked == true;
+
+            if (!isPcaOrUmap || _hvpResults == null || _hvpResults.Count == 0)
+            {
+                return _hvpResults;
+            }
+
+            if (UseHvpCheckBox.IsChecked == true)
+            {
+                // Return only top N proteins by VarianceStandardized
+                return _hvpResults
+                    .OrderByDescending(h => h.VarianceStandardized)
+                    .Take(_hvpCount)
+                    .Select(h => new HvpResult
+                    {
+                        ProteinId = h.ProteinId,
+                        Mean = h.Mean,
+                        Variance = h.Variance,
+                        VarianceExpected = h.VarianceExpected,
+                        VarianceStandardized = h.VarianceStandardized,
+                        DetectionCount = h.DetectionCount,
+                        DetectionRate = h.DetectionRate,
+                        Rank = h.Rank,
+                        IsHighlyVariable = true  // Mark all selected as HVP
+                    })
+                    .ToList();
+            }
+
+            return _hvpResults;
         }
 
         private void UpdatePlotHeader(int fileCount, ScatterPlotOptions options)
@@ -693,6 +738,87 @@ namespace SCPBrowser
 
             // Highlight the selected point on the scatter plot
             ScatterPlot.HighlightPoints(new List<string> { selectedData.RunName });
+        }
+
+        private void UseHvpCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            bool isChecked = UseHvpCheckBox.IsChecked == true;
+
+            // Enable/disable the count controls
+            HvpCountTextBox.IsEnabled = isChecked;
+            HvpCountUp.IsEnabled = isChecked;
+            HvpCountDown.IsEnabled = isChecked;
+
+            if (_currentData != null)
+            {
+                RefreshChart();
+            }
+        }
+
+        private void HvpCountTextBox_PreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
+        {
+            foreach (char c in e.Text)
+            {
+                if (!char.IsDigit(c))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+
+        private void HvpCountTextBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+            ApplyHvpCountValue();
+        }
+
+        private void HvpCountTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.Enter)
+            {
+                ApplyHvpCountValue();
+                e.Handled = true;
+            }
+        }
+
+        private void ApplyHvpCountValue()
+        {
+            if (int.TryParse(HvpCountTextBox.Text, out int parsed))
+            {
+                _hvpCount = Math.Max(10, Math.Min(5000, parsed));
+                HvpCountTextBox.Text = _hvpCount.ToString();
+
+                if (_currentData != null && UseHvpCheckBox.IsChecked == true)
+                {
+                    RefreshChart();
+                }
+            }
+            else
+            {
+                HvpCountTextBox.Text = _hvpCount.ToString();
+            }
+        }
+
+        private void HvpCountUp_Click(object sender, RoutedEventArgs e)
+        {
+            _hvpCount = Math.Min(5000, _hvpCount + 50);
+            HvpCountTextBox.Text = _hvpCount.ToString();
+
+            if (_currentData != null && UseHvpCheckBox.IsChecked == true)
+            {
+                RefreshChart();
+            }
+        }
+
+        private void HvpCountDown_Click(object sender, RoutedEventArgs e)
+        {
+            _hvpCount = Math.Max(10, _hvpCount - 50);
+            HvpCountTextBox.Text = _hvpCount.ToString();
+
+            if (_currentData != null && UseHvpCheckBox.IsChecked == true)
+            {
+                RefreshChart();
+            }
         }
     }
 }

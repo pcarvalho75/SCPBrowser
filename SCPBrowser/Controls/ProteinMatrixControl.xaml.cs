@@ -8,6 +8,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace SCPBrowser
@@ -20,6 +21,7 @@ namespace SCPBrowser
         private Dictionary<string, Color> _bioConditionHeaderColors;
         private DataTable _fullDataTable;
         private DataTable _filteredDataTable;
+        private Dictionary<string, FastaParserService.ProteinAnnotation> _proteinAnnotations;
 
         public ProteinMatrixControl()
         {
@@ -50,6 +52,24 @@ namespace SCPBrowser
             _bioConditionHeaderColors = GenerateBioConditionHeaderColors(data);
 
             RefreshMatrix();
+        }
+
+        /// <summary>
+        /// Loads protein annotations from the database for tooltip display.
+        /// </summary>
+        public async Task LoadProteinAnnotationsAsync(string projectDbPath)
+        {
+            try
+            {
+                var fastaService = new FastaParserService(projectDbPath);
+                _proteinAnnotations = await fastaService.GetAllAnnotationsAsync();
+                Console.WriteLine($"ProteinMatrixControl: Loaded {_proteinAnnotations.Count} protein annotations");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ProteinMatrixControl: Failed to load annotations - {ex.Message}");
+                _proteinAnnotations = new Dictionary<string, FastaParserService.ProteinAnnotation>();
+            }
         }
 
         /// <summary>
@@ -176,11 +196,31 @@ namespace SCPBrowser
         {
             if (e.PropertyName == "Protein Group")
             {
-                var textColumn = e.Column as DataGridTextColumn;
-                if (textColumn != null)
+                // Cancel auto-generation and create custom template column
+                e.Cancel = true;
+
+                var templateColumn = new DataGridTemplateColumn
                 {
-                    textColumn.Width = new DataGridLength(250, DataGridLengthUnitType.Pixel);
-                }
+                    Header = "Protein Group",
+                    Width = new DataGridLength(250, DataGridLengthUnitType.Pixel),
+                    SortMemberPath = "Protein Group"
+                };
+
+                // Create the cell template with tooltip
+                var template = new DataTemplate();
+                var textBlockFactory = new FrameworkElementFactory(typeof(TextBlock));
+                textBlockFactory.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Protein Group"));
+                textBlockFactory.SetValue(TextBlock.PaddingProperty, new Thickness(8, 5, 8, 5));
+                textBlockFactory.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+
+                // Add tooltip factory
+                textBlockFactory.AddHandler(TextBlock.MouseEnterEvent, new MouseEventHandler(ProteinCell_MouseEnter));
+
+                template.VisualTree = textBlockFactory;
+                templateColumn.CellTemplate = template;
+
+                // Insert at beginning
+                ProteinMatrixGrid.Columns.Insert(0, templateColumn);
             }
             else if (e.PropertyName == "Var_Std") // FIX: Matched new safe column name
             {
@@ -240,6 +280,63 @@ namespace SCPBrowser
                     }
                 }
             }
+        }
+
+        private void ProteinCell_MouseEnter(object sender, MouseEventArgs e)
+        {
+            if (sender is TextBlock textBlock && _proteinAnnotations != null && _proteinAnnotations.Count > 0)
+            {
+                string proteinGroup = textBlock.Text;
+                string tooltip = BuildProteinTooltip(proteinGroup);
+
+                if (!string.IsNullOrEmpty(tooltip))
+                {
+                    textBlock.ToolTip = tooltip;
+                }
+                else
+                {
+                    textBlock.ToolTip = proteinGroup;
+                }
+            }
+        }
+
+        private string BuildProteinTooltip(string proteinGroup)
+        {
+            if (string.IsNullOrEmpty(proteinGroup) || _proteinAnnotations == null)
+                return null;
+
+            // Handle protein groups (semicolon-separated)
+            var accessions = proteinGroup.Split(';').Select(a => a.Trim()).ToArray();
+            var lines = new List<string>();
+
+            foreach (var accession in accessions.Take(3)) // Limit to first 3 for long groups
+            {
+                if (_proteinAnnotations.TryGetValue(accession, out var annotation))
+                {
+                    var parts = new List<string>();
+
+                    if (!string.IsNullOrEmpty(annotation.ProteinName))
+                        parts.Add(annotation.ProteinName);
+
+                    if (!string.IsNullOrEmpty(annotation.GeneName))
+                        parts.Add($"Gene: {annotation.GeneName}");
+
+                    if (!string.IsNullOrEmpty(annotation.Organism))
+                        parts.Add($"Organism: {annotation.Organism}");
+
+                    if (parts.Count > 0)
+                    {
+                        lines.Add($"[{accession}] {string.Join(" | ", parts)}");
+                    }
+                }
+            }
+
+            if (accessions.Length > 3)
+            {
+                lines.Add($"... and {accessions.Length - 3} more");
+            }
+
+            return lines.Count > 0 ? string.Join("\n", lines) : null;
         }
 
         private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)

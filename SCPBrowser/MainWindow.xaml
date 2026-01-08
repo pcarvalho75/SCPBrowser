@@ -40,6 +40,10 @@
                   x:Name="ImportParquetMenuItem"
                   Click="ImportParquet_Click"
                   IsEnabled="False"/>
+                <MenuItem Header="_Search Database (FASTA)..." 
+                  x:Name="ImportFastaMenuItem"
+                  Click="ImportFasta_Click"
+                  IsEnabled="False"/>
                 <Separator/>
                 <MenuItem Header="_Omic Profile (Transcriptomic)..." 
                   x:Name="ImportOmicProfileMenuItem"

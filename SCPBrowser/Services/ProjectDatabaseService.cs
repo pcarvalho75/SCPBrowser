@@ -197,6 +197,18 @@ namespace SCPBrowser.Services
                 FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
             );
 
+            -- ==================== PROTEIN ANNOTATIONS ====================
+            
+            -- Protein annotations from FASTA database
+            CREATE TABLE IF NOT EXISTS protein_annotations (
+                accession TEXT PRIMARY KEY,
+                entry_name TEXT,
+                protein_name TEXT,
+                gene_name TEXT,
+                organism TEXT,
+                full_header TEXT
+            );
+
             -- ==================== REFERENCE DATA TABLES ====================
             
             -- Cell type profiles (transcriptomic reference data)
@@ -344,6 +356,34 @@ namespace SCPBrowser.Services
                     raw_file_id INTEGER PRIMARY KEY,
                     excluded_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
+                );
+            ";
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Ensures the protein_annotations table exists (for existing databases created before this feature)
+        /// </summary>
+        public async Task EnsureProteinAnnotationsTableExistsAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS protein_annotations (
+                    accession TEXT PRIMARY KEY,
+                    entry_name TEXT,
+                    protein_name TEXT,
+                    gene_name TEXT,
+                    organism TEXT,
+                    full_header TEXT
                 );
             ";
                     await command.ExecuteNonQueryAsync();

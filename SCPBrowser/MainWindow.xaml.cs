@@ -164,6 +164,7 @@ namespace SCPBrowser
                 WelcomeScreen.Visibility = Visibility.Collapsed;
                 MainTabControl.Visibility = Visibility.Visible;
                 ImportParquetMenuItem.IsEnabled = true;
+                ImportFastaMenuItem.IsEnabled = true;
                 ImportOmicProfileMenuItem.IsEnabled = true;
                 CloseProjectMenuItem.IsEnabled = true;
                 ClearCellTypeClassificationsMenuItem.IsEnabled = true;
@@ -803,6 +804,9 @@ namespace SCPBrowser
 
                 ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
 
+                // Load protein annotations for tooltips
+                await ProteinMatrixTab.LoadProteinAnnotationsAsync(_currentProjectPath);
+
                 // Set image base directory
                 PeptideTicTab.SetImageBaseDirectory(MainControlTab.GetCurrentFileDirectory());
 
@@ -1200,6 +1204,63 @@ namespace SCPBrowser
 
             // Enable/disable recent projects list
             RecentProjectsList.IsEnabled = isReady;
+        }
+
+        private async void ImportFasta_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_hasOpenProject || _projectDatabaseService == null)
+            {
+                MessageBox.Show(
+                    "Please open or create a project first.",
+                    "No Project Open",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            var dialog = new OpenFileDialog
+            {
+                Filter = "FASTA files (*.fasta;*.fa;*.faa)|*.fasta;*.fa;*.faa|All files (*.*)|*.*",
+                Title = "Select Search Database FASTA File"
+            };
+
+            if (dialog.ShowDialog() != true)
+                return;
+
+            try
+            {
+                LoadingOverlay.SetMessage("Importing FASTA Database...");
+                LoadingOverlay.SetProgress("Parsing protein headers...");
+                LoadingOverlay.Show();
+
+                await _projectDatabaseService.EnsureProteinAnnotationsTableExistsAsync();
+
+                var fastaService = new FastaParserService(_currentProjectPath);
+
+                var progress = new Progress<string>(msg =>
+                {
+                    Dispatcher.Invoke(() => LoadingOverlay.SetProgress(msg));
+                });
+
+                int count = await fastaService.ImportFastaAsync(dialog.FileName, progress);
+
+                LoadingOverlay.Hide();
+
+                MessageBox.Show(
+                    $"Successfully imported {count:N0} protein annotations from:\n\n{Path.GetFileName(dialog.FileName)}",
+                    "FASTA Import Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                LoadingOverlay.Hide();
+                MessageBox.Show(
+                    $"Error importing FASTA file:\n\n{ex.Message}",
+                    "Import Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
     }
 }

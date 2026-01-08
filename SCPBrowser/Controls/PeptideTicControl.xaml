@@ -70,28 +70,30 @@
         VerticalAlignment="Center"
         Margin="0,0,15,0">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="HvpCountDown" Content="−" FontSize="9" Padding="3,0" 
-                Click="HvpCountDown_Click" Background="Transparent" BorderThickness="0" 
-                Foreground="#64748b" Cursor="Hand" IsEnabled="False"/>
+                    <Button x:Name="HvpCountDown" Content="−" FontSize="11" FontWeight="Bold" Padding="3,0" 
+        Click="HvpCountDown_Click" Background="Transparent" BorderThickness="0" 
+        Foreground="#1e293b" Cursor="Hand" IsEnabled="False"/>
                     <TextBox x:Name="HvpCountTextBox"
          Text="500"
          Width="40"
-         FontSize="8"
+         Height="20"
+         FontSize="11"
          FontWeight="SemiBold"
          Foreground="#1e293b"
          Background="White"
          BorderThickness="0"
+         Padding="0"
+         Margin="0"
          VerticalAlignment="Center"
          VerticalContentAlignment="Center"
          HorizontalContentAlignment="Center"
-         TextAlignment="Center"
          PreviewTextInput="HvpCountTextBox_PreviewTextInput"
          LostFocus="HvpCountTextBox_LostFocus"
          KeyDown="HvpCountTextBox_KeyDown"
          IsEnabled="False"/>
-                    <Button x:Name="HvpCountUp" Content="+" FontSize="9" Padding="3,0"
-                Click="HvpCountUp_Click" Background="Transparent" BorderThickness="0" 
-                Foreground="#64748b" Cursor="Hand" IsEnabled="False"/>
+                    <Button x:Name="HvpCountUp" Content="+" FontSize="11" FontWeight="Bold" Padding="3,0"
+        Click="HvpCountUp_Click" Background="Transparent" BorderThickness="0" 
+        Foreground="#1e293b" Cursor="Hand" IsEnabled="False"/>
                 </StackPanel>
             </Border>
 

@@ -365,11 +365,11 @@ namespace SCPBrowser
             // Pass HVP results to PeptideTicTab before updating chart
             PeptideTicTab.SetHvpResults(_dataFilterService.HvpResults);
 
+            // Pass plate mapping for batch effect correction (plate = batch)
+            PeptideTicTab.SetPlateMapping(_dataFilterService.RawFileToPlateId);
+
             // Other tabs get fully filtered data (excluding below-cutoff)
             PeptideTicTab.UpdateChart(_dataFilterService.FilteredData, clearSelections: false);
-
-            // Pass HVP results to protein matrix tab
-            ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
 
             await UpdateBioTesseraTabAsync();
         }
@@ -796,6 +796,9 @@ namespace SCPBrowser
                 // Load raw file ID mapping for exclusion tracking
                 var rawFileIdMapping = await _parquetService.GetRawFileNameToIdMappingAsync();
                 PeptideTicTab.SetRawFileIdMapping(rawFileIdMapping);
+
+                // Pass plate mapping for batch effect correction
+                PeptideTicTab.SetPlateMapping(_dataFilterService.RawFileToPlateId);
 
                 // Load existing exclusions from database
                 var excludedRunNames = await _parquetService.GetExcludedRunNamesAsync();

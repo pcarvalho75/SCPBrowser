@@ -32,11 +32,16 @@ namespace SCPBrowser
         public HashSet<string> CheckedCellTypes { get; set; }
         public HashSet<string> CheckedBioConditions { get; set; }
 
+        // Add field near other private fields:
+        private bool _previousApplyBatchCorrection = false;
+
         // HVP for dimensionality reduction
         public List<HvpResult> HvpResults { get; set; }
 
         // Batch effect correction
         public bool ApplyBatchCorrection { get; set; } = false;
+
+        public Dictionary<string, int> BatchLabelPerFile { get; set; }
     }
 
     public class PlotSelectionChangedEventArgs : EventArgs
@@ -66,7 +71,9 @@ namespace SCPBrowser
         public event EventHandler<PlotSelectionChangedEventArgs> SelectionChanged;
         public event EventHandler<PointInteractionEventArgs> PointHovered;
         public event EventHandler<PointInteractionEventArgs> PointClicked;
+        private bool _previousApplyBatchCorrection = false;
         private HashSet<string> _hvpProteinIds;
+        private Dictionary<string, int> _plateMappingPerFile;
 
         public ScatterPlotControl()
         {
@@ -79,14 +86,16 @@ namespace SCPBrowser
             PlotCanvas.SizeChanged += PlotCanvas_SizeChanged;
         }
 
+        /// <summary>
+        /// Sets the plate mapping for batch effect correction (plate = batch)
+        /// </summary>
+        public void SetPlateMapping(Dictionary<string, int> plateMapping)
+        {
+            _plateMappingPerFile = plateMapping ?? new Dictionary<string, int>();
+        }
+
         public void UpdatePlot(ProteomicsData data, ScatterPlotOptions options)
         {
-            var stackTrace = new System.Diagnostics.StackTrace(true);
-            for (int i = 1; i < Math.Min(5, stackTrace.FrameCount); i++)
-            {
-                var frame = stackTrace.GetFrame(i);
-            }
-
             if (_isRefreshing)
             {
                 return;
@@ -107,9 +116,11 @@ namespace SCPBrowser
                             .Select(h => h.ProteinId));
                 }
 
-                // Clear PCA/UMAP if data changed OR if HVP set changed
+                // Clear PCA/UMAP if data changed OR if HVP set changed OR if batch correction toggled
                 bool hvpChanged = !HvpSetsEqual(_hvpProteinIds, newHvpIds);
-                if (_currentData != data || hvpChanged)
+                bool batchCorrectionChanged = (options?.ApplyBatchCorrection ?? false) != _previousApplyBatchCorrection;
+
+                if (_currentData != data || hvpChanged || batchCorrectionChanged)
                 {
                     _pcaResult = null;
                     _pcaProteinNames = null;
@@ -119,9 +130,14 @@ namespace SCPBrowser
                     {
                         Console.WriteLine($"HVP set changed: {_hvpProteinIds?.Count ?? 0} -> {newHvpIds?.Count ?? 0}");
                     }
+                    if (batchCorrectionChanged)
+                    {
+                        Console.WriteLine($"Batch correction changed: {_previousApplyBatchCorrection} -> {options?.ApplyBatchCorrection ?? false}");
+                    }
                 }
 
                 _hvpProteinIds = newHvpIds;
+                _previousApplyBatchCorrection = options?.ApplyBatchCorrection ?? false;
 
                 _currentData = data;
                 _currentOptions = options;
@@ -233,26 +249,64 @@ namespace SCPBrowser
                     return;
                 }
 
-                // Build matrix: rows = samples (raw files), columns = proteins
-                // UMAP expects float[][] (jagged array)
-                float[][] matrix = new float[nSamples][];
+                // Build matrix as double[,] first (for potential ComBat correction)
+                double[,] matrix = new double[nSamples, nProteins];
 
                 for (int i = 0; i < nSamples; i++)
                 {
-                    matrix[i] = new float[nProteins];
                     string rawFile = rawFiles[i];
-
                     for (int j = 0; j < nProteins; j++)
                     {
                         string protein = proteins[j];
                         if (data.ProteinQuantMatrix[protein].TryGetValue(rawFile, out double value) && value > 0)
                         {
-                            matrix[i][j] = (float)Math.Log2(value + 1);
+                            matrix[i, j] = Math.Log2(value + 1);
                         }
                         else
                         {
-                            matrix[i][j] = 0f; // UMAP doesn't handle NaN well, use 0
+                            matrix[i, j] = 0; // Impute missing as 0 for ComBat compatibility
                         }
+                    }
+                }
+
+                // Apply batch correction if enabled
+                if (_currentOptions?.ApplyBatchCorrection == true && _currentOptions.BatchLabelPerFile != null)
+                {
+                    var batchLabels = rawFiles
+                        .Select(rf => _currentOptions.BatchLabelPerFile.TryGetValue(rf, out int plateId) ? plateId : 0)
+                        .ToList();
+
+                    var uniqueBatches = batchLabels.Distinct().Count();
+                    if (uniqueBatches >= 2)
+                    {
+                        Console.WriteLine($"UMAP: Applying ComBat batch correction ({uniqueBatches} batches)");
+                        var combatService = new ComBatService();
+                        var result = combatService.Apply(matrix, batchLabels);
+
+                        if (result.Success)
+                        {
+                            matrix = result.CorrectedData;
+                            Console.WriteLine($"UMAP: ComBat correction applied successfully");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"UMAP: ComBat correction failed - {result.ErrorMessage}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"UMAP: Skipping batch correction (only {uniqueBatches} batch)");
+                    }
+                }
+
+                // Convert to float[][] for UMAP
+                float[][] umapMatrix = new float[nSamples][];
+                for (int i = 0; i < nSamples; i++)
+                {
+                    umapMatrix[i] = new float[nProteins];
+                    for (int j = 0; j < nProteins; j++)
+                    {
+                        umapMatrix[i][j] = (float)matrix[i, j];
                     }
                 }
 
@@ -263,7 +317,7 @@ namespace SCPBrowser
                     numberOfNeighbors: Math.Min(15, nSamples - 1)
                 );
 
-                int epochs = umap.InitializeFit(matrix);
+                int epochs = umap.InitializeFit(umapMatrix);
                 for (int i = 0; i < epochs; i++)
                 {
                     umap.Step();
@@ -498,8 +552,38 @@ namespace SCPBrowser
                         }
                         else
                         {
-                            matrix[i, j] = double.NaN;
+                            matrix[i, j] = 0; // Impute missing as 0 for ComBat compatibility
                         }
+                    }
+                }
+
+                // Apply batch correction if enabled
+                if (_currentOptions?.ApplyBatchCorrection == true && _currentOptions.BatchLabelPerFile != null)
+                {
+                    var batchLabels = rawFiles
+                        .Select(rf => _currentOptions.BatchLabelPerFile.TryGetValue(rf, out int plateId) ? plateId : 0)
+                        .ToList();
+
+                    var uniqueBatches = batchLabels.Distinct().Count();
+                    if (uniqueBatches >= 2)
+                    {
+                        Console.WriteLine($"PCA: Applying ComBat batch correction ({uniqueBatches} batches)");
+                        var combatService = new ComBatService();
+                        var result = combatService.Apply(matrix, batchLabels);
+
+                        if (result.Success)
+                        {
+                            matrix = result.CorrectedData;
+                            Console.WriteLine($"PCA: ComBat correction applied successfully");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"PCA: ComBat correction failed - {result.ErrorMessage}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"PCA: Skipping batch correction (only {uniqueBatches} batch)");
                     }
                 }
 

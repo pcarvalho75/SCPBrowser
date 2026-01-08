@@ -452,6 +452,7 @@ namespace SCPBrowser
                 UsePcaView = viewMode == "PCA",
                 UseUmapView = viewMode == "UMAP",
                 ApplyBatchCorrection = BatchCorrectionCheckBox.IsChecked == true,
+                BatchLabelPerFile = _plateMappingPerFile,
                 UseCellTypeColoring = colorMode == "CellType",
                 CellTypePredictions = _cellTypePredictions,
                 CellTypeColorMap = _cellTypeColorMap,

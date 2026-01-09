@@ -172,6 +172,7 @@ namespace SCPBrowser
                 // Load and show plate filter control
                 LoadingOverlay.SetProgress("Loading plates...");
                 await PlateFilterControl.LoadPlatesAsync(projectDbPath);
+                PeptideTicTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMap());
                 await _dataFilterService.LoadPlateMappingAsync(_parquetService, _plateService);
                 PlateFilterControl.Visibility = Visibility.Visible;
                 Console.WriteLine("PlateFilterControl loaded and visible");

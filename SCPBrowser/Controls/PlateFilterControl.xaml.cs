@@ -13,9 +13,11 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Media;
 
 namespace SCPBrowser
 {
+
     public class PlateSelectionChangedEventArgs : EventArgs
     {
         public List<int> SelectedPlateIds { get; set; }
@@ -30,6 +32,31 @@ namespace SCPBrowser
         private bool _isInitializing = false;
 
         public event EventHandler<PlateSelectionChangedEventArgs> PlateSelectionChanged;
+
+        public static readonly Color[] PlateColorPalette = new[]
+        {
+                Color.FromRgb(147, 197, 253),  // Baby blue
+                Color.FromRgb(134, 239, 172),  // Baby green
+                Color.FromRgb(253, 186, 116),  // Baby orange / peach
+                Color.FromRgb(196, 181, 253),  // Baby purple / lavender
+                Color.FromRgb(249, 168, 212),  // Baby pink
+                Color.FromRgb(153, 246, 228),  // Baby teal / mint
+                Color.FromRgb(253, 224, 71),   // Baby yellow
+                Color.FromRgb(165, 180, 252),  // Baby indigo / periwinkle
+                Color.FromRgb(167, 243, 208),  // Baby emerald / seafoam
+                Color.FromRgb(252, 165, 165)   // Baby red / salmon
+        };
+
+        /// <summary>
+        /// Returns a color map for plates (plate name → color) for use in scatter plots
+        /// </summary>
+        public Dictionary<string, Color> GetPlateColorMap()
+        {
+            return _plateItems.ToDictionary(
+                p => p.PlateName,
+                p => ((SolidColorBrush)p.PlateColor).Color
+            );
+        }
 
         public PlateFilterControl()
         {
@@ -64,6 +91,7 @@ namespace SCPBrowser
 
                 // Create plate filter items (all selected by default)
                 _plateItems.Clear();
+                int colorIndex = 0;
                 foreach (var plate in plates)
                 {
                     int fileCount = fileCounts.ContainsKey(plate.PlateId) ? fileCounts[plate.PlateId] : 0;
@@ -73,9 +101,11 @@ namespace SCPBrowser
                         PlateId = plate.PlateId,
                         PlateName = plate.PlateName,
                         FileCount = fileCount,
-                        IsSelected = true, // All plates selected by default
-                        PlateInfo = plate
+                        IsSelected = true,
+                        PlateInfo = plate,
+                        PlateColor = new SolidColorBrush(PlateColorPalette[colorIndex % PlateColorPalette.Length])
                     });
+                    colorIndex++;
                 }
 
                 UpdateSummaryText();
@@ -208,6 +238,7 @@ namespace SCPBrowser
         public string PlateName { get; set; }
         public int FileCount { get; set; }
         public PlateInfo PlateInfo { get; set; }
+        public System.Windows.Media.SolidColorBrush PlateColor { get; set; }
 
         public string FileCountText => $"({FileCount} files)";
 

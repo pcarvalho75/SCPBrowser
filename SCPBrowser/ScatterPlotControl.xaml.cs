@@ -15,6 +15,10 @@ namespace SCPBrowser
 {
     public class ScatterPlotOptions
     {
+        // Plate coloring
+        public bool UsePlateColoring { get; set; } = false;
+        public Dictionary<string, string> PlatePerFile { get; set; }
+        public Dictionary<string, Color> PlateColorMap { get; set; }
         public bool UsePcaView { get; set; } = false;
         public bool UseUmapView { get; set; } = false;
         public bool UseLogLog { get; set; } = true;
@@ -431,19 +435,19 @@ namespace SCPBrowser
                 double screenY = canvasHeight - MarginBottom - yNorm * plotHeight;
 
                 // Determine color
-                Color markerColor = Color.FromRgb(100, 149, 237);
+                Color markerColor = Color.FromRgb(100, 149, 237); // Default: cornflower blue
                 string cellType = null;
                 string bioCondition = null;
+                string plateName = null;
                 CellTypeScore predictionScore = null;
 
                 if (options.UseCellTypeColoring && options.CellTypePredictions != null)
                 {
-                    if (options.CellTypePredictions.TryGetValue(rawFiles[i], out var prediction))
+                    if (options.CellTypePredictions.TryGetValue(rawFiles[i], out var prediction) && prediction.TopCellType != null)
                     {
                         cellType = prediction.TopCellType;
                         predictionScore = prediction.TopScore;
-                        if (!string.IsNullOrEmpty(cellType) && options.CellTypeColorMap != null &&
-                            options.CellTypeColorMap.TryGetValue(cellType, out var color))
+                        if (options.CellTypeColorMap != null && options.CellTypeColorMap.TryGetValue(cellType, out var color))
                         {
                             markerColor = color;
                         }
@@ -451,11 +455,24 @@ namespace SCPBrowser
                 }
                 else if (options.UseBioConditionColoring && options.BioConditionPerFile != null)
                 {
-                    if (options.BioConditionPerFile.TryGetValue(rawFiles[i], out bioCondition) &&
-                        !string.IsNullOrEmpty(bioCondition) && options.BioConditionColorMap != null &&
-                        options.BioConditionColorMap.TryGetValue(bioCondition, out var color))
+                    if (options.BioConditionPerFile.TryGetValue(rawFiles[i], out var condition) && !string.IsNullOrEmpty(condition))
                     {
-                        markerColor = color;
+                        bioCondition = condition;
+                        if (options.BioConditionColorMap != null && options.BioConditionColorMap.TryGetValue(condition, out var color))
+                        {
+                            markerColor = color;
+                        }
+                    }
+                }
+                else if (options.UsePlateColoring && options.PlatePerFile != null)
+                {
+                    if (options.PlatePerFile.TryGetValue(rawFiles[i], out var plate) && !string.IsNullOrEmpty(plate))
+                    {
+                        plateName = plate;
+                        if (options.PlateColorMap != null && options.PlateColorMap.TryGetValue(plate, out var color))
+                        {
+                            markerColor = color;
+                        }
                     }
                 }
 
@@ -477,6 +494,28 @@ namespace SCPBrowser
                 data.ProteinCountPerFile.TryGetValue(rawFiles[i], out int proteinCount);
                 data.TargetProteinRatioPerFile.TryGetValue(rawFiles[i], out double trypsinRatio);
 
+                // Get bio condition for tooltip if not coloring by it
+                if (bioCondition == null && options.BioConditionPerFile != null)
+                {
+                    options.BioConditionPerFile.TryGetValue(rawFiles[i], out bioCondition);
+                }
+
+                // Get cell type for tooltip if not coloring by it
+                if (cellType == null && options.CellTypePredictions != null)
+                {
+                    if (options.CellTypePredictions.TryGetValue(rawFiles[i], out var prediction))
+                    {
+                        cellType = prediction.TopCellType;
+                        predictionScore = prediction.TopScore;
+                    }
+                }
+
+                // Get plate name for tooltip if not coloring by it
+                if (plateName == null && options.PlatePerFile != null)
+                {
+                    options.PlatePerFile.TryGetValue(rawFiles[i], out plateName);
+                }
+
                 var dataPoint = new DataPoint
                 {
                     RunName = rawFiles[i],
@@ -492,10 +531,25 @@ namespace SCPBrowser
                     BaseColor = markerColor,
                     PredictedCellType = cellType,
                     PredictionScore = predictionScore,
-                    BiologicalCondition = bioCondition
+                    BiologicalCondition = bioCondition,
+                    PlateName = plateName
                 };
 
                 _dataPoints.Add(dataPoint);
+            }
+
+            // Draw legend based on coloring mode
+            if (options.UseCellTypeColoring && options.CellTypeColorMap != null)
+            {
+                DrawCellTypeLegend(PlotCanvas, canvasWidth, canvasHeight, options.CellTypeColorMap);
+            }
+            else if (options.UseBioConditionColoring && options.BioConditionColorMap != null)
+            {
+                DrawBioConditionLegend(PlotCanvas, canvasWidth, canvasHeight, options.BioConditionColorMap);
+            }
+            else if (options.UsePlateColoring && options.PlateColorMap != null)
+            {
+                DrawPlateLegend(PlotCanvas, canvasWidth, canvasHeight, options.PlateColorMap);
             }
         }
 
@@ -728,7 +782,7 @@ namespace SCPBrowser
                 data.TargetProteinRatioPerFile[rf] : 0).ToList();
 
             // Determine if we need space for internal legend (only for Target Protein Ratio mode)
-            bool showInternalLegend = !options.UseCellTypeColoring && !options.UseBioConditionColoring;
+            bool showInternalLegend = !options.UseCellTypeColoring && !options.UseBioConditionColoring && !options.UsePlateColoring;
             _plotRenderer.SetShowInternalLegend(showInternalLegend);
 
             _plotRenderer.CalculateAxisRanges(peptideCounts, ticValues, options.UseLogLog);
@@ -748,6 +802,13 @@ namespace SCPBrowser
                 _dataPoints = DrawDataPointsWithBioConditions(PlotCanvas, rawFiles, peptideCounts, ticValues,
                     proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.BioConditionPerFile,
                     options.BioConditionColorMap, options.CellTypePredictions);
+            }
+            else if (options.UsePlateColoring && options.PlatePerFile != null)
+            {
+                _dataPoints = DrawDataPointsWithPlates(PlotCanvas, rawFiles, peptideCounts, ticValues,
+                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.PlatePerFile,
+                    options.PlateColorMap, options.CellTypePredictions, options.BioConditionPerFile);
+                DrawPlateLegend(PlotCanvas, canvasWidth, canvasHeight, options.PlateColorMap);
             }
             else // Default: Color by Target Protein Ratio
             {
@@ -801,7 +862,7 @@ namespace SCPBrowser
             var axisColor = new SolidColorBrush(Color.FromRgb(100, 100, 100));
 
             // X axis
-            var xAxis = new System.Windows.Shapes.Line
+            var xAxis = new Line
             {
                 X1 = MarginLeft,
                 Y1 = canvasHeight - MarginBottom,
@@ -813,7 +874,7 @@ namespace SCPBrowser
             PlotCanvas.Children.Add(xAxis);
 
             // Y axis
-            var yAxis = new System.Windows.Shapes.Line
+            var yAxis = new Line
             {
                 X1 = MarginLeft,
                 Y1 = MarginTop,
@@ -867,6 +928,7 @@ namespace SCPBrowser
                 Color markerColor = Color.FromRgb(100, 149, 237); // Default: cornflower blue
                 string cellType = null;
                 string bioCondition = null;
+                string plateName = null;
                 CellTypeScore predictionScore = null;
 
                 if (options.UseCellTypeColoring && options.CellTypePredictions != null)
@@ -887,6 +949,17 @@ namespace SCPBrowser
                     {
                         bioCondition = condition;
                         if (options.BioConditionColorMap != null && options.BioConditionColorMap.TryGetValue(condition, out var color))
+                        {
+                            markerColor = color;
+                        }
+                    }
+                }
+                else if (options.UsePlateColoring && options.PlatePerFile != null)
+                {
+                    if (options.PlatePerFile.TryGetValue(rawFiles[i], out var plate) && !string.IsNullOrEmpty(plate))
+                    {
+                        plateName = plate;
+                        if (options.PlateColorMap != null && options.PlateColorMap.TryGetValue(plate, out var color))
                         {
                             markerColor = color;
                         }
@@ -913,6 +986,28 @@ namespace SCPBrowser
                 data.ProteinCountPerFile.TryGetValue(rawFiles[i], out int proteinCount);
                 data.TargetProteinRatioPerFile.TryGetValue(rawFiles[i], out double trypsinRatio);
 
+                // Get bio condition for tooltip if not coloring by it
+                if (bioCondition == null && options.BioConditionPerFile != null)
+                {
+                    options.BioConditionPerFile.TryGetValue(rawFiles[i], out bioCondition);
+                }
+
+                // Get cell type for tooltip if not coloring by it
+                if (cellType == null && options.CellTypePredictions != null)
+                {
+                    if (options.CellTypePredictions.TryGetValue(rawFiles[i], out var prediction))
+                    {
+                        cellType = prediction.TopCellType;
+                        predictionScore = prediction.TopScore;
+                    }
+                }
+
+                // Get plate name for tooltip if not coloring by it
+                if (plateName == null && options.PlatePerFile != null)
+                {
+                    options.PlatePerFile.TryGetValue(rawFiles[i], out plateName);
+                }
+
                 var dataPoint = new DataPoint
                 {
                     RunName = rawFiles[i],
@@ -928,10 +1023,25 @@ namespace SCPBrowser
                     BaseColor = markerColor,
                     PredictedCellType = cellType,
                     PredictionScore = predictionScore,
-                    BiologicalCondition = bioCondition
+                    BiologicalCondition = bioCondition,
+                    PlateName = plateName
                 };
 
                 _dataPoints.Add(dataPoint);
+            }
+
+            // Draw legend based on coloring mode
+            if (options.UseCellTypeColoring && options.CellTypeColorMap != null)
+            {
+                DrawCellTypeLegend(PlotCanvas, canvasWidth, canvasHeight, options.CellTypeColorMap);
+            }
+            else if (options.UseBioConditionColoring && options.BioConditionColorMap != null)
+            {
+                DrawBioConditionLegend(PlotCanvas, canvasWidth, canvasHeight, options.BioConditionColorMap);
+            }
+            else if (options.UsePlateColoring && options.PlateColorMap != null)
+            {
+                DrawPlateLegend(PlotCanvas, canvasWidth, canvasHeight, options.PlateColorMap);
             }
         }
 
@@ -1006,6 +1116,135 @@ namespace SCPBrowser
             }
 
             return dataPoints;
+        }
+
+        private List<DataPoint> DrawDataPointsWithPlates(Canvas canvas, List<string> rawFiles, List<int> peptideCounts,
+    List<double> ticValues, List<int> proteinCounts, List<double> trypsinRatios,
+    double canvasWidth, double canvasHeight, Dictionary<string, string> platePerFile,
+    Dictionary<string, Color> colorMap, Dictionary<string, CellTypePredictionResult> predictions,
+    Dictionary<string, string> bioConditions)
+        {
+            var dataPoints = new List<DataPoint>();
+            const double MarkerSize = 10;
+            var unassignedColor = Color.FromRgb(200, 200, 200);
+
+            for (int i = 0; i < rawFiles.Count; i++)
+            {
+                if (ticValues[i] <= 0)
+                    continue;
+
+                Point screenPos = _plotRenderer.DataToScreen(peptideCounts[i], ticValues[i], canvasWidth, canvasHeight);
+
+                Color markerColor = unassignedColor;
+                string plateName = null;
+
+                if (platePerFile != null && platePerFile.TryGetValue(rawFiles[i], out plateName) && !string.IsNullOrEmpty(plateName))
+                {
+                    if (colorMap != null && colorMap.TryGetValue(plateName, out var color))
+                    {
+                        markerColor = color;
+                    }
+                }
+
+                // Get cell type and bio condition for tooltip
+                string cellType = null;
+                CellTypeScore predictionScore = null;
+                if (predictions != null && predictions.TryGetValue(rawFiles[i], out var prediction))
+                {
+                    cellType = prediction.TopCellType;
+                    predictionScore = prediction.TopScore;
+                }
+
+                string bioCondition = null;
+                if (bioConditions != null && bioConditions.TryGetValue(rawFiles[i], out var condition))
+                {
+                    bioCondition = condition;
+                }
+
+                var ellipse = new Ellipse
+                {
+                    Width = MarkerSize,
+                    Height = MarkerSize,
+                    Fill = new SolidColorBrush(markerColor),
+                    Stroke = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
+                    StrokeThickness = 1
+                };
+
+                Canvas.SetLeft(ellipse, screenPos.X - MarkerSize / 2);
+                Canvas.SetTop(ellipse, screenPos.Y - MarkerSize / 2);
+                canvas.Children.Add(ellipse);
+
+                dataPoints.Add(new DataPoint
+                {
+                    RunName = rawFiles[i],
+                    PeptideCount = peptideCounts[i],
+                    TicValue = ticValues[i],
+                    ProteinCount = proteinCounts[i],
+                    TrypsinRatio = trypsinRatios[i],
+                    XScreen = screenPos.X,
+                    YScreen = screenPos.Y,
+                    Visual = ellipse,
+                    BaseColor = markerColor,
+                    IsSelected = false,
+                    PredictedCellType = cellType,
+                    PredictionScore = predictionScore,
+                    BiologicalCondition = bioCondition,
+                    PlateName = plateName
+                });
+            }
+
+            return dataPoints;
+        }
+
+        private void DrawPlateLegend(Canvas canvas, double canvasWidth, double canvasHeight, Dictionary<string, Color> colorMap)
+        {
+            if (colorMap == null || colorMap.Count == 0)
+                return;
+
+            double legendX = canvasWidth - 110;
+            double legendY = 20;
+            double boxSize = 12;
+            double spacing = 18;
+
+            var titleText = new TextBlock
+            {
+                Text = "Plate",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Colors.Black)
+            };
+            Canvas.SetLeft(titleText, legendX);
+            Canvas.SetTop(titleText, legendY);
+            canvas.Children.Add(titleText);
+
+            legendY += 20;
+
+            foreach (var plate in colorMap.OrderBy(kvp => kvp.Key))
+            {
+                var rect = new Rectangle
+                {
+                    Width = boxSize,
+                    Height = boxSize,
+                    Fill = new SolidColorBrush(plate.Value),
+                    Stroke = new SolidColorBrush(Colors.Black),
+                    StrokeThickness = 1
+                };
+                Canvas.SetLeft(rect, legendX);
+                Canvas.SetTop(rect, legendY);
+                canvas.Children.Add(rect);
+
+                var label = new TextBlock
+                {
+                    Text = plate.Key,
+                    FontSize = 10,
+                    Foreground = new SolidColorBrush(Colors.Black)
+                };
+                Canvas.SetLeft(label, legendX + boxSize + 5);
+                Canvas.SetTop(label, legendY - 2);
+                canvas.Children.Add(label);
+
+                legendY += spacing;
+            }
         }
         private void DrawCellTypeLegend(Canvas canvas, double canvasWidth, double canvasHeight, Dictionary<string, Color> colorMap)
         {
@@ -1371,6 +1610,11 @@ namespace SCPBrowser
             if (!string.IsNullOrEmpty(point.PredictedCellType))
             {
                 tooltipText += $"\nCell Type: {point.PredictedCellType}";
+            }
+
+            if (!string.IsNullOrEmpty(point.PlateName))
+            {
+                tooltipText += $"\nPlate: {point.PlateName}";
             }
 
             TooltipText.Text = tooltipText;

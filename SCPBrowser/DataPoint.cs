@@ -21,6 +21,7 @@ namespace SCPBrowser
         public string PredictedCellType { get; set; }
         public CellTypeScore PredictionScore { get; set; }
         public string BiologicalCondition { get; set; }
+        public string PlateName { get; set; }  // <-- Add this line
     }
 
     public class SelectedPointData

@@ -21,6 +21,7 @@ namespace SCPBrowser
         private List<DataPoint> _currentSelectedPoints = new List<DataPoint>();
         private Dictionary<string, int> _runNameToRawFileId = new Dictionary<string, int>();
         private HashSet<string> _excludedRunNames = new HashSet<string>();
+        private Dictionary<string, Color> _plateColorMap;
 
         private HashSet<string> _checkedBioConditions = new HashSet<string>();
         private HashSet<string> _checkedCellTypes = new HashSet<string>();
@@ -33,6 +34,7 @@ namespace SCPBrowser
         private bool _isLassoActive = false;
         private List<HvpResult> _hvpResults;
         private int _hvpCount = 500;
+        private Dictionary<string, int> _plateMappingPerFile;
 
         public PeptideTicControl()
         {
@@ -45,6 +47,11 @@ namespace SCPBrowser
             SelectedPointsGridPanel.ClearAllExclusionsRequested += SelectedPointsGridPanel_ClearAllExclusionsRequested;
 
             _isInitialized = true;
+        }
+
+        public void SetPlateColorMap(Dictionary<string, Color> colorMap)
+        {
+            _plateColorMap = colorMap;
         }
 
         private void ViewModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -108,6 +115,14 @@ namespace SCPBrowser
         public void SetHvpResults(List<HvpResult> hvpResults)
         {
             _hvpResults = hvpResults;
+        }
+
+        /// <summary>
+        /// Sets the plate mapping for batch effect correction (plate = batch)
+        /// </summary>
+        public void SetPlateMapping(Dictionary<string, int> plateMapping)
+        {
+            _plateMappingPerFile = plateMapping ?? new Dictionary<string, int>();
         }
 
         /// <summary>
@@ -308,6 +323,30 @@ namespace SCPBrowser
             return colorMap;
         }
 
+        private Dictionary<string, Color> GeneratePlateColorMap()
+        {
+            // Use the color map passed from PlateFilterControl if available
+            if (_plateColorMap != null && _plateColorMap.Count > 0)
+                return _plateColorMap;
+
+            // Fallback: generate based on plate mapping (shouldn't normally be needed)
+            var colorMap = new Dictionary<string, Color>();
+
+            if (_plateMappingPerFile == null || _plateMappingPerFile.Count == 0)
+                return colorMap;
+
+            var uniquePlateIds = _plateMappingPerFile.Values.Distinct().OrderBy(id => id).ToList();
+
+            for (int i = 0; i < uniquePlateIds.Count; i++)
+            {
+                int plateId = uniquePlateIds[i];
+                string plateName = $"Plate {plateId}";
+                colorMap[plateName] = PlateFilterControl.PlateColorPalette[i % PlateFilterControl.PlateColorPalette.Length];
+            }
+
+            return colorMap;
+        }
+
         // Helper to convert HSV to
         private Color HsvToRgb(double h, double s, double v)
         {
@@ -461,6 +500,9 @@ namespace SCPBrowser
                 UseBioConditionColoring = colorMode == "BioCondition",
                 BioConditionPerFile = _currentData.BiologicalConditionPerFile,
                 BioConditionColorMap = GenerateBioConditionColorMap(),
+                UsePlateColoring = colorMode == "Plate",
+                PlatePerFile = GeneratePlatePerFile(),
+                PlateColorMap = GeneratePlateColorMap(),
                 CheckedCellTypes = _checkedCellTypes,
                 CheckedBioConditions = _checkedBioConditions,
                 HvpResults = GetFilteredHvpResults()
@@ -468,6 +510,39 @@ namespace SCPBrowser
 
             ScatterPlot.UpdatePlot(_currentData, options);
             UpdatePlotHeader(_currentData.PeptideCountPerFile.Count, options);
+        }
+
+        private Dictionary<string, string> GeneratePlatePerFile()
+        {
+            var platePerFile = new Dictionary<string, string>();
+
+            if (_plateMappingPerFile == null || _plateMappingPerFile.Count == 0)
+                return platePerFile;
+
+            // Get plate names from the color map keys, or fall back to "Plate {id}"
+            var plateIdToName = new Dictionary<int, string>();
+
+            if (_plateColorMap != null)
+            {
+                // Color map keys are plate names
+                var uniquePlateIds = _plateMappingPerFile.Values.Distinct().OrderBy(id => id).ToList();
+                var plateNames = _plateColorMap.Keys.ToList();
+
+                for (int i = 0; i < uniquePlateIds.Count && i < plateNames.Count; i++)
+                {
+                    plateIdToName[uniquePlateIds[i]] = plateNames[i];
+                }
+            }
+
+            foreach (var kvp in _plateMappingPerFile)
+            {
+                string plateName = plateIdToName.TryGetValue(kvp.Value, out var name)
+                    ? name
+                    : $"Plate {kvp.Value}";
+                platePerFile[kvp.Key] = plateName;
+            }
+
+            return platePerFile;
         }
 
         private List<HvpResult> GetFilteredHvpResults()
@@ -516,6 +591,11 @@ namespace SCPBrowser
             {
                 int conditionCount = _currentData.BiologicalConditionPerFile.Values.Where(c => !string.IsNullOrEmpty(c)).Distinct().Count();
                 PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({fileCount} files, {conditionCount} biological conditions)";
+            }
+            else if (options.UsePlateColoring && options.PlateColorMap != null && options.PlateColorMap.Count > 0)
+            {
+                int plateCount = options.PlateColorMap.Count;
+                PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({fileCount} files, {plateCount} plates)";
             }
             else
             {

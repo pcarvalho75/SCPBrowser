@@ -35,6 +35,7 @@ namespace SCPBrowser
         private List<HvpResult> _hvpResults;
         private int _hvpCount = 500;
         private Dictionary<string, int> _plateMappingPerFile;
+        private HashSet<string> _checkedPlates = new HashSet<string>();
 
         public PeptideTicControl()
         {
@@ -283,22 +284,168 @@ namespace SCPBrowser
                     return;
                 }
 
+                LegendPanelTitle.Text = "Cell Types";
                 PopulateCellTypeCheckboxes();
+                UpdatePieChart("CellType");
                 BioConditionPanel.Visibility = Visibility.Visible;
             }
             else if (mode == "BioCondition")
             {
+                LegendPanelTitle.Text = "Biological Conditions";
                 PopulateBioConditionCheckboxes();
+                UpdatePieChart("BioCondition");
+                BioConditionPanel.Visibility = Visibility.Visible;
+            }
+            else if (mode == "Plate")
+            {
+                LegendPanelTitle.Text = "Plates";
+                PopulatePlateCheckboxes();
+                UpdatePieChart("Plate");
                 BioConditionPanel.Visibility = Visibility.Visible;
             }
             else
             {
                 BioConditionPanel.Visibility = Visibility.Collapsed;
+                DistributionPieChart.Clear();
             }
 
             if (_currentData != null)
             {
                 RefreshChart();
+            }
+        }
+
+        private void PopulatePlateCheckboxes()
+        {
+            var colorMap = GeneratePlateColorMap();
+
+            BioConditionCheckboxes.Children.Clear();
+
+            if (colorMap == null || colorMap.Count == 0)
+                return;
+
+            // If no items are currently checked, check all by default
+            bool checkAllByDefault = _checkedPlates.Count == 0;
+
+            foreach (var item in colorMap.OrderBy(kvp => kvp.Key))
+            {
+                bool isChecked = checkAllByDefault || _checkedPlates.Contains(item.Key);
+
+                if (checkAllByDefault)
+                {
+                    _checkedPlates.Add(item.Key);
+                }
+
+                var checkBox = new CheckBox
+                {
+                    IsChecked = isChecked,
+                    Margin = new Thickness(0, 0, 0, 4),
+                    Tag = item.Key
+                };
+
+                checkBox.Checked += (s, e) =>
+                {
+                    if (_suppressCheckboxEvents)
+                        return;
+
+                    if (s is CheckBox cb && cb.Tag is string key)
+                    {
+                        _checkedPlates.Add(key);
+                    }
+                };
+
+                checkBox.Unchecked += (s, e) =>
+                {
+                    if (_suppressCheckboxEvents)
+                        return;
+
+                    if (s is CheckBox cb && cb.Tag is string key)
+                    {
+                        _checkedPlates.Remove(key);
+                    }
+                };
+
+                var stackPanel = new StackPanel { Orientation = Orientation.Horizontal };
+
+                var colorRect = new Rectangle
+                {
+                    Width = 12,
+                    Height = 12,
+                    Fill = new SolidColorBrush(item.Value),
+                    Stroke = new SolidColorBrush(Colors.Black),
+                    StrokeThickness = 1,
+                    Margin = new Thickness(0, 0, 6, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                var label = new TextBlock
+                {
+                    Text = item.Key,
+                    FontSize = 11,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                stackPanel.Children.Add(colorRect);
+                stackPanel.Children.Add(label);
+                checkBox.Content = stackPanel;
+
+                BioConditionCheckboxes.Children.Add(checkBox);
+            }
+        }
+
+        private void UpdatePieChart(string coloringMode)
+        {
+            if (_currentData == null)
+            {
+                DistributionPieChart.Clear();
+                return;
+            }
+
+            var counts = new Dictionary<string, int>();
+            Dictionary<string, Color> colorMap = null;
+
+            if (coloringMode == "CellType" && _cellTypePredictions != null)
+            {
+                colorMap = _cellTypeColorMap;
+                foreach (var kvp in _cellTypePredictions)
+                {
+                    string cellType = kvp.Value.TopCellType ?? "Unknown";
+                    if (!counts.ContainsKey(cellType))
+                        counts[cellType] = 0;
+                    counts[cellType]++;
+                }
+            }
+            else if (coloringMode == "BioCondition" && _currentData.BiologicalConditionPerFile != null)
+            {
+                colorMap = GenerateBioConditionColorMap();
+                foreach (var kvp in _currentData.BiologicalConditionPerFile)
+                {
+                    string condition = string.IsNullOrEmpty(kvp.Value) ? "Unknown" : kvp.Value;
+                    if (!counts.ContainsKey(condition))
+                        counts[condition] = 0;
+                    counts[condition]++;
+                }
+            }
+            else if (coloringMode == "Plate" && _plateMappingPerFile != null)
+            {
+                colorMap = GeneratePlateColorMap();
+                var platePerFile = GeneratePlatePerFile();
+                foreach (var kvp in platePerFile)
+                {
+                    string plate = string.IsNullOrEmpty(kvp.Value) ? "Unknown" : kvp.Value;
+                    if (!counts.ContainsKey(plate))
+                        counts[plate] = 0;
+                    counts[plate]++;
+                }
+            }
+
+            if (counts.Count > 0 && colorMap != null)
+            {
+                DistributionPieChart.UpdateDistribution(counts, colorMap);
+            }
+            else
+            {
+                DistributionPieChart.Clear();
             }
         }
 

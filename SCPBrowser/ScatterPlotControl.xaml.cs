@@ -482,13 +482,15 @@ namespace SCPBrowser
                     Height = MarkerSize,
                     Fill = new SolidColorBrush(markerColor),
                     Stroke = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
-                    StrokeThickness = 1
+                    StrokeThickness = 1,
+                    Cursor = Cursors.Hand
                 };
 
                 Canvas.SetLeft(ellipse, screenX - MarkerSize / 2);
                 Canvas.SetTop(ellipse, screenY - MarkerSize / 2);
                 PlotCanvas.Children.Add(ellipse);
 
+                // Get additional data for DataPoint
                 data.PeptideCountPerFile.TryGetValue(rawFiles[i], out int peptideCount);
                 data.TotalIonCurrentPerFile.TryGetValue(rawFiles[i], out double ticValue);
                 data.ProteinCountPerFile.TryGetValue(rawFiles[i], out int proteinCount);
@@ -536,20 +538,6 @@ namespace SCPBrowser
                 };
 
                 _dataPoints.Add(dataPoint);
-            }
-
-            // Draw legend based on coloring mode
-            if (options.UseCellTypeColoring && options.CellTypeColorMap != null)
-            {
-                DrawCellTypeLegend(PlotCanvas, canvasWidth, canvasHeight, options.CellTypeColorMap);
-            }
-            else if (options.UseBioConditionColoring && options.BioConditionColorMap != null)
-            {
-                DrawBioConditionLegend(PlotCanvas, canvasWidth, canvasHeight, options.BioConditionColorMap);
-            }
-            else if (options.UsePlateColoring && options.PlateColorMap != null)
-            {
-                DrawPlateLegend(PlotCanvas, canvasWidth, canvasHeight, options.PlateColorMap);
             }
         }
 
@@ -808,7 +796,6 @@ namespace SCPBrowser
                 _dataPoints = DrawDataPointsWithPlates(PlotCanvas, rawFiles, peptideCounts, ticValues,
                     proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.PlatePerFile,
                     options.PlateColorMap, options.CellTypePredictions, options.BioConditionPerFile);
-                DrawPlateLegend(PlotCanvas, canvasWidth, canvasHeight, options.PlateColorMap);
             }
             else // Default: Color by Target Protein Ratio
             {
@@ -1029,20 +1016,6 @@ namespace SCPBrowser
 
                 _dataPoints.Add(dataPoint);
             }
-
-            // Draw legend based on coloring mode
-            if (options.UseCellTypeColoring && options.CellTypeColorMap != null)
-            {
-                DrawCellTypeLegend(PlotCanvas, canvasWidth, canvasHeight, options.CellTypeColorMap);
-            }
-            else if (options.UseBioConditionColoring && options.BioConditionColorMap != null)
-            {
-                DrawBioConditionLegend(PlotCanvas, canvasWidth, canvasHeight, options.BioConditionColorMap);
-            }
-            else if (options.UsePlateColoring && options.PlateColorMap != null)
-            {
-                DrawPlateLegend(PlotCanvas, canvasWidth, canvasHeight, options.PlateColorMap);
-            }
         }
 
 
@@ -1195,107 +1168,7 @@ namespace SCPBrowser
 
             return dataPoints;
         }
-
-        private void DrawPlateLegend(Canvas canvas, double canvasWidth, double canvasHeight, Dictionary<string, Color> colorMap)
-        {
-            if (colorMap == null || colorMap.Count == 0)
-                return;
-
-            double legendX = canvasWidth - 110;
-            double legendY = 20;
-            double boxSize = 12;
-            double spacing = 18;
-
-            var titleText = new TextBlock
-            {
-                Text = "Plate",
-                FontSize = 11,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Colors.Black)
-            };
-            Canvas.SetLeft(titleText, legendX);
-            Canvas.SetTop(titleText, legendY);
-            canvas.Children.Add(titleText);
-
-            legendY += 20;
-
-            foreach (var plate in colorMap.OrderBy(kvp => kvp.Key))
-            {
-                var rect = new Rectangle
-                {
-                    Width = boxSize,
-                    Height = boxSize,
-                    Fill = new SolidColorBrush(plate.Value),
-                    Stroke = new SolidColorBrush(Colors.Black),
-                    StrokeThickness = 1
-                };
-                Canvas.SetLeft(rect, legendX);
-                Canvas.SetTop(rect, legendY);
-                canvas.Children.Add(rect);
-
-                var label = new TextBlock
-                {
-                    Text = plate.Key,
-                    FontSize = 10,
-                    Foreground = new SolidColorBrush(Colors.Black)
-                };
-                Canvas.SetLeft(label, legendX + boxSize + 5);
-                Canvas.SetTop(label, legendY - 2);
-                canvas.Children.Add(label);
-
-                legendY += spacing;
-            }
-        }
-        private void DrawCellTypeLegend(Canvas canvas, double canvasWidth, double canvasHeight, Dictionary<string, Color> colorMap)
-        {
-            if (colorMap == null || colorMap.Count == 0)
-                return;
-
-            double legendX = canvasWidth - 110;
-            double legendY = 20;
-            double boxSize = 12;
-            double spacing = 18;
-
-            var titleText = new TextBlock
-            {
-                Text = "Cell Type",
-                FontSize = 11,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Colors.Black)
-            };
-            Canvas.SetLeft(titleText, legendX);
-            Canvas.SetTop(titleText, legendY);
-            canvas.Children.Add(titleText);
-
-            legendY += 20;
-
-            foreach (var cellType in colorMap.OrderBy(kvp => kvp.Key))
-            {
-                var rect = new System.Windows.Shapes.Rectangle
-                {
-                    Width = boxSize,
-                    Height = boxSize,
-                    Fill = new SolidColorBrush(cellType.Value),
-                    Stroke = new SolidColorBrush(Colors.Black),
-                    StrokeThickness = 1
-                };
-                Canvas.SetLeft(rect, legendX);
-                Canvas.SetTop(rect, legendY);
-                canvas.Children.Add(rect);
-
-                var label = new TextBlock
-                {
-                    Text = cellType.Key,
-                    FontSize = 10,
-                    Foreground = new SolidColorBrush(Colors.Black)
-                };
-                Canvas.SetLeft(label, legendX + boxSize + 5);
-                Canvas.SetTop(label, legendY - 2);
-                canvas.Children.Add(label);
-
-                legendY += spacing;
-            }
-        }
+    
 
         private List<DataPoint> DrawDataPointsWithBioConditions(Canvas canvas, List<string> rawFiles, List<int> peptideCounts,
             List<double> ticValues, List<int> proteinCounts, List<double> trypsinRatios,
@@ -1365,57 +1238,6 @@ namespace SCPBrowser
             }
 
             return dataPoints;
-        }
-
-        private void DrawBioConditionLegend(Canvas canvas, double canvasWidth, double canvasHeight, Dictionary<string, Color> colorMap)
-        {
-            if (colorMap == null || colorMap.Count == 0)
-                return;
-
-            double legendX = canvasWidth - 110;
-            double legendY = 20;
-            double boxSize = 12;
-            double spacing = 18;
-
-            var titleText = new TextBlock
-            {
-                Text = "Biological Condition",
-                FontSize = 11,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Colors.Black)
-            };
-            Canvas.SetLeft(titleText, legendX);
-            Canvas.SetTop(titleText, legendY);
-            canvas.Children.Add(titleText);
-
-            legendY += 20;
-
-            foreach (var condition in colorMap.OrderBy(kvp => kvp.Key))
-            {
-                var rect = new System.Windows.Shapes.Rectangle
-                {
-                    Width = boxSize,
-                    Height = boxSize,
-                    Fill = new SolidColorBrush(condition.Value),
-                    Stroke = new SolidColorBrush(Colors.Black),
-                    StrokeThickness = 1
-                };
-                Canvas.SetLeft(rect, legendX);
-                Canvas.SetTop(rect, legendY);
-                canvas.Children.Add(rect);
-
-                var label = new TextBlock
-                {
-                    Text = condition.Key,
-                    FontSize = 10,
-                    Foreground = new SolidColorBrush(Colors.Black)
-                };
-                Canvas.SetLeft(label, legendX + boxSize + 5);
-                Canvas.SetTop(label, legendY - 2);
-                canvas.Children.Add(label);
-
-                legendY += spacing;
-            }
         }
 
         private void RedrawSelectionFromDataCoordinates()

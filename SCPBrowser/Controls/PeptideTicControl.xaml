@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
-             xmlns:local="clr-namespace:SCPBrowser"
+             xmlns:local="clr-namespace:SCPBrowser" xmlns:controls="clr-namespace:SCPBrowser.Controls"
              mc:Ignorable="d" 
              d:DesignHeight="600" d:DesignWidth="900" Background="WhiteSmoke">
     <Grid Margin="10">
@@ -145,23 +145,43 @@
             </GroupBox>
 
             <!-- Biological Condition Checkboxes Panel -->
+            <!-- Legend Panel (Cell Types / Biological Conditions / Plates) -->
             <Border x:Name="BioConditionPanel"
-                    Grid.Column="1"
-                    Visibility="Collapsed"
-                    Background="#f8fafc"
-                    BorderBrush="#e2e8f0"
-                    BorderThickness="1"
-                    Margin="5,0,0,0"
-                    Padding="8">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxWidth="180">
-                    <StackPanel>
-                        <TextBlock Text="Biological Conditions"
-                                   FontWeight="SemiBold"
-                                   FontSize="11"
-                                   Margin="0,0,0,8"/>
+        Grid.Column="1"
+        Visibility="Collapsed"
+        Background="#f8fafc"
+        BorderBrush="#e2e8f0"
+        BorderThickness="1"
+        Margin="5,0,0,0"
+        Padding="8">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Dynamic Title -->
+                    <TextBlock x:Name="LegendPanelTitle"
+                   Grid.Row="0"
+                   Text="Biological Conditions"
+                   FontWeight="SemiBold"
+                   FontSize="11"
+                   Margin="0,0,0,8"/>
+
+                    <!-- Checkboxes -->
+                    <ScrollViewer Grid.Row="1" 
+                      VerticalScrollBarVisibility="Auto" 
+                      MaxWidth="180">
                         <StackPanel x:Name="BioConditionCheckboxes"/>
-                    </StackPanel>
-                </ScrollViewer>
+                    </ScrollViewer>
+
+                    <!-- Pie Chart -->
+                    <controls:PieChartControl x:Name="DistributionPieChart"
+                                  Grid.Row="2"
+                                  Height="100"
+                                  Margin="0,10,0,0"/>
+                </Grid>
             </Border>
         </Grid>
 

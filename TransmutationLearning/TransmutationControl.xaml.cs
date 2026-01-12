@@ -1,218 +1,466 @@
 using Microsoft.Win32;
+using Parquet;
+using SCPBrowser.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Shapes;
 
 namespace TransmutationLearning
 {
     public partial class TransmutationControl : UserControl
     {
-        private string? _parquetPath;
-        private string? _classificationPath;
-        private TransmutationDataset? _dataset;
+        public TransmutationDataset Dataset { get; private set; }
+        public FilteredDataset FilteredData { get; private set; }
+        
+        private double _otsuThreshold;
+        private bool _isUpdating;
+        
+        // Soft pastel colors for pie chart and histogram
+        private static readonly Color[] PastelColors = new[]
+        {
+            Color.FromRgb(255, 179, 186), // soft pink
+            Color.FromRgb(255, 223, 186), // soft peach
+            Color.FromRgb(255, 255, 186), // soft yellow
+            Color.FromRgb(186, 255, 201), // soft mint
+            Color.FromRgb(186, 225, 255), // soft sky
+            Color.FromRgb(219, 186, 255), // soft lavender
+            Color.FromRgb(255, 186, 255), // soft magenta
+            Color.FromRgb(186, 255, 255), // soft cyan
+            Color.FromRgb(255, 209, 186), // soft coral
+            Color.FromRgb(209, 255, 186), // soft lime
+            Color.FromRgb(186, 209, 255), // soft periwinkle
+            Color.FromRgb(255, 186, 209), // soft rose
+        };
 
+        public event EventHandler DataLoaded;
+        
         public TransmutationControl()
         {
             InitializeComponent();
+            SizeChanged += (s, e) => RedrawCharts();
         }
 
-        /// <summary>
-        /// Gets the loaded dataset (null if not loaded)
-        /// </summary>
-        public TransmutationDataset? Dataset => _dataset;
-
-        /// <summary>
-        /// Event raised when data is successfully loaded
-        /// </summary>
-        public event EventHandler? DataLoaded;
-
+        #region File Loading
+        
         private void BrowseParquet_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Parquet Files (*.parquet)|*.parquet|All Files (*.*)|*.*",
+                Filter = "Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
                 Title = "Select DIA-NN Parquet File"
             };
-
+            
             if (dialog.ShowDialog() == true)
             {
-                _parquetPath = dialog.FileName;
-                ParquetPathTextBox.Text = _parquetPath;
+                ParquetPathTextBox.Text = dialog.FileName;
                 UpdateLoadButtonState();
             }
         }
 
-        private void BrowseClassification_Click(object sender, RoutedEventArgs e)
+        private void BrowseMetadata_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Text Files (*.txt)|*.txt|TSV Files (*.tsv)|*.tsv|All Files (*.*)|*.*",
+                Filter = "Text files (*.txt;*.tsv)|*.txt;*.tsv|All files (*.*)|*.*",
                 Title = "Select Classification Metadata File"
             };
-
+            
             if (dialog.ShowDialog() == true)
             {
-                _classificationPath = dialog.FileName;
-                ClassificationPathTextBox.Text = _classificationPath;
+                MetadataPathTextBox.Text = dialog.FileName;
                 UpdateLoadButtonState();
             }
         }
 
         private void UpdateLoadButtonState()
         {
-            LoadDataButton.IsEnabled = !string.IsNullOrEmpty(_parquetPath) && 
-                                       !string.IsNullOrEmpty(_classificationPath);
+            LoadButton.IsEnabled = !string.IsNullOrEmpty(ParquetPathTextBox.Text) && 
+                                   !string.IsNullOrEmpty(MetadataPathTextBox.Text);
         }
 
         private async void LoadData_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_parquetPath) || string.IsNullOrEmpty(_classificationPath))
-                return;
-
-            LoadDataButton.IsEnabled = false;
-            StatusText.Text = "Loading data...";
-
             try
             {
-                _dataset = await LoadAndJoinDataAsync(_parquetPath, _classificationPath);
+                LoadingOverlay.Visibility = Visibility.Visible;
+                LoadButton.IsEnabled = false;
 
-                // Update UI with summary
-                UpdateSummaryDisplay();
+                // In LoadData_Click, replace the parquet loading with:
+                await System.Threading.Tasks.Task.Run(async () =>
+                {
+                    // Use SCPBrowser's ParquetLoader
+                    var parquetLoader = new ParquetLoader();
+                    var parquetData = await parquetLoader.LoadAsync(ParquetPathTextBox.Text);
 
-                StatusText.Text = $"✓ Data loaded successfully. {_dataset.TotalMatchedRuns} matched runs ready for processing.";
+                    // Load classification metadata
+                    var classifications = ClassificationMetadataParser.Parse(MetadataPathTextBox.Text);
+                    var cellTypes = ClassificationMetadataParser.GetCellTypes(classifications);
 
-                // Raise event
+                    // Create dataset - note: ProteinMatrix is Dictionary<protein, Dictionary<run, double>>
+                    Dataset = new TransmutationDataset
+                    {
+                        ProteinMatrix = parquetData.ProteinMatrix,
+                        AllProteins = parquetData.ProteinMatrix.Keys.ToList(),
+                        AllRuns = parquetData.UniqueRuns,
+                        Classifications = classifications,
+                        CellTypes = cellTypes
+                    };
+                });
+
+
+                // Calculate Otsu threshold
+                _otsuThreshold = StatisticsHelper.ComputeOtsuThreshold(Dataset.GetDeltaValues());
+                
+                // Update UI
+                UpdateSummaryStats();
+                
+                // Set slider range based on data
+                var deltaValues = Dataset.GetDeltaValues();
+                if (deltaValues.Count > 0)
+                {
+                    ThresholdSlider.Minimum = 0;
+                    ThresholdSlider.Maximum = Math.Min(deltaValues.Max(), 0.5);
+                    ThresholdSlider.Value = Math.Min(_otsuThreshold, ThresholdSlider.Maximum);
+                }
+                
+                OtsuSuggestionText.Text = $"(Otsu suggests: {_otsuThreshold:F4})";
+                
+                // Show main content
+                MainContentGrid.Visibility = Visibility.Visible;
+                
+                // Apply initial filtering
+                ApplyThresholdFilter(ThresholdSlider.Value);
+                
+                // Draw charts
+                RedrawCharts();
+                
                 DataLoaded?.Invoke(this, EventArgs.Empty);
+                StatusText.Text = $"Loaded {Dataset.TotalMatchedRuns:N0} matched runs. " +
+                                  $"{Dataset.UnmatchedClassifications} classifications had no proteomic data.";
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error loading data:\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusText.Text = "Error loading data. Check files and try again.";
+                MessageBox.Show($"Error loading data: {ex.Message}", "Error", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
-                LoadDataButton.IsEnabled = true;
+                LoadingOverlay.Visibility = Visibility.Collapsed;
+                LoadButton.IsEnabled = true;
             }
         }
 
-        private async Task<TransmutationDataset> LoadAndJoinDataAsync(string parquetPath, string classificationPath)
+        private void UpdateSummaryStats()
         {
-            var dataset = new TransmutationDataset();
+            if (Dataset == null) return;
+            
+            TotalRunsText.Text = Dataset.TotalMatchedRuns.ToString("N0");
+            TotalProteinsText.Text = Dataset.TotalProteins.ToString("N0");
+            CellTypesCountText.Text = Dataset.CellTypes.Count.ToString();
+            DeltaRangeText.Text = $"{Dataset.MinDelta:F3} - {Dataset.MaxDelta:F3}";
+        }
 
-            // Load parquet
-            StatusText.Text = "Loading parquet file...";
-            var parquetLoader = new ParquetLoader();
-            var progress = new Progress<string>(msg => StatusText.Text = msg);
-            var parquetData = await parquetLoader.LoadAsync(parquetPath, progress);
+        #endregion
 
-            dataset.ProteinMatrix = parquetData.ProteinMatrix;
-            dataset.ProteinToGeneMap = parquetData.ProteinToGeneMap;
+        #region Threshold Filtering
 
-            // Load classification metadata
-            StatusText.Text = "Loading classification metadata...";
-            var metadataParser = new ClassificationMetadataParser();
-            var (classifications, cellTypes) = await metadataParser.ParseAsync(classificationPath);
+        private void ThresholdSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_isUpdating || Dataset == null) return;
+            
+            ThresholdValueText.Text = e.NewValue.ToString("F4");
+            ApplyThresholdFilter(e.NewValue);
+            RedrawCharts();
+        }
 
-            dataset.CellTypes = cellTypes;
+        private void ApplyOtsu_Click(object sender, RoutedEventArgs e)
+        {
+            if (Dataset == null) return;
+            
+            _isUpdating = true;
+            ThresholdSlider.Value = Math.Min(_otsuThreshold, ThresholdSlider.Maximum);
+            _isUpdating = false;
+            
+            ApplyThresholdFilter(_otsuThreshold);
+            RedrawCharts();
+        }
 
-            foreach (var classification in classifications)
+        private void ApplyThresholdFilter(double threshold)
+        {
+            if (Dataset == null) return;
+            
+            FilteredData = new FilteredDataset
             {
-                dataset.Classifications[classification.RunName] = classification;
-            }
-
-            // Join datasets
-            StatusText.Text = "Joining datasets...";
-            var proteomicRuns = new HashSet<string>(parquetData.UniqueRuns);
-            var classificationRuns = new HashSet<string>(dataset.Classifications.Keys);
-
-            // Find matched runs
-            foreach (var run in proteomicRuns)
+                DeltaThreshold = threshold
+            };
+            
+            foreach (var cell in Dataset.Classifications)
             {
-                if (classificationRuns.Contains(run))
-                {
-                    dataset.MatchedRuns.Add(run);
-                }
+                if (cell.DeltaNext >= threshold)
+                    FilteredData.RetainedCells.Add(cell);
                 else
-                {
-                    dataset.UnmatchedProteomicRuns.Add(run);
-                }
+                    FilteredData.FilteredOutCells.Add(cell);
             }
-
-            foreach (var run in classificationRuns)
+            
+            // Compute per-cell-type statistics
+            var cellTypeGroups = Dataset.Classifications.GroupBy(c => c.Labels);
+            foreach (var group in cellTypeGroups.OrderBy(g => g.Key))
             {
-                if (!proteomicRuns.Contains(run))
+                var deltas = group.Select(c => c.DeltaNext).ToList();
+                var retained = group.Count(c => c.DeltaNext >= threshold);
+                
+                FilteredData.CellTypeStats.Add(new CellTypeStatistics
                 {
-                    dataset.UnmatchedClassificationRuns.Add(run);
-                }
+                    CellType = group.Key,
+                    TotalCount = group.Count(),
+                    RetainedCount = retained,
+                    MedianDelta = StatisticsHelper.Median(deltas),
+                    MinDelta = deltas.Min(),
+                    MaxDelta = deltas.Max()
+                });
             }
-
-            return dataset;
+            
+            // Update UI
+            RetainedCountText.Text = FilteredData.TotalRetained.ToString("N0");
+            FilteredCountText.Text = FilteredData.TotalFiltered.ToString("N0");
+            RetentionPercentText.Text = $"{FilteredData.RetentionPercent:F1}%";
+            
+            CellTypeStatsGrid.ItemsSource = FilteredData.CellTypeStats;
         }
 
-        private void UpdateSummaryDisplay()
+        #endregion
+
+        #region Chart Drawing
+
+        private void RedrawCharts()
         {
-            if (_dataset == null)
+            if (Dataset == null) return;
+            
+            DrawHistogram();
+            DrawPieChart();
+        }
+
+        private void DrawHistogram()
+        {
+            HistogramCanvas.Children.Clear();
+            
+            if (Dataset == null || HistogramCanvas.ActualWidth <= 0 || HistogramCanvas.ActualHeight <= 0)
+                return;
+            
+            var deltaValues = Dataset.GetDeltaValues();
+            if (deltaValues.Count == 0) return;
+            
+            var (binEdges, counts) = StatisticsHelper.ComputeHistogram(deltaValues, 40);
+            if (counts.Length == 0) return;
+            
+            double width = HistogramCanvas.ActualWidth;
+            double height = HistogramCanvas.ActualHeight;
+            double barWidth = width / counts.Length;
+            int maxCount = counts.Max();
+            
+            double threshold = ThresholdSlider?.Value ?? 0;
+            double minDelta = binEdges[0];
+            double maxDelta = binEdges[binEdges.Length - 1];
+            
+            // Draw bars
+            for (int i = 0; i < counts.Length; i++)
             {
-                EmptyStatePanel.Visibility = Visibility.Visible;
-                SummaryPanel.Visibility = Visibility.Collapsed;
+                double barHeight = maxCount > 0 ? (counts[i] * (height - 20) / maxCount) : 0;
+                double binCenter = (binEdges[i] + binEdges[i + 1]) / 2;
+                
+                // Color based on threshold
+                bool aboveThreshold = binCenter >= threshold;
+                var brush = aboveThreshold 
+                    ? new SolidColorBrush(Color.FromRgb(74, 144, 226)) 
+                    : new SolidColorBrush(Color.FromRgb(200, 200, 200));
+                
+                var rect = new Rectangle
+                {
+                    Width = Math.Max(barWidth - 1, 1),
+                    Height = barHeight,
+                    Fill = brush
+                };
+                
+                Canvas.SetLeft(rect, i * barWidth);
+                Canvas.SetBottom(rect, 20);
+                HistogramCanvas.Children.Add(rect);
+            }
+            
+            // Draw threshold line
+            if (threshold >= minDelta && threshold <= maxDelta)
+            {
+                double thresholdX = ((threshold - minDelta) / (maxDelta - minDelta)) * width;
+                
+                var line = new Line
+                {
+                    X1 = thresholdX,
+                    Y1 = 0,
+                    X2 = thresholdX,
+                    Y2 = height - 20,
+                    Stroke = new SolidColorBrush(Color.FromRgb(220, 38, 38)),
+                    StrokeThickness = 2,
+                    StrokeDashArray = new DoubleCollection { 4, 2 }
+                };
+                HistogramCanvas.Children.Add(line);
+                
+                // Threshold label
+                var label = new TextBlock
+                {
+                    Text = $"τ={threshold:F3}",
+                    FontSize = 9,
+                    Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38))
+                };
+                Canvas.SetLeft(label, thresholdX + 3);
+                Canvas.SetTop(label, 2);
+                HistogramCanvas.Children.Add(label);
+            }
+            
+            // Draw x-axis labels
+            DrawAxisLabel(minDelta.ToString("F2"), 0, height - 15);
+            DrawAxisLabel(maxDelta.ToString("F2"), width - 30, height - 15);
+        }
+
+        private void DrawAxisLabel(string text, double x, double y)
+        {
+            var label = new TextBlock
+            {
+                Text = text,
+                FontSize = 9,
+                Foreground = new SolidColorBrush(Color.FromRgb(100, 100, 100))
+            };
+            Canvas.SetLeft(label, x);
+            Canvas.SetTop(label, y);
+            HistogramCanvas.Children.Add(label);
+        }
+
+        private void DrawPieChart()
+        {
+            PieChartCanvas.Children.Clear();
+            
+            if (FilteredData == null || PieChartCanvas.ActualWidth <= 0 || PieChartCanvas.ActualHeight <= 0)
+                return;
+            
+            var stats = FilteredData.CellTypeStats.Where(s => s.RetainedCount > 0).ToList();
+            if (stats.Count == 0) return;
+            
+            double width = PieChartCanvas.ActualWidth;
+            double height = PieChartCanvas.ActualHeight;
+            double centerX = width * 0.35;
+            double centerY = height / 2;
+            double radius = Math.Min(centerX, centerY) - 10;
+            
+            int total = stats.Sum(s => s.RetainedCount);
+            double startAngle = -90; // Start from top
+            
+            for (int i = 0; i < stats.Count; i++)
+            {
+                var stat = stats[i];
+                double sweepAngle = (stat.RetainedCount * 360.0) / total;
+                
+                if (sweepAngle < 0.5) continue; // Skip tiny slices
+                
+                var color = PastelColors[i % PastelColors.Length];
+                DrawPieSlice(centerX, centerY, radius, startAngle, sweepAngle, color);
+                
+                startAngle += sweepAngle;
+            }
+            
+            // Draw legend
+            double legendX = width * 0.55;
+            double legendY = 5;
+            double legendItemHeight = Math.Min(14, (height - 10) / stats.Count);
+            
+            for (int i = 0; i < stats.Count && legendY < height - 10; i++)
+            {
+                var stat = stats[i];
+                var color = PastelColors[i % PastelColors.Length];
+                
+                // Color box
+                var rect = new Rectangle
+                {
+                    Width = 10,
+                    Height = 10,
+                    Fill = new SolidColorBrush(color)
+                };
+                Canvas.SetLeft(rect, legendX);
+                Canvas.SetTop(rect, legendY);
+                PieChartCanvas.Children.Add(rect);
+                
+                // Label (truncate if needed)
+                string label = stat.CellType.Length > 12 
+                    ? stat.CellType.Substring(0, 10) + "..." 
+                    : stat.CellType;
+                    
+                var text = new TextBlock
+                {
+                    Text = $"{label} ({stat.RetainedCount})",
+                    FontSize = 9,
+                    Foreground = Brushes.Black
+                };
+                Canvas.SetLeft(text, legendX + 14);
+                Canvas.SetTop(text, legendY - 1);
+                PieChartCanvas.Children.Add(text);
+                
+                legendY += legendItemHeight;
+            }
+        }
+
+        private void DrawPieSlice(double cx, double cy, double r, double startAngle, double sweepAngle, Color color)
+        {
+            if (sweepAngle >= 360)
+            {
+                // Full circle
+                var ellipse = new Ellipse
+                {
+                    Width = r * 2,
+                    Height = r * 2,
+                    Fill = new SolidColorBrush(color)
+                };
+                Canvas.SetLeft(ellipse, cx - r);
+                Canvas.SetTop(ellipse, cy - r);
+                PieChartCanvas.Children.Add(ellipse);
                 return;
             }
-
-            EmptyStatePanel.Visibility = Visibility.Collapsed;
-            SummaryPanel.Visibility = Visibility.Visible;
-
-            // Proteomic data
-            TotalProteinsText.Text = _dataset.TotalProteins.ToString("N0");
-            TotalRunsText.Text = (_dataset.MatchedRuns.Count + _dataset.UnmatchedProteomicRuns.Count).ToString("N0");
-
-            // Classification data
-            ClassifiedRunsText.Text = _dataset.Classifications.Count.ToString("N0");
-            CellTypesCountText.Text = _dataset.CellTypes.Count.ToString();
-
-            // Matching
-            MatchedRunsText.Text = _dataset.MatchedRuns.Count.ToString("N0");
-            int unmatched = _dataset.UnmatchedProteomicRuns.Count + _dataset.UnmatchedClassificationRuns.Count;
-            UnmatchedRunsText.Text = unmatched.ToString("N0");
-
-            // Cell type distribution
-            var cellTypeCounts = _dataset.GetCellTypeCounts();
-            var distribution = cellTypeCounts
-                .OrderByDescending(kvp => kvp.Value)
-                .Select(kvp => new CellTypeCountItem { CellType = kvp.Key, Count = kvp.Value })
-                .ToList();
-            CellTypeDistribution.ItemsSource = distribution;
-
-            // Delta score statistics
-            var deltas = _dataset.MatchedRuns
-                .Where(r => _dataset.Classifications.ContainsKey(r))
-                .Select(r => _dataset.Classifications[r].DeltaNext)
-                .OrderBy(d => d)
-                .ToList();
-
-            if (deltas.Count > 0)
+            
+            double startRad = startAngle * Math.PI / 180;
+            double endRad = (startAngle + sweepAngle) * Math.PI / 180;
+            
+            double x1 = cx + r * Math.Cos(startRad);
+            double y1 = cy + r * Math.Sin(startRad);
+            double x2 = cx + r * Math.Cos(endRad);
+            double y2 = cy + r * Math.Sin(endRad);
+            
+            bool largeArc = sweepAngle > 180;
+            
+            var path = new Path
             {
-                DeltaMinText.Text = deltas.Min().ToString("F4");
-                DeltaMaxText.Text = deltas.Max().ToString("F4");
-                
-                // Median
-                int mid = deltas.Count / 2;
-                double median = deltas.Count % 2 == 0 
-                    ? (deltas[mid - 1] + deltas[mid]) / 2.0 
-                    : deltas[mid];
-                DeltaMedianText.Text = median.ToString("F4");
-            }
+                Fill = new SolidColorBrush(color),
+                Stroke = Brushes.White,
+                StrokeThickness = 1
+            };
+            
+            var figure = new PathFigure { StartPoint = new Point(cx, cy) };
+            figure.Segments.Add(new LineSegment(new Point(x1, y1), false));
+            figure.Segments.Add(new ArcSegment(
+                new Point(x2, y2),
+                new Size(r, r),
+                0,
+                largeArc,
+                SweepDirection.Clockwise,
+                false));
+            figure.Segments.Add(new LineSegment(new Point(cx, cy), false));
+            
+            var geometry = new PathGeometry();
+            geometry.Figures.Add(figure);
+            path.Data = geometry;
+            
+            PieChartCanvas.Children.Add(path);
         }
-    }
 
-    /// <summary>
-    /// Helper class for cell type distribution display
-    /// </summary>
-    public class CellTypeCountItem
-    {
-        public string CellType { get; set; } = string.Empty;
-        public int Count { get; set; }
+        #endregion
     }
 }

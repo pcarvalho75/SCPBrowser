@@ -1,132 +1,141 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace TransmutationLearning
 {
     /// <summary>
-    /// Parses SingleR-style classification metadata files (tab-delimited)
-    /// Expected format:
-    /// "Run"  "scores.CellType1"  "scores.CellType2"  ...  "labels"  "delta.next"  "pruned.labels"
+    /// Parses SingleR-style classification metadata files
+    /// Expected format: tab-delimited with columns for Run, scores per cell type, labels, delta.next, pruned.labels
     /// </summary>
-    public class ClassificationMetadataParser
+    public static class ClassificationMetadataParser
     {
-        /// <summary>
-        /// Parses a tab-delimited classification file
-        /// </summary>
-        public async Task<(List<CellClassification> Classifications, List<string> CellTypes)> ParseAsync(string filePath)
+        public static List<CellClassification> Parse(string filePath)
         {
-            var classifications = new List<CellClassification>();
-            var cellTypes = new List<string>();
+            var results = new List<CellClassification>();
+            var lines = File.ReadAllLines(filePath);
+            
+            if (lines.Length < 2)
+                throw new Exception("File must have header and at least one data row");
 
-            var lines = await File.ReadAllLinesAsync(filePath);
-            if (lines.Length == 0)
-                throw new InvalidDataException("Classification file is empty");
-
-            // Parse header to identify score columns
-            var header = ParseTsvLine(lines[0]);
-            var scoreColumns = new Dictionary<int, string>(); // columnIndex -> cellTypeName
+            // Parse header to identify columns
+            var header = lines[0].Split('\t');
+            
+            // Find special columns
             int runIndex = -1;
-            int labelIndex = -1;
+            int labelsIndex = -1;
             int deltaIndex = -1;
             int prunedIndex = -1;
+            var scoreColumns = new List<(int index, string cellType)>();
 
             for (int i = 0; i < header.Length; i++)
             {
-                var col = header[i].Trim('"').Trim();
-
-                if (col.Equals("Run", StringComparison.OrdinalIgnoreCase))
+                var col = header[i].Trim();
+                
+                // Handle different possible column names
+                if (col.Equals("Run", StringComparison.OrdinalIgnoreCase) || 
+                    col.Equals("cell", StringComparison.OrdinalIgnoreCase) ||
+                    col.Equals("", StringComparison.OrdinalIgnoreCase) && i == 0)
                 {
                     runIndex = i;
                 }
-                else if (col.StartsWith("scores.", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Extract cell type name from "scores.CellTypeName"
-                    var cellType = col.Substring(7).Replace(".", " ");
-                    scoreColumns[i] = cellType;
-                    if (!cellTypes.Contains(cellType))
-                        cellTypes.Add(cellType);
-                }
                 else if (col.Equals("labels", StringComparison.OrdinalIgnoreCase))
                 {
-                    labelIndex = i;
+                    labelsIndex = i;
                 }
-                else if (col.Equals("delta.next", StringComparison.OrdinalIgnoreCase))
+                else if (col.Equals("delta.next", StringComparison.OrdinalIgnoreCase) ||
+                         col.Equals("delta_next", StringComparison.OrdinalIgnoreCase))
                 {
                     deltaIndex = i;
                 }
-                else if (col.Equals("pruned.labels", StringComparison.OrdinalIgnoreCase))
+                else if (col.Equals("pruned.labels", StringComparison.OrdinalIgnoreCase) ||
+                         col.Equals("pruned_labels", StringComparison.OrdinalIgnoreCase))
                 {
                     prunedIndex = i;
+                }
+                else if (!col.StartsWith("scores.") && !col.Equals("labels") && 
+                         !col.Equals("delta.next") && !col.Equals("pruned.labels"))
+                {
+                    // Assume it's a score column (cell type name)
+                    // Skip if it looks like a special column
+                    if (!string.IsNullOrEmpty(col) && i != runIndex)
+                    {
+                        // Check if column contains numeric data (peek at first data row)
+                        if (lines.Length > 1)
+                        {
+                            var firstDataRow = lines[1].Split('\t');
+                            if (i < firstDataRow.Length && double.TryParse(firstDataRow[i], out _))
+                            {
+                                scoreColumns.Add((i, col));
+                            }
+                        }
+                    }
+                }
+                
+                // Handle scores.CellType format
+                if (col.StartsWith("scores."))
+                {
+                    var cellType = col.Substring(7); // Remove "scores." prefix
+                    scoreColumns.Add((i, cellType));
                 }
             }
 
             // Validate required columns
             if (runIndex < 0)
-                throw new InvalidDataException("Missing 'Run' column in classification file");
-            if (labelIndex < 0)
-                throw new InvalidDataException("Missing 'labels' column in classification file");
+                throw new Exception("Could not find Run column (or first column as run identifier)");
+            if (labelsIndex < 0)
+                throw new Exception("Could not find 'labels' column");
             if (deltaIndex < 0)
-                throw new InvalidDataException("Missing 'delta.next' column in classification file");
-            if (scoreColumns.Count == 0)
-                throw new InvalidDataException("No score columns (scores.*) found in classification file");
+                throw new Exception("Could not find 'delta.next' column");
 
             // Parse data rows
-            for (int lineNum = 1; lineNum < lines.Length; lineNum++)
+            for (int i = 1; i < lines.Length; i++)
             {
-                var line = lines[lineNum];
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-
-                var fields = ParseTsvLine(line);
+                var parts = lines[i].Split('\t');
+                if (parts.Length < header.Length)
+                    continue; // Skip incomplete rows
 
                 var classification = new CellClassification
                 {
-                    RunName = fields[runIndex].Trim('"').Trim(),
-                    Label = fields[labelIndex].Trim('"').Trim(),
-                    PrunedLabel = prunedIndex >= 0 && prunedIndex < fields.Length
-                        ? fields[prunedIndex].Trim('"').Trim()
-                        : fields[labelIndex].Trim('"').Trim()
+                    Run = parts[runIndex].Trim(),
+                    Labels = labelsIndex >= 0 && labelsIndex < parts.Length 
+                        ? parts[labelsIndex].Trim() 
+                        : "",
+                    DeltaNext = deltaIndex >= 0 && deltaIndex < parts.Length && 
+                                double.TryParse(parts[deltaIndex], out double delta)
+                        ? delta 
+                        : 0,
+                    PrunedLabels = prunedIndex >= 0 && prunedIndex < parts.Length 
+                        ? parts[prunedIndex].Trim() 
+                        : ""
                 };
 
-                // Parse delta
-                if (deltaIndex < fields.Length)
-                {
-                    var deltaStr = fields[deltaIndex].Trim('"').Trim();
-                    if (double.TryParse(deltaStr, NumberStyles.Float, CultureInfo.InvariantCulture, out double delta))
-                    {
-                        classification.DeltaNext = delta;
-                    }
-                }
-
                 // Parse scores
-                foreach (var kvp in scoreColumns)
+                foreach (var (index, cellType) in scoreColumns)
                 {
-                    if (kvp.Key < fields.Length)
+                    if (index < parts.Length && double.TryParse(parts[index], out double score))
                     {
-                        var scoreStr = fields[kvp.Key].Trim('"').Trim();
-                        if (double.TryParse(scoreStr, NumberStyles.Float, CultureInfo.InvariantCulture, out double score))
-                        {
-                            classification.Scores[kvp.Value] = score;
-                        }
+                        classification.Scores[cellType] = score;
                     }
                 }
 
-                classifications.Add(classification);
+                results.Add(classification);
             }
 
-            return (classifications, cellTypes);
+            return results;
         }
 
         /// <summary>
-        /// Parses a TSV line handling quoted fields
+        /// Get unique cell types from parsed classifications
         /// </summary>
-        private string[] ParseTsvLine(string line)
+        public static List<string> GetCellTypes(List<CellClassification> classifications)
         {
-            return line.Split('\t');
+            return classifications
+                .SelectMany(c => c.Scores.Keys)
+                .Distinct()
+                .OrderBy(s => s)
+                .ToList();
         }
     }
 }

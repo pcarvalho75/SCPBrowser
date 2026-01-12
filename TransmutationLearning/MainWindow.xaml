@@ -5,13 +5,10 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TransmutationLearning"
         mc:Ignorable="d"
-        Title="Transmutation Learning - Proteomic Classifier Builder" 
-        Height="700" 
-        Width="1000"
-        WindowStartupLocation="CenterScreen"
-        Background="#f1f5f9">
+        Title="TransmutationLearning - Cross-Modal Classifier Development" 
+        Height="720" Width="1100"
+        WindowStartupLocation="CenterScreen">
     <Grid>
-        <local:TransmutationControl x:Name="MainTransmutationControl" 
-                                    DataLoaded="MainTransmutationControl_DataLoaded"/>
+        <local:TransmutationControl x:Name="MainTransmutationControl" DataLoaded="MainTransmutationControl_DataLoaded"/>
     </Grid>
 </Window>

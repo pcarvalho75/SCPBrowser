@@ -4,19 +4,21 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <ImplicitUsings>disable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon></ApplicationIcon>
+    <AssemblyTitle>TransmutationLearning</AssemblyTitle>
+    <Description>Cross-modal classifier development for single-cell proteomics</Description>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
-    <PackageReference Include="Parquet.Net" Version="5.4.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SCPBrowser\SCPBrowser.csproj" />
   </ItemGroup>
-
-  <!-- Reference SCPBrowser for shared services -->
 
 </Project>

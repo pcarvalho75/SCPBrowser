@@ -10,7 +10,7 @@ namespace TransmutationLearning
             InitializeComponent();
         }
 
-        private void MainTransmutationControl_DataLoaded(object? sender, EventArgs e)
+        private void MainTransmutationControl_DataLoaded(object sender, EventArgs e)
         {
             var dataset = MainTransmutationControl.Dataset;
             if (dataset != null)
@@ -20,8 +20,10 @@ namespace TransmutationLearning
                 Console.WriteLine($"  - {dataset.TotalMatchedRuns:N0} matched runs");
                 Console.WriteLine($"  - {dataset.CellTypes.Count} cell types: {string.Join(", ", dataset.CellTypes)}");
 
-                // Ready for Phase 2: Confidence filtering
-                // The dataset is now available for further processing
+                // Ready for Phase 3: Feature selection
+                // The dataset and filtered data are available via:
+                // - MainTransmutationControl.Dataset
+                // - MainTransmutationControl.FilteredData
             }
         }
     }

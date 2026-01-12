@@ -5,345 +5,223 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:TransmutationLearning"
              mc:Ignorable="d" 
-             d:DesignHeight="600" d:DesignWidth="900"
-             Background="#f8fafc">
-
+             d:DesignHeight="700" d:DesignWidth="1000">
+    
     <UserControl.Resources>
-        <Style x:Key="CardBorder" TargetType="Border">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#e2e8f0"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="16"/>
-        </Style>
-
-        <Style x:Key="HeaderText" TargetType="TextBlock">
+        <Style x:Key="SectionHeader" TargetType="TextBlock">
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="#1e293b"/>
-            <Setter Property="Margin" Value="0,0,0,12"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
         </Style>
-
-        <Style x:Key="LabelText" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="#64748b"/>
+        <Style x:Key="StatLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="#666"/>
         </Style>
-
-        <Style x:Key="ValueText" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="#1e293b"/>
-            <Setter Property="FontWeight" Value="Medium"/>
-        </Style>
-
-        <Style x:Key="ActionButton" TargetType="Button">
-            <Setter Property="Background" Value="#3b82f6"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Padding" Value="16,10"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" 
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#2563eb"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Background" Value="#94a3b8"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="SecondaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#f1f5f9"/>
-            <Setter Property="Foreground" Value="#475569"/>
-            <Setter Property="Padding" Value="16,10"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#e2e8f0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" 
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#e2e8f0"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Background" Value="#f8fafc"/>
-                                <Setter Property="Foreground" Value="#94a3b8"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+        <Style x:Key="StatValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
     </UserControl.Resources>
-
-    <Grid Margin="24">
+    
+    <Grid Margin="15">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-
-        <!-- Header -->
-        <StackPanel Grid.Row="0" Margin="0,0,0,24">
-            <TextBlock Text="Transmutation Learning" 
-                       FontSize="24" 
-                       FontWeight="Bold" 
-                       Foreground="#0f172a"/>
-            <TextBlock Text="Build proteomic classifiers from transcriptomic-labeled data" 
-                       FontSize="13" 
-                       Foreground="#64748b"
-                       Margin="0,4,0,0"/>
-        </StackPanel>
-
-        <!-- Data Loading Section -->
-        <Border Grid.Row="1" Style="{StaticResource CardBorder}" Margin="0,0,0,16">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Text="Phase 1: Data Loading" Style="{StaticResource HeaderText}"/>
-
-                <!-- Parquet File -->
-                <Grid Grid.Row="1" Margin="0,0,0,12">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="140"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <TextBlock Grid.Column="0" Text="Parquet File:" Style="{StaticResource LabelText}" VerticalAlignment="Center"/>
-                    <TextBox x:Name="ParquetPathTextBox" 
-                             Grid.Column="1" 
-                             IsReadOnly="True" 
-                             Margin="0,0,8,0"
-                             Padding="8,6"
-                             Background="#f8fafc"
-                             BorderBrush="#e2e8f0"/>
-                    <Button Grid.Column="2" 
-                            Content="Browse..." 
-                            Style="{StaticResource SecondaryButton}"
-                            Click="BrowseParquet_Click"/>
-                </Grid>
-
-                <!-- Classification Metadata File -->
-                <Grid Grid.Row="2">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="140"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <TextBlock Grid.Column="0" Text="Classification File:" Style="{StaticResource LabelText}" VerticalAlignment="Center"/>
-                    <TextBox x:Name="ClassificationPathTextBox" 
-                             Grid.Column="1" 
-                             IsReadOnly="True" 
-                             Margin="0,0,8,0"
-                             Padding="8,6"
-                             Background="#f8fafc"
-                             BorderBrush="#e2e8f0"/>
-                    <Button Grid.Column="2" 
-                            Content="Browse..." 
-                            Style="{StaticResource SecondaryButton}"
-                            Click="BrowseClassification_Click"/>
-                </Grid>
-            </Grid>
-        </Border>
-
-        <!-- Summary Panel -->
-        <Border Grid.Row="2" Style="{StaticResource CardBorder}">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Text="Dataset Summary" Style="{StaticResource HeaderText}"/>
-
-                <!-- Empty State -->
-                <StackPanel x:Name="EmptyStatePanel" 
-                            Grid.Row="1" 
-                            HorizontalAlignment="Center" 
-                            VerticalAlignment="Center"
-                            Visibility="Visible">
-                    <TextBlock Text="📊" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,12"/>
-                    <TextBlock Text="No data loaded" 
-                               FontSize="14" 
-                               Foreground="#94a3b8" 
-                               HorizontalAlignment="Center"/>
-                    <TextBlock Text="Load a parquet file and classification metadata to begin" 
-                               FontSize="12" 
-                               Foreground="#cbd5e1" 
-                               HorizontalAlignment="Center"
-                               Margin="0,4,0,0"/>
-                </StackPanel>
-
-                <!-- Data Summary (initially hidden) -->
-                <Grid x:Name="SummaryPanel" Grid.Row="1" Visibility="Collapsed">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Left Column: Proteomic Data -->
-                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                        <TextBlock Text="Proteomic Data" FontWeight="SemiBold" Foreground="#475569" Margin="0,0,0,8"/>
-                        
-                        <Grid Margin="0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Total Proteins:" Style="{StaticResource LabelText}"/>
-                            <TextBlock x:Name="TotalProteinsText" Grid.Column="1" Style="{StaticResource ValueText}" Text="0"/>
-                        </Grid>
-
-                        <Grid Margin="0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Total Runs:" Style="{StaticResource LabelText}"/>
-                            <TextBlock x:Name="TotalRunsText" Grid.Column="1" Style="{StaticResource ValueText}" Text="0"/>
-                        </Grid>
-
-                        <TextBlock Text="Classification Data" FontWeight="SemiBold" Foreground="#475569" Margin="0,16,0,8"/>
-
-                        <Grid Margin="0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Classified Runs:" Style="{StaticResource LabelText}"/>
-                            <TextBlock x:Name="ClassifiedRunsText" Grid.Column="1" Style="{StaticResource ValueText}" Text="0"/>
-                        </Grid>
-
-                        <Grid Margin="0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Cell Types:" Style="{StaticResource LabelText}"/>
-                            <TextBlock x:Name="CellTypesCountText" Grid.Column="1" Style="{StaticResource ValueText}" Text="0"/>
-                        </Grid>
-
-                        <TextBlock Text="Matching" FontWeight="SemiBold" Foreground="#475569" Margin="0,16,0,8"/>
-
-                        <Grid Margin="0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Matched Runs:" Style="{StaticResource LabelText}"/>
-                            <TextBlock x:Name="MatchedRunsText" Grid.Column="1" Style="{StaticResource ValueText}" Text="0" Foreground="#16a34a"/>
-                        </Grid>
-
-                        <Grid Margin="0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Unmatched:" Style="{StaticResource LabelText}"/>
-                            <TextBlock x:Name="UnmatchedRunsText" Grid.Column="1" Style="{StaticResource ValueText}" Text="0" Foreground="#dc2626"/>
-                        </Grid>
-                    </StackPanel>
-
-                    <!-- Right Column: Cell Type Distribution -->
-                    <StackPanel Grid.Column="1">
-                        <TextBlock Text="Cell Type Distribution" FontWeight="SemiBold" Foreground="#475569" Margin="0,0,0,8"/>
-                        <ItemsControl x:Name="CellTypeDistribution">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="60"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding CellType}" Style="{StaticResource LabelText}"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding Count}" Style="{StaticResource ValueText}" HorizontalAlignment="Right"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <TextBlock Text="Delta Score Range" FontWeight="SemiBold" Foreground="#475569" Margin="0,16,0,8"/>
-                        
-                        <Grid Margin="0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="60"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Min:" Style="{StaticResource LabelText}"/>
-                            <TextBlock x:Name="DeltaMinText" Grid.Column="1" Style="{StaticResource ValueText}" Text="0"/>
-                        </Grid>
-
-                        <Grid Margin="0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="60"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Max:" Style="{StaticResource LabelText}"/>
-                            <TextBlock x:Name="DeltaMaxText" Grid.Column="1" Style="{StaticResource ValueText}" Text="0"/>
-                        </Grid>
-
-                        <Grid Margin="0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="60"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Median:" Style="{StaticResource LabelText}"/>
-                            <TextBlock x:Name="DeltaMedianText" Grid.Column="1" Style="{StaticResource ValueText}" Text="0"/>
-                        </Grid>
-                    </StackPanel>
-                </Grid>
-            </Grid>
-        </Border>
-
-        <!-- Status Bar -->
-        <Border Grid.Row="3" 
-                Background="#f1f5f9" 
-                CornerRadius="6" 
-                Padding="12,8"
-                Margin="0,16,0,0">
+        
+        <!-- Phase 1: File Loading Section -->
+        <Border Grid.Row="0" Background="#F8F9FA" CornerRadius="6" Padding="12" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-
-                <TextBlock x:Name="StatusText" 
-                           Text="Ready. Load parquet and classification files to begin." 
-                           Foreground="#64748b"
-                           VerticalAlignment="Center"/>
-
-                <Button x:Name="LoadDataButton"
-                        Grid.Column="1"
-                        Content="Load &amp; Process Data"
-                        Style="{StaticResource ActionButton}"
-                        Click="LoadData_Click"
-                        IsEnabled="False"/>
+                
+                <!-- Parquet File -->
+                <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                    <TextBlock Text="DIA-NN Parquet File" Style="{StaticResource StatLabel}"/>
+                    <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="ParquetPathTextBox" IsReadOnly="True" VerticalContentAlignment="Center" Height="28"/>
+                        <Button Grid.Column="1" Content="Browse..." Margin="6,0,0,0" Padding="12,0" Height="28" Click="BrowseParquet_Click"/>
+                    </Grid>
+                </StackPanel>
+                
+                <!-- Classification Metadata -->
+                <StackPanel Grid.Column="1" Margin="10,0,10,0">
+                    <TextBlock Text="Classification Metadata (SingleR output)" Style="{StaticResource StatLabel}"/>
+                    <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="MetadataPathTextBox" IsReadOnly="True" VerticalContentAlignment="Center" Height="28"/>
+                        <Button Grid.Column="1" Content="Browse..." Margin="6,0,0,0" Padding="12,0" Height="28" Click="BrowseMetadata_Click"/>
+                    </Grid>
+                </StackPanel>
+                
+                <!-- Load Button -->
+                <Button x:Name="LoadButton" Grid.Column="2" Content="Load &amp; Process" 
+                        Padding="20,0" Height="28" VerticalAlignment="Bottom"
+                        Click="LoadData_Click" IsEnabled="False"
+                        Background="#4A90D9" Foreground="White" BorderThickness="0"/>
             </Grid>
+        </Border>
+        
+        <!-- Main Content (visible after loading) -->
+        <Grid x:Name="MainContentGrid" Grid.Row="1" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="280"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Left: Charts and Threshold -->
+            <Grid Grid.Column="0" Margin="0,0,12,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                
+                <!-- Summary Stats -->
+                <Border Grid.Row="0" Background="#F0F7FF" CornerRadius="4" Padding="10" Margin="0,0,0,10">
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel Margin="0,0,30,0">
+                            <TextBlock Text="Total Runs" Style="{StaticResource StatLabel}"/>
+                            <TextBlock x:Name="TotalRunsText" Text="-" Style="{StaticResource StatValue}"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,30,0">
+                            <TextBlock Text="Proteins" Style="{StaticResource StatLabel}"/>
+                            <TextBlock x:Name="TotalProteinsText" Text="-" Style="{StaticResource StatValue}"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,30,0">
+                            <TextBlock Text="Cell Types" Style="{StaticResource StatLabel}"/>
+                            <TextBlock x:Name="CellTypesCountText" Text="-" Style="{StaticResource StatValue}"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,30,0">
+                            <TextBlock Text="Delta Range" Style="{StaticResource StatLabel}"/>
+                            <TextBlock x:Name="DeltaRangeText" Text="-" Style="{StaticResource StatValue}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Histogram -->
+                <Border Grid.Row="1" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Delta.next Distribution" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
+                        <Canvas x:Name="HistogramCanvas" Grid.Row="1" Margin="40,5,20,30" ClipToBounds="True"/>
+                        <!-- X-axis label -->
+                        <TextBlock Grid.Row="1" Text="Delta.next" HorizontalAlignment="Center" VerticalAlignment="Bottom" 
+                                   Margin="0,0,0,8" FontSize="10" Foreground="#666"/>
+                    </Grid>
+                </Border>
+                
+                <!-- Threshold Slider -->
+                <Border Grid.Row="2" Background="#FFF9E6" CornerRadius="4" Padding="12" Margin="0,10,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="Delta Threshold:" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="ThresholdValueText" Text="0.05" FontWeight="Bold" FontSize="14" 
+                                       Foreground="#D97706" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            <Button x:Name="OtsuButton" Content="Use Otsu's Threshold" Margin="20,0,0,0" 
+                                    Padding="10,2" FontSize="11" Click="ApplyOtsu_Click"/>
+                            <TextBlock x:Name="OtsuSuggestionText" Text="" FontSize="11" Foreground="#666" 
+                                       Margin="10,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        
+                        <Slider x:Name="ThresholdSlider" Grid.Row="1" Grid.Column="0"
+                                Minimum="0" Maximum="0.5" Value="0.05" 
+                                TickFrequency="0.01" IsSnapToTickEnabled="False"
+                                ValueChanged="ThresholdSlider_ValueChanged"/>
+                        
+                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Text="Retained:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="RetainedCountText" Text="-" FontWeight="SemiBold" Margin="6,0,15,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Filtered:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="FilteredCountText" Text="-" FontWeight="SemiBold" Margin="6,0,15,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Retention:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="RetentionPercentText" Text="-" FontWeight="SemiBold" Foreground="#059669" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+                
+                <!-- Status -->
+                <TextBlock x:Name="StatusText" Grid.Row="3" Text="" Foreground="#666" FontSize="11" Margin="0,8,0,0"/>
+            </Grid>
+            
+            <!-- Right: Pie Chart and Cell Type Table -->
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="200"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                
+                <!-- Pie Chart -->
+                <Border Grid.Row="0" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Margin="0,0,0,10">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Cell Type Distribution" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
+                        <Canvas x:Name="PieChartCanvas" Grid.Row="1" Margin="10,0,10,10"/>
+                    </Grid>
+                </Border>
+                
+                <!-- Cell Type Statistics Table -->
+                <Border Grid.Row="1" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Per-Cell-Type Statistics" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
+                        <DataGrid x:Name="CellTypeStatsGrid" Grid.Row="1" 
+                                  AutoGenerateColumns="False" 
+                                  IsReadOnly="True"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  BorderThickness="0"
+                                  RowHeight="24"
+                                  FontSize="11"
+                                  Margin="5,0,5,5">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Cell Type" Binding="{Binding CellType}" Width="*"/>
+                                <DataGridTextColumn Header="Total" Binding="{Binding TotalCount}" Width="45"/>
+                                <DataGridTextColumn Header="Kept" Binding="{Binding RetainedCount}" Width="40"/>
+                                <DataGridTextColumn Header="%" Binding="{Binding RetentionPercent, StringFormat=F0}" Width="35"/>
+                                <DataGridTextColumn Header="Med Δ" Binding="{Binding MedianDelta, StringFormat=F3}" Width="50"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+        
+        <!-- Loading indicator -->
+        <Border x:Name="LoadingOverlay" Grid.RowSpan="2" Background="#80FFFFFF" Visibility="Collapsed">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="Loading..." FontSize="16" FontWeight="SemiBold"/>
+            </StackPanel>
         </Border>
     </Grid>
 </UserControl>

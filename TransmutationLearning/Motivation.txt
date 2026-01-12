@@ -1,0 +1,14 @@
+﻿Transmutation Learning: Cross-Omic Classifier Development
+Transmutation Learning is a methodology for building proteomics-native classifiers by leveraging the maturity of transcriptomic reference databases. The approach addresses a fundamental challenge in single-cell proteomics: the scarcity of well-annotated proteomic reference datasets for cell type classification.
+The Problem
+Single-cell transcriptomics benefits from extensive, curated reference databases with millions of annotated cells across hundreds of cell types. Single-cell proteomics, being a younger field, lacks comparable resources. Building a proteomic classifier traditionally requires labeled proteomic data—creating a chicken-and-egg problem.
+The Solution
+Transmutation Learning resolves this by using transcriptomic references as a labeling mechanism for proteomic data. The workflow proceeds in four phases:
+
+Cross-Omic Classification: Proteomic profiles are classified against transcriptomic references using gene symbol overlap. While proteins and transcripts don't correlate perfectly, canonical cell type markers are often conserved across omic layers.
+Confidence Filtering: Classifications include confidence metrics (delta scores) reflecting the gap between the best and second-best cell type assignments. Low-confidence classifications—where the cross-omic transfer may have failed—are filtered out, retaining only reliable labels.
+Feature Selection: Using the high-confidence labeled dataset, discriminant analysis identifies proteins that reliably distinguish cell types at the proteomic level. These become the diagnostic panel—proteins that are both consistently detected and biologically informative.
+Classifier Export: The final output is a proteomics-native classifier that operates independently of transcriptomic references, suitable for classifying future proteomic datasets.
+
+Key Insight
+Transmutation Learning does not assume equivalence between transcriptomics and proteomics. Instead, it uses transcriptomics solely as a labeling tool. The feature selection phase naturally identifies proteins that discriminate at the protein level, regardless of their RNA correlation. The resulting classifier is grounded entirely in proteomic measurements.

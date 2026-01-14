@@ -21,4 +21,8 @@
     <ProjectReference Include="..\SCPBrowser\SCPBrowser.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="img\" />
+  </ItemGroup>
+
 </Project>

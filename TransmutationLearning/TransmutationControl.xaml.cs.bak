@@ -380,10 +380,10 @@ namespace TransmutationLearning
                 double sweepAngle = (stat.RetainedCount * 360.0) / total;
                 
                 if (sweepAngle < 0.5) continue; // Skip tiny slices
-
-                var color = _cellTypeColors.TryGetValue(stat.CellType, out var c) ? c : PastelColors[i % PastelColors.Length];
+                
+                var color = PastelColors[i % PastelColors.Length];
                 DrawPieSlice(centerX, centerY, radius, startAngle, sweepAngle, color);
-
+                
                 startAngle += sweepAngle;
             }
             
@@ -395,8 +395,8 @@ namespace TransmutationLearning
             for (int i = 0; i < stats.Count && legendY < height - 10; i++)
             {
                 var stat = stats[i];
-                var color = _cellTypeColors.TryGetValue(stat.CellType, out var c) ? c : PastelColors[i % PastelColors.Length];
-
+                var color = PastelColors[i % PastelColors.Length];
+                
                 // Color box
                 var rect = new Rectangle
                 {

@@ -100,16 +100,16 @@ namespace TransmutationLearning
 
                 var classification = new CellClassification
                 {
-                    Run = parts[runIndex].Trim().Trim('"'),
+                    Run = parts[runIndex].Trim(),
                     Labels = labelsIndex >= 0 && labelsIndex < parts.Length 
-                        ? parts[labelsIndex].Trim().Trim('"') 
+                        ? parts[labelsIndex].Trim() 
                         : "",
                     DeltaNext = deltaIndex >= 0 && deltaIndex < parts.Length && 
-                                double.TryParse(parts[deltaIndex].Trim().Trim('"'), out double delta)
+                                double.TryParse(parts[deltaIndex], out double delta)
                         ? delta 
                         : 0,
                     PrunedLabels = prunedIndex >= 0 && prunedIndex < parts.Length 
-                        ? parts[prunedIndex].Trim().Trim('"') 
+                        ? parts[prunedIndex].Trim() 
                         : ""
                 };
 

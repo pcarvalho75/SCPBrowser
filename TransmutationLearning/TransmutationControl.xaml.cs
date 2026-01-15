@@ -19,6 +19,7 @@ namespace TransmutationLearning
         private double _otsuThreshold;
         private bool _isUpdating;
         private Dictionary<string, Color> _cellTypeColors = new Dictionary<string, Color>();
+        private HashSet<string> _validCellTypes = new HashSet<string>();
         
         // Soft pastel colors for pie chart and histogram
         private static readonly Color[] PastelColors = new[]
@@ -121,9 +122,8 @@ namespace TransmutationLearning
                     };
                 });
 
-
-                // Calculate Otsu threshold
-                _otsuThreshold = StatisticsHelper.ComputeOtsuThreshold(Dataset.GetDeltaValues());
+                // Initialize all cell types as valid by default
+                _validCellTypes = new HashSet<string>(Dataset.CellTypes);
                 
                 // Assign fixed colors to each cell type (alphabetically sorted for consistency)
                 _cellTypeColors.Clear();
@@ -132,6 +132,12 @@ namespace TransmutationLearning
                 {
                     _cellTypeColors[sortedCellTypes[i]] = PastelColors[i % PastelColors.Length];
                 }
+                
+                // Build the valid cell types checkbox list
+                BuildValidCellTypesCheckboxList();
+                
+                // Calculate Otsu threshold on valid labels only
+                RecalculateOtsuOnValidLabels();
                 
                 // Update UI
                 UpdateSummaryStats();
@@ -184,6 +190,107 @@ namespace TransmutationLearning
 
         #endregion
 
+        #region Valid Cell Types Management
+
+        private void BuildValidCellTypesCheckboxList()
+        {
+            ValidCellTypesPanel.Children.Clear();
+            
+            foreach (var cellType in Dataset.CellTypes.OrderBy(ct => ct))
+            {
+                var checkbox = new CheckBox
+                {
+                    Content = cellType,
+                    IsChecked = true,
+                    Tag = cellType,
+                    Margin = new Thickness(0, 2, 0, 2)
+                };
+                checkbox.Checked += ValidCellTypeCheckbox_Changed;
+                checkbox.Unchecked += ValidCellTypeCheckbox_Changed;
+                ValidCellTypesPanel.Children.Add(checkbox);
+            }
+        }
+
+        private void ValidCellTypeCheckbox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdating || Dataset == null) return;
+            
+            var checkbox = sender as CheckBox;
+            var cellType = checkbox?.Tag as string;
+            if (cellType == null) return;
+            
+            if (checkbox.IsChecked == true)
+                _validCellTypes.Add(cellType);
+            else
+                _validCellTypes.Remove(cellType);
+            
+            // Recalculate Otsu on valid labels only
+            RecalculateOtsuOnValidLabels();
+            OtsuSuggestionText.Text = $"(Otsu suggests: {_otsuThreshold:F4})";
+            
+            // Re-apply filter with current threshold
+            ApplyThresholdFilter(ThresholdSlider.Value);
+            RedrawCharts();
+        }
+
+        private void SelectAllValid_Click(object sender, RoutedEventArgs e)
+        {
+            _isUpdating = true;
+            foreach (CheckBox cb in ValidCellTypesPanel.Children)
+            {
+                cb.IsChecked = true;
+                _validCellTypes.Add(cb.Tag as string);
+            }
+            _isUpdating = false;
+            
+            RecalculateOtsuOnValidLabels();
+            OtsuSuggestionText.Text = $"(Otsu suggests: {_otsuThreshold:F4})";
+            ApplyThresholdFilter(ThresholdSlider.Value);
+            RedrawCharts();
+        }
+
+        private void SelectNoneValid_Click(object sender, RoutedEventArgs e)
+        {
+            _isUpdating = true;
+            foreach (CheckBox cb in ValidCellTypesPanel.Children)
+            {
+                cb.IsChecked = false;
+            }
+            _validCellTypes.Clear();
+            _isUpdating = false;
+            
+            RecalculateOtsuOnValidLabels();
+            OtsuSuggestionText.Text = $"(Otsu suggests: {_otsuThreshold:F4})";
+            ApplyThresholdFilter(ThresholdSlider.Value);
+            RedrawCharts();
+        }
+
+        private void RecalculateOtsuOnValidLabels()
+        {
+            if (Dataset == null || _validCellTypes.Count == 0)
+            {
+                _otsuThreshold = 0;
+                return;
+            }
+            
+            // Compute Otsu ONLY on valid-labeled cells
+            var validDeltas = Dataset.Classifications
+                .Where(c => _validCellTypes.Contains(c.Labels))
+                .Select(c => c.DeltaNext)
+                .ToList();
+            
+            _otsuThreshold = validDeltas.Count >= 2 
+                ? StatisticsHelper.ComputeOtsuThreshold(validDeltas) 
+                : 0;
+        }
+
+        private void ShowMethodologyInfo_Click(object sender, RoutedEventArgs e)
+        {
+            MethodologyPopup.IsOpen = !MethodologyPopup.IsOpen;
+        }
+
+        #endregion
+
         #region Threshold Filtering
 
         private void ThresholdSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -213,20 +320,42 @@ namespace TransmutationLearning
             
             FilteredData = new FilteredDataset
             {
-                DeltaThreshold = threshold
+                DeltaThreshold = threshold,
+                ValidLabelSet = new HashSet<string>(_validCellTypes)
             };
             
+            // Three-bucket filtering:
+            // 1. Retained: valid label AND passes threshold
+            // 2. FilteredOut: valid label BUT low delta
+            // 3. InvalidLabel: invalid label (excluded regardless of delta)
             foreach (var cell in Dataset.Classifications)
             {
-                if (cell.DeltaNext >= threshold)
+                bool isValidLabel = _validCellTypes.Contains(cell.Labels);
+                bool passesThreshold = cell.DeltaNext >= threshold;
+                
+                if (!isValidLabel)
+                {
+                    // Invalid label - always excluded
+                    FilteredData.InvalidLabelCells.Add(cell);
+                }
+                else if (passesThreshold)
+                {
+                    // Valid label + passes threshold = retained
                     FilteredData.RetainedCells.Add(cell);
+                }
                 else
+                {
+                    // Valid label + low delta = filtered out
                     FilteredData.FilteredOutCells.Add(cell);
+                }
             }
             
-            // Compute per-cell-type statistics
-            var cellTypeGroups = Dataset.Classifications.GroupBy(c => c.Labels);
-            foreach (var group in cellTypeGroups.OrderBy(g => g.Key))
+            // Compute per-cell-type statistics (only for valid cell types)
+            var validCellTypeGroups = Dataset.Classifications
+                .Where(c => _validCellTypes.Contains(c.Labels))
+                .GroupBy(c => c.Labels);
+                
+            foreach (var group in validCellTypeGroups.OrderBy(g => g.Key))
             {
                 var deltas = group.Select(c => c.DeltaNext).ToList();
                 var retained = group.Count(c => c.DeltaNext >= threshold);
@@ -242,12 +371,56 @@ namespace TransmutationLearning
                 });
             }
             
-            // Update UI
+            // Update main UI
             RetainedCountText.Text = FilteredData.TotalRetained.ToString("N0");
             FilteredCountText.Text = FilteredData.TotalFiltered.ToString("N0");
             RetentionPercentText.Text = $"{FilteredData.RetentionPercent:F1}%";
             
+            // Update invalid label diagnostics
+            InvalidCountText.Text = FilteredData.TotalInvalid.ToString("N0");
+            InvalidPercentText.Text = $"{FilteredData.InvalidPercent:F1}%";
+            
+            // Build invalid label breakdown
+            UpdateInvalidLabelDiagnostics();
+            
             CellTypeStatsGrid.ItemsSource = FilteredData.CellTypeStats;
+        }
+
+        private void UpdateInvalidLabelDiagnostics()
+        {
+            InvalidLabelBreakdownPanel.Children.Clear();
+            
+            if (FilteredData == null || FilteredData.TotalInvalid == 0)
+            {
+                InvalidLabelBreakdownPanel.Children.Add(new TextBlock
+                {
+                    Text = "No invalid assignments",
+                    FontStyle = FontStyles.Italic,
+                    Foreground = Brushes.Gray
+                });
+                return;
+            }
+            
+            var distribution = FilteredData.InvalidLabelDistribution;
+            var medianDeltas = FilteredData.InvalidLabelMedianDelta;
+            
+            foreach (var kvp in distribution.OrderByDescending(x => x.Value))
+            {
+                var medianDelta = medianDeltas.TryGetValue(kvp.Key, out var md) ? md : 0;
+                
+                var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 1) };
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"• {kvp.Key}: ",
+                    FontWeight = FontWeights.SemiBold
+                });
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"{kvp.Value} cells (median Δ = {medianDelta:F4})"
+                });
+                
+                InvalidLabelBreakdownPanel.Children.Add(panel);
+            }
         }
 
         #endregion
@@ -269,7 +442,12 @@ namespace TransmutationLearning
             if (Dataset == null || HistogramCanvas.ActualWidth <= 0 || HistogramCanvas.ActualHeight <= 0)
                 return;
             
-            var deltaValues = Dataset.GetDeltaValues();
+            // Draw histogram only for valid-labeled cells
+            var deltaValues = Dataset.Classifications
+                .Where(c => _validCellTypes.Contains(c.Labels))
+                .Select(c => c.DeltaNext)
+                .ToList();
+                
             if (deltaValues.Count == 0) return;
             
             var (binEdges, counts) = StatisticsHelper.ComputeHistogram(deltaValues, 40);

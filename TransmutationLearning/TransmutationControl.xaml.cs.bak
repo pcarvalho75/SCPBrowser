@@ -19,6 +19,7 @@ namespace TransmutationLearning
         private double _otsuThreshold;
         private bool _isUpdating;
         private Dictionary<string, Color> _cellTypeColors = new Dictionary<string, Color>();
+        private HashSet<string> _validCellTypes = new HashSet<string>();
         
         // Soft pastel colors for pie chart and histogram
         private static readonly Color[] PastelColors = new[]
@@ -121,9 +122,8 @@ namespace TransmutationLearning
                     };
                 });
 
-
-                // Calculate Otsu threshold
-                _otsuThreshold = StatisticsHelper.ComputeOtsuThreshold(Dataset.GetDeltaValues());
+                // Initialize all cell types as valid by default
+                _validCellTypes = new HashSet<string>(Dataset.CellTypes);
                 
                 // Assign fixed colors to each cell type (alphabetically sorted for consistency)
                 _cellTypeColors.Clear();
@@ -132,6 +132,12 @@ namespace TransmutationLearning
                 {
                     _cellTypeColors[sortedCellTypes[i]] = PastelColors[i % PastelColors.Length];
                 }
+                
+                // Build the valid cell types checkbox list
+                BuildValidCellTypesCheckboxList();
+                
+                // Calculate Otsu threshold on valid labels only
+                RecalculateOtsuOnValidLabels();
                 
                 // Update UI
                 UpdateSummaryStats();
@@ -148,7 +154,7 @@ namespace TransmutationLearning
                 OtsuSuggestionText.Text = $"(Otsu suggests: {_otsuThreshold:F4})";
                 
                 // Show main content
-                MainContentGrid.Visibility = Visibility.Visible;
+                MainTabControl.Visibility = Visibility.Visible;
                 
                 // Apply initial filtering
                 ApplyThresholdFilter(ThresholdSlider.Value);
@@ -184,6 +190,107 @@ namespace TransmutationLearning
 
         #endregion
 
+        #region Valid Cell Types Management
+
+        private void BuildValidCellTypesCheckboxList()
+        {
+            ValidCellTypesPanel.Children.Clear();
+            
+            foreach (var cellType in Dataset.CellTypes.OrderBy(ct => ct))
+            {
+                var checkbox = new CheckBox
+                {
+                    Content = cellType,
+                    IsChecked = true,
+                    Tag = cellType,
+                    Margin = new Thickness(0, 2, 0, 2)
+                };
+                checkbox.Checked += ValidCellTypeCheckbox_Changed;
+                checkbox.Unchecked += ValidCellTypeCheckbox_Changed;
+                ValidCellTypesPanel.Children.Add(checkbox);
+            }
+        }
+
+        private void ValidCellTypeCheckbox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdating || Dataset == null) return;
+            
+            var checkbox = sender as CheckBox;
+            var cellType = checkbox?.Tag as string;
+            if (cellType == null) return;
+            
+            if (checkbox.IsChecked == true)
+                _validCellTypes.Add(cellType);
+            else
+                _validCellTypes.Remove(cellType);
+            
+            // Recalculate Otsu on valid labels only
+            RecalculateOtsuOnValidLabels();
+            OtsuSuggestionText.Text = $"(Otsu suggests: {_otsuThreshold:F4})";
+            
+            // Re-apply filter with current threshold
+            ApplyThresholdFilter(ThresholdSlider.Value);
+            RedrawCharts();
+        }
+
+        private void SelectAllValid_Click(object sender, RoutedEventArgs e)
+        {
+            _isUpdating = true;
+            foreach (CheckBox cb in ValidCellTypesPanel.Children)
+            {
+                cb.IsChecked = true;
+                _validCellTypes.Add(cb.Tag as string);
+            }
+            _isUpdating = false;
+            
+            RecalculateOtsuOnValidLabels();
+            OtsuSuggestionText.Text = $"(Otsu suggests: {_otsuThreshold:F4})";
+            ApplyThresholdFilter(ThresholdSlider.Value);
+            RedrawCharts();
+        }
+
+        private void SelectNoneValid_Click(object sender, RoutedEventArgs e)
+        {
+            _isUpdating = true;
+            foreach (CheckBox cb in ValidCellTypesPanel.Children)
+            {
+                cb.IsChecked = false;
+            }
+            _validCellTypes.Clear();
+            _isUpdating = false;
+            
+            RecalculateOtsuOnValidLabels();
+            OtsuSuggestionText.Text = $"(Otsu suggests: {_otsuThreshold:F4})";
+            ApplyThresholdFilter(ThresholdSlider.Value);
+            RedrawCharts();
+        }
+
+        private void RecalculateOtsuOnValidLabels()
+        {
+            if (Dataset == null || _validCellTypes.Count == 0)
+            {
+                _otsuThreshold = 0;
+                return;
+            }
+            
+            // Compute Otsu ONLY on valid-labeled cells
+            var validDeltas = Dataset.Classifications
+                .Where(c => _validCellTypes.Contains(c.Labels))
+                .Select(c => c.DeltaNext)
+                .ToList();
+            
+            _otsuThreshold = validDeltas.Count >= 2 
+                ? StatisticsHelper.ComputeOtsuThreshold(validDeltas) 
+                : 0;
+        }
+
+        private void ShowMethodologyInfo_Click(object sender, RoutedEventArgs e)
+        {
+            MethodologyPopup.IsOpen = !MethodologyPopup.IsOpen;
+        }
+
+        #endregion
+
         #region Threshold Filtering
 
         private void ThresholdSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -213,20 +320,42 @@ namespace TransmutationLearning
             
             FilteredData = new FilteredDataset
             {
-                DeltaThreshold = threshold
+                DeltaThreshold = threshold,
+                ValidLabelSet = new HashSet<string>(_validCellTypes)
             };
             
+            // Three-bucket filtering:
+            // 1. Retained: valid label AND passes threshold
+            // 2. FilteredOut: valid label BUT low delta
+            // 3. InvalidLabel: invalid label (excluded regardless of delta)
             foreach (var cell in Dataset.Classifications)
             {
-                if (cell.DeltaNext >= threshold)
+                bool isValidLabel = _validCellTypes.Contains(cell.Labels);
+                bool passesThreshold = cell.DeltaNext >= threshold;
+                
+                if (!isValidLabel)
+                {
+                    // Invalid label - always excluded
+                    FilteredData.InvalidLabelCells.Add(cell);
+                }
+                else if (passesThreshold)
+                {
+                    // Valid label + passes threshold = retained
                     FilteredData.RetainedCells.Add(cell);
+                }
                 else
+                {
+                    // Valid label + low delta = filtered out
                     FilteredData.FilteredOutCells.Add(cell);
+                }
             }
             
-            // Compute per-cell-type statistics
-            var cellTypeGroups = Dataset.Classifications.GroupBy(c => c.Labels);
-            foreach (var group in cellTypeGroups.OrderBy(g => g.Key))
+            // Compute per-cell-type statistics (only for valid cell types)
+            var validCellTypeGroups = Dataset.Classifications
+                .Where(c => _validCellTypes.Contains(c.Labels))
+                .GroupBy(c => c.Labels);
+                
+            foreach (var group in validCellTypeGroups.OrderBy(g => g.Key))
             {
                 var deltas = group.Select(c => c.DeltaNext).ToList();
                 var retained = group.Count(c => c.DeltaNext >= threshold);
@@ -242,12 +371,56 @@ namespace TransmutationLearning
                 });
             }
             
-            // Update UI
+            // Update main UI
             RetainedCountText.Text = FilteredData.TotalRetained.ToString("N0");
             FilteredCountText.Text = FilteredData.TotalFiltered.ToString("N0");
             RetentionPercentText.Text = $"{FilteredData.RetentionPercent:F1}%";
             
+            // Update invalid label diagnostics
+            InvalidCountText.Text = FilteredData.TotalInvalid.ToString("N0");
+            InvalidPercentText.Text = $"{FilteredData.InvalidPercent:F1}%";
+            
+            // Build invalid label breakdown
+            UpdateInvalidLabelDiagnostics();
+            
             CellTypeStatsGrid.ItemsSource = FilteredData.CellTypeStats;
+        }
+
+        private void UpdateInvalidLabelDiagnostics()
+        {
+            InvalidLabelBreakdownPanel.Children.Clear();
+            
+            if (FilteredData == null || FilteredData.TotalInvalid == 0)
+            {
+                InvalidLabelBreakdownPanel.Children.Add(new TextBlock
+                {
+                    Text = "No invalid assignments",
+                    FontStyle = FontStyles.Italic,
+                    Foreground = Brushes.Gray
+                });
+                return;
+            }
+            
+            var distribution = FilteredData.InvalidLabelDistribution;
+            var medianDeltas = FilteredData.InvalidLabelMedianDelta;
+            
+            foreach (var kvp in distribution.OrderByDescending(x => x.Value))
+            {
+                var medianDelta = medianDeltas.TryGetValue(kvp.Key, out var md) ? md : 0;
+                
+                var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 1) };
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"• {kvp.Key}: ",
+                    FontWeight = FontWeights.SemiBold
+                });
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"{kvp.Value} cells (median Δ = {medianDelta:F4})"
+                });
+                
+                InvalidLabelBreakdownPanel.Children.Add(panel);
+            }
         }
 
         #endregion
@@ -269,7 +442,12 @@ namespace TransmutationLearning
             if (Dataset == null || HistogramCanvas.ActualWidth <= 0 || HistogramCanvas.ActualHeight <= 0)
                 return;
             
-            var deltaValues = Dataset.GetDeltaValues();
+            // Draw histogram only for valid-labeled cells
+            var deltaValues = Dataset.Classifications
+                .Where(c => _validCellTypes.Contains(c.Labels))
+                .Select(c => c.DeltaNext)
+                .ToList();
+                
             if (deltaValues.Count == 0) return;
             
             var (binEdges, counts) = StatisticsHelper.ComputeHistogram(deltaValues, 40);
@@ -477,6 +655,254 @@ namespace TransmutationLearning
             path.Data = geometry;
             
             PieChartCanvas.Children.Add(path);
+        }
+
+        #endregion
+
+        #region Feature Selection (Phase 2)
+
+        private FeatureSelectionService _featureService = new FeatureSelectionService();
+        private FeatureSelectionResult _featureResult;
+
+        private async void RunFeatureSelection_Click(object sender, RoutedEventArgs e)
+        {
+            if (FilteredData == null || FilteredData.TotalRetained == 0)
+            {
+                MessageBox.Show("No retained cells available. Please complete confidence filtering first.", 
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                RunFeatureSelectionButton.IsEnabled = false;
+                LoadingOverlay.Visibility = Visibility.Visible;
+                LoadingText.Text = "Computing protein statistics...";
+
+                // Get criteria from UI
+                var criteria = FeatureSelectionService.ParseCriteriaFromUI(
+                    (MaxPValueCombo.SelectedItem as ComboBoxItem)?.Content?.ToString(),
+                    (MinDetectionCombo.SelectedItem as ComboBoxItem)?.Content?.ToString(),
+                    (MinSpecificityCombo.SelectedItem as ComboBoxItem)?.Content?.ToString(),
+                    (MinCellFractionCombo.SelectedItem as ComboBoxItem)?.Content?.ToString(),
+                    RequireRobustCheckbox.IsChecked == true);
+
+                // Run feature selection on background thread
+                await System.Threading.Tasks.Task.Run(() =>
+                {
+                    _featureResult = _featureService.ComputeProteinStatistics(FilteredData, Dataset, criteria);
+                });
+
+                // Update UI
+                ProteinStatsGrid.ItemsSource = _featureResult.AllProteinStats;
+                UpdateFeatureSelectionSummary();
+
+                // Enable export buttons if we have selections
+                ExportPrefButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
+                ViewPanelReportButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
+
+                ProteinStatsCountText.Text = $"Showing {_featureResult.AllProteinStats.Count:N0} proteins, " +
+                                             $"{_featureResult.AllProteinStats.Count(p => p.PassesFilter):N0} pass filter";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error during feature selection: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                RunFeatureSelectionButton.IsEnabled = true;
+                LoadingOverlay.Visibility = Visibility.Collapsed;
+                LoadingText.Text = "Loading...";
+            }
+        }
+
+        private void SelectAllPassing_Click(object sender, RoutedEventArgs e)
+        {
+            if (_featureResult == null) return;
+
+            _featureService.SelectAllPassing(_featureResult);
+            ProteinStatsGrid.Items.Refresh();
+            UpdateFeatureSelectionSummary();
+        }
+
+        private void ClearSelection_Click(object sender, RoutedEventArgs e)
+        {
+            if (_featureResult == null) return;
+
+            _featureService.ClearSelection(_featureResult);
+            ProteinStatsGrid.Items.Refresh();
+            UpdateFeatureSelectionSummary();
+        }
+
+        private void UpdateFeatureSelectionSummary()
+        {
+            if (_featureResult == null)
+            {
+                SelectedMarkersCountText.Text = "0";
+                MedianDeltaText.Text = "-";
+                CellTypesCoveredText.Text = "-";
+                ExportPrefButton.IsEnabled = false;
+                ViewPanelReportButton.IsEnabled = false;
+                return;
+            }
+
+            // Recalculate from current selections
+            _featureService.UpdateSelectedMarkers(_featureResult);
+
+            SelectedMarkersCountText.Text = _featureResult.TotalMarkersSelected.ToString();
+            MedianDeltaText.Text = _featureResult.TotalMarkersSelected > 0
+                ? _featureResult.MedianSpecificityDelta.ToString("F2")
+                : "-";
+            CellTypesCoveredText.Text = _featureResult.MarkersByCellType.Count.ToString();
+
+            ExportPrefButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
+            ViewPanelReportButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
+        }
+
+        private void ExportPref_Click(object sender, RoutedEventArgs e)
+        {
+            if (_featureResult == null || _featureResult.TotalMarkersSelected == 0)
+            {
+                MessageBox.Show("No markers selected. Please select markers first.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Filter = "Proteomics Reference (*.pref)|*.pref|All files (*.*)|*.*",
+                Title = "Export Proteomics Reference",
+                FileName = $"proteomics_reference_{DateTime.Now:yyyyMMdd}.pref"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    var exporter = new ProteomicsReferenceExporter();
+                    var reference = exporter.BuildReference(
+                        _featureResult,
+                        FilteredData,
+                        Dataset,
+                        System.IO.Path.GetFileName(ParquetPathTextBox.Text),
+                        System.IO.Path.GetFileName(MetadataPathTextBox.Text));
+
+                    exporter.Export(reference, dialog.FileName);
+
+                    MessageBox.Show($"Exported {_featureResult.TotalMarkersSelected} markers to:\n{dialog.FileName}",
+                        "Export Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error exporting: {ex.Message}", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void ViewPanelReport_Click(object sender, RoutedEventArgs e)
+        {
+            if (_featureResult == null || _featureResult.TotalMarkersSelected == 0)
+            {
+                MessageBox.Show("No markers selected. Please select markers first.", 
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Update Panel Report tab content
+            UpdatePanelReport();
+
+            // Switch to Panel Report tab
+            MainTabControl.SelectedIndex = 2;
+        }
+
+        #endregion
+
+        #region Panel Report (Phase 3)
+
+        private void UpdatePanelReport()
+        {
+            if (_featureResult == null) return;
+
+            // Update summary stats
+            PanelTotalMarkersText.Text = _featureResult.TotalMarkersSelected.ToString();
+            PanelCellTypesText.Text = _featureResult.MarkersByCellType.Count.ToString();
+            PanelMedianDeltaText.Text = _featureResult.MedianSpecificityDelta.ToString("F2");
+            PanelTrainingCellsText.Text = FilteredData?.TotalRetained.ToString("N0") ?? "-";
+            PanelReportSubtitle.Text = $"Generated from TransmutationLearning • {_featureResult.TotalMarkersSelected} markers • {_featureResult.MarkersByCellType.Count} cell types";
+
+            // Build top markers list
+            BuildTopMarkersList();
+
+            // Draw visualizations (TODO: implement in Step 7)
+            // DrawDotPlot();
+            // DrawMarkersPerTypeChart();
+        }
+
+        private void BuildTopMarkersList()
+        {
+            TopMarkersPanel.Children.Clear();
+
+            if (_featureResult == null) return;
+
+            foreach (var kvp in _featureResult.MarkersByCellType.OrderBy(x => x.Key))
+            {
+                var cellType = kvp.Key;
+                var markers = kvp.Value.Take(5).ToList(); // Top 5 per cell type
+
+                // Cell type header
+                var header = new TextBlock
+                {
+                    Text = $"{cellType} ({kvp.Value.Count})",
+                    FontWeight = FontWeights.SemiBold,
+                    FontSize = 12,
+                    Margin = new Thickness(0, 8, 0, 4)
+                };
+                TopMarkersPanel.Children.Add(header);
+
+                // Top markers
+                for (int i = 0; i < markers.Count; i++)
+                {
+                    var marker = markers[i];
+                    var stars = GetStarRating(marker.SpecificityDelta);
+
+                    var markerPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8, 1, 0, 1) };
+                    markerPanel.Children.Add(new TextBlock
+                    {
+                        Text = $"{i + 1}. {marker.ProteinName}",
+                        FontSize = 11,
+                        Width = 140
+                    });
+                    markerPanel.Children.Add(new TextBlock
+                    {
+                        Text = $"Δ={marker.SpecificityDelta:F2} {stars}",
+                        FontSize = 10,
+                        Foreground = Brushes.Gray
+                    });
+                    TopMarkersPanel.Children.Add(markerPanel);
+                }
+            }
+        }
+
+        private string GetStarRating(double delta)
+        {
+            if (delta >= 2.0) return "★★★";
+            if (delta >= 1.0) return "★★☆";
+            if (delta >= 0.5) return "★☆☆";
+            return "☆☆☆";
+        }
+
+        private void ExportPanelPng_Click(object sender, RoutedEventArgs e)
+        {
+            // TODO: Implement PNG export
+            MessageBox.Show("PNG export not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void ExportPanelPdf_Click(object sender, RoutedEventArgs e)
+        {
+            // TODO: Implement PDF export
+            MessageBox.Show("PDF export not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         #endregion

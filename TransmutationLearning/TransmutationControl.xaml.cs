@@ -154,7 +154,7 @@ namespace TransmutationLearning
                 OtsuSuggestionText.Text = $"(Otsu suggests: {_otsuThreshold:F4})";
                 
                 // Show main content
-                MainContentGrid.Visibility = Visibility.Visible;
+                MainTabControl.Visibility = Visibility.Visible;
                 
                 // Apply initial filtering
                 ApplyThresholdFilter(ThresholdSlider.Value);
@@ -655,6 +655,505 @@ namespace TransmutationLearning
             path.Data = geometry;
             
             PieChartCanvas.Children.Add(path);
+        }
+
+        #endregion
+
+        #region Feature Selection (Phase 2)
+
+        private FeatureSelectionService _featureService = new FeatureSelectionService();
+        private FeatureSelectionResult _featureResult;
+
+        private async void RunFeatureSelection_Click(object sender, RoutedEventArgs e)
+        {
+            if (FilteredData == null || FilteredData.TotalRetained == 0)
+            {
+                MessageBox.Show("No retained cells available. Please complete confidence filtering first.", 
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                RunFeatureSelectionButton.IsEnabled = false;
+                LoadingOverlay.Visibility = Visibility.Visible;
+                LoadingText.Text = "Computing protein statistics...";
+
+                // Get criteria from UI
+                var criteria = FeatureSelectionService.ParseCriteriaFromUI(
+                    (MaxPValueCombo.SelectedItem as ComboBoxItem)?.Content?.ToString(),
+                    (MinDetectionCombo.SelectedItem as ComboBoxItem)?.Content?.ToString(),
+                    (MinSpecificityCombo.SelectedItem as ComboBoxItem)?.Content?.ToString(),
+                    (MinCellFractionCombo.SelectedItem as ComboBoxItem)?.Content?.ToString(),
+                    RequireRobustCheckbox.IsChecked == true);
+
+                // Run feature selection on background thread
+                await System.Threading.Tasks.Task.Run(() =>
+                {
+                    _featureResult = _featureService.ComputeProteinStatistics(FilteredData, Dataset, criteria);
+                });
+
+                // Update UI
+                ProteinStatsGrid.ItemsSource = _featureResult.AllProteinStats;
+                UpdateFeatureSelectionSummary();
+
+                // Enable export buttons if we have selections
+                ExportPrefButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
+                ViewPanelReportButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
+
+                ProteinStatsCountText.Text = $"Showing {_featureResult.AllProteinStats.Count:N0} proteins, " +
+                                             $"{_featureResult.AllProteinStats.Count(p => p.PassesFilter):N0} pass filter";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error during feature selection: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                RunFeatureSelectionButton.IsEnabled = true;
+                LoadingOverlay.Visibility = Visibility.Collapsed;
+                LoadingText.Text = "Loading...";
+            }
+        }
+
+        private void SelectAllPassing_Click(object sender, RoutedEventArgs e)
+        {
+            if (_featureResult == null) return;
+
+            _featureService.SelectAllPassing(_featureResult);
+            ProteinStatsGrid.Items.Refresh();
+            UpdateFeatureSelectionSummary();
+        }
+
+        private void ClearSelection_Click(object sender, RoutedEventArgs e)
+        {
+            if (_featureResult == null) return;
+
+            _featureService.ClearSelection(_featureResult);
+            ProteinStatsGrid.Items.Refresh();
+            UpdateFeatureSelectionSummary();
+        }
+
+        private void UpdateFeatureSelectionSummary()
+        {
+            if (_featureResult == null)
+            {
+                SelectedMarkersCountText.Text = "0";
+                MedianDeltaText.Text = "-";
+                CellTypesCoveredText.Text = "-";
+                ExportPrefButton.IsEnabled = false;
+                ViewPanelReportButton.IsEnabled = false;
+                return;
+            }
+
+            // Recalculate from current selections
+            _featureService.UpdateSelectedMarkers(_featureResult);
+
+            SelectedMarkersCountText.Text = _featureResult.TotalMarkersSelected.ToString();
+            MedianDeltaText.Text = _featureResult.TotalMarkersSelected > 0
+                ? _featureResult.MedianSpecificityDelta.ToString("F2")
+                : "-";
+            CellTypesCoveredText.Text = _featureResult.MarkersByCellType.Count.ToString();
+
+            ExportPrefButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
+            ViewPanelReportButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
+        }
+
+        private void ExportPref_Click(object sender, RoutedEventArgs e)
+        {
+            if (_featureResult == null || _featureResult.TotalMarkersSelected == 0)
+            {
+                MessageBox.Show("No markers selected. Please select markers first.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Filter = "Proteomics Reference (*.pref)|*.pref|All files (*.*)|*.*",
+                Title = "Export Proteomics Reference",
+                FileName = $"proteomics_reference_{DateTime.Now:yyyyMMdd}.pref"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    var exporter = new ProteomicsReferenceExporter();
+                    var reference = exporter.BuildReference(
+                        _featureResult,
+                        FilteredData,
+                        Dataset,
+                        System.IO.Path.GetFileName(ParquetPathTextBox.Text),
+                        System.IO.Path.GetFileName(MetadataPathTextBox.Text));
+
+                    exporter.Export(reference, dialog.FileName);
+
+                    MessageBox.Show($"Exported {_featureResult.TotalMarkersSelected} markers to:\n{dialog.FileName}",
+                        "Export Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error exporting: {ex.Message}", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void ViewPanelReport_Click(object sender, RoutedEventArgs e)
+        {
+            if (_featureResult == null || _featureResult.TotalMarkersSelected == 0)
+            {
+                MessageBox.Show("No markers selected. Please select markers first.", 
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Update Panel Report tab content
+            UpdatePanelReport();
+
+            // Switch to Panel Report tab
+            MainTabControl.SelectedIndex = 2;
+        }
+
+        #endregion
+
+        #region Panel Report (Phase 3)
+
+        private void UpdatePanelReport()
+        {
+            if (_featureResult == null) return;
+
+            // Update summary stats
+            PanelTotalMarkersText.Text = _featureResult.TotalMarkersSelected.ToString();
+            PanelCellTypesText.Text = _featureResult.MarkersByCellType.Count.ToString();
+            PanelMedianDeltaText.Text = _featureResult.MedianSpecificityDelta.ToString("F2");
+            PanelTrainingCellsText.Text = FilteredData?.TotalRetained.ToString("N0") ?? "-";
+            PanelReportSubtitle.Text = $"Generated from TransmutationLearning • {_featureResult.TotalMarkersSelected} markers • {_featureResult.MarkersByCellType.Count} cell types";
+
+            // Build top markers list
+            BuildTopMarkersList();
+
+            // Draw visualizations
+            DrawDotPlot();
+            DrawMarkersPerTypeChart();
+        }
+
+        private void BuildTopMarkersList()
+        {
+            TopMarkersPanel.Children.Clear();
+
+            if (_featureResult == null) return;
+
+            foreach (var kvp in _featureResult.MarkersByCellType.OrderBy(x => x.Key))
+            {
+                var cellType = kvp.Key;
+                var markers = kvp.Value.Take(5).ToList(); // Top 5 per cell type
+
+                // Cell type header
+                var header = new TextBlock
+                {
+                    Text = $"{cellType} ({kvp.Value.Count})",
+                    FontWeight = FontWeights.SemiBold,
+                    FontSize = 12,
+                    Margin = new Thickness(0, 8, 0, 4)
+                };
+                TopMarkersPanel.Children.Add(header);
+
+                // Top markers
+                for (int i = 0; i < markers.Count; i++)
+                {
+                    var marker = markers[i];
+                    var stars = GetStarRating(marker.SpecificityDelta);
+
+                    var markerPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8, 1, 0, 1) };
+                    markerPanel.Children.Add(new TextBlock
+                    {
+                        Text = $"{i + 1}. {marker.ProteinName}",
+                        FontSize = 11,
+                        Width = 140
+                    });
+                    markerPanel.Children.Add(new TextBlock
+                    {
+                        Text = $"Δ={marker.SpecificityDelta:F2} {stars}",
+                        FontSize = 10,
+                        Foreground = Brushes.Gray
+                    });
+                    TopMarkersPanel.Children.Add(markerPanel);
+                }
+            }
+        }
+
+        private string GetStarRating(double delta)
+        {
+            if (delta >= 2.0) return "★★★";
+            if (delta >= 1.0) return "★★☆";
+            if (delta >= 0.5) return "★☆☆";
+            return "☆☆☆";
+        }
+
+        private void DrawDotPlot()
+        {
+            DotPlotCanvas.Children.Clear();
+
+            if (_featureResult == null || DotPlotCanvas.ActualWidth <= 0 || DotPlotCanvas.ActualHeight <= 0)
+                return;
+
+            var markers = _featureResult.SelectedMarkers;
+            if (markers.Count == 0) return;
+
+            var cellTypes = _featureResult.MarkersByCellType.Keys.OrderBy(c => c).ToList();
+            if (cellTypes.Count == 0) return;
+
+            double width = DotPlotCanvas.ActualWidth;
+            double height = DotPlotCanvas.ActualHeight;
+
+            // Layout parameters
+            double labelWidth = 80;  // Space for protein names on left
+            double labelHeight = 60; // Space for cell type labels on bottom
+            double plotWidth = width - labelWidth - 10;
+            double plotHeight = height - labelHeight - 10;
+
+            // Limit to top 30 markers for readability
+            var displayMarkers = markers.Take(30).ToList();
+            
+            double cellWidth = plotWidth / cellTypes.Count;
+            double rowHeight = Math.Min(plotHeight / displayMarkers.Count, 18);
+            double maxRadius = Math.Min(cellWidth, rowHeight) / 2 - 2;
+
+            // Find expression range for color scaling
+            double minExpr = double.MaxValue;
+            double maxExpr = double.MinValue;
+            foreach (var marker in displayMarkers)
+            {
+                foreach (var ct in cellTypes)
+                {
+                    if (marker.CellTypeMetrics.TryGetValue(ct, out var m) && m.MedianExpression > 0)
+                    {
+                        minExpr = Math.Min(minExpr, m.MedianExpression);
+                        maxExpr = Math.Max(maxExpr, m.MedianExpression);
+                    }
+                }
+            }
+            if (minExpr == double.MaxValue) minExpr = 0;
+            if (maxExpr == double.MinValue) maxExpr = 1;
+            double exprRange = maxExpr - minExpr;
+            if (exprRange < 0.1) exprRange = 1;
+
+            // Draw dots
+            for (int row = 0; row < displayMarkers.Count; row++)
+            {
+                var marker = displayMarkers[row];
+                double y = 5 + row * rowHeight + rowHeight / 2;
+
+                // Protein label
+                var proteinLabel = new TextBlock
+                {
+                    Text = marker.ProteinName.Length > 10 
+                        ? marker.ProteinName.Substring(0, 8) + ".." 
+                        : marker.ProteinName,
+                    FontSize = 9,
+                    Foreground = Brushes.Black,
+                    TextAlignment = TextAlignment.Right,
+                    Width = labelWidth - 5
+                };
+                Canvas.SetLeft(proteinLabel, 0);
+                Canvas.SetTop(proteinLabel, y - 6);
+                DotPlotCanvas.Children.Add(proteinLabel);
+
+                // Dots for each cell type
+                for (int col = 0; col < cellTypes.Count; col++)
+                {
+                    var cellType = cellTypes[col];
+                    double x = labelWidth + col * cellWidth + cellWidth / 2;
+
+                    if (marker.CellTypeMetrics.TryGetValue(cellType, out var metrics))
+                    {
+                        // Size based on detection rate (0-1)
+                        double radius = Math.Max(2, metrics.DetectionRate * maxRadius);
+
+                        // Color based on expression (blue gradient)
+                        double normExpr = exprRange > 0 
+                            ? (metrics.MedianExpression - minExpr) / exprRange 
+                            : 0.5;
+                        normExpr = Math.Max(0, Math.Min(1, normExpr));
+                        
+                        byte r = (byte)(220 - normExpr * 170);  // 220 -> 50
+                        byte g = (byte)(230 - normExpr * 150);  // 230 -> 80
+                        byte b = (byte)(240 - normExpr * 40);   // 240 -> 200
+
+                        var dot = new Ellipse
+                        {
+                            Width = radius * 2,
+                            Height = radius * 2,
+                            Fill = new SolidColorBrush(Color.FromRgb(r, g, b)),
+                            Stroke = new SolidColorBrush(Color.FromRgb(100, 100, 100)),
+                            StrokeThickness = 0.5,
+                            ToolTip = $"{marker.ProteinName}\n{cellType}\nDetect: {metrics.DetectionRate:P0}\nExpr: {metrics.MedianExpression:F2}"
+                        };
+                        Canvas.SetLeft(dot, x - radius);
+                        Canvas.SetTop(dot, y - radius);
+                        DotPlotCanvas.Children.Add(dot);
+                    }
+                }
+            }
+
+            // Draw cell type labels at bottom
+            for (int col = 0; col < cellTypes.Count; col++)
+            {
+                var cellType = cellTypes[col];
+                double x = labelWidth + col * cellWidth + cellWidth / 2;
+
+                var label = new TextBlock
+                {
+                    Text = cellType.Length > 12 ? cellType.Substring(0, 10) + ".." : cellType,
+                    FontSize = 9,
+                    Foreground = Brushes.Black,
+                    RenderTransform = new RotateTransform(45)
+                };
+                Canvas.SetLeft(label, x - 5);
+                Canvas.SetTop(label, plotHeight + 10);
+                DotPlotCanvas.Children.Add(label);
+            }
+
+            // Draw legend if space permits
+            if (width > 400)
+            {
+                DrawDotPlotLegend(width - 80, 5, maxRadius);
+            }
+        }
+
+        private void DrawDotPlotLegend(double x, double y, double maxRadius)
+        {
+            // Size legend
+            var sizeLabel = new TextBlock
+            {
+                Text = "Size: Detection",
+                FontSize = 8,
+                Foreground = Brushes.Gray
+            };
+            Canvas.SetLeft(sizeLabel, x);
+            Canvas.SetTop(sizeLabel, y);
+            DotPlotCanvas.Children.Add(sizeLabel);
+
+            // Small dot (25%)
+            var smallDot = new Ellipse
+            {
+                Width = maxRadius * 0.5,
+                Height = maxRadius * 0.5,
+                Fill = Brushes.LightGray,
+                Stroke = Brushes.Gray,
+                StrokeThickness = 0.5
+            };
+            Canvas.SetLeft(smallDot, x);
+            Canvas.SetTop(smallDot, y + 15);
+            DotPlotCanvas.Children.Add(smallDot);
+
+            var smallLabel = new TextBlock { Text = "25%", FontSize = 7, Foreground = Brushes.Gray };
+            Canvas.SetLeft(smallLabel, x + maxRadius * 0.5 + 3);
+            Canvas.SetTop(smallLabel, y + 15);
+            DotPlotCanvas.Children.Add(smallLabel);
+
+            // Large dot (100%)
+            var largeDot = new Ellipse
+            {
+                Width = maxRadius * 2,
+                Height = maxRadius * 2,
+                Fill = Brushes.LightGray,
+                Stroke = Brushes.Gray,
+                StrokeThickness = 0.5
+            };
+            Canvas.SetLeft(largeDot, x);
+            Canvas.SetTop(largeDot, y + 30);
+            DotPlotCanvas.Children.Add(largeDot);
+
+            var largeLabel = new TextBlock { Text = "100%", FontSize = 7, Foreground = Brushes.Gray };
+            Canvas.SetLeft(largeLabel, x + maxRadius * 2 + 3);
+            Canvas.SetTop(largeLabel, y + 35);
+            DotPlotCanvas.Children.Add(largeLabel);
+        }
+
+        private void DrawMarkersPerTypeChart()
+        {
+            MarkersPerTypeCanvas.Children.Clear();
+
+            if (_featureResult == null || MarkersPerTypeCanvas.ActualWidth <= 0 || MarkersPerTypeCanvas.ActualHeight <= 0)
+                return;
+
+            var markerCounts = _featureResult.MarkersByCellType
+                .Select(kvp => new { CellType = kvp.Key, Count = kvp.Value.Count })
+                .OrderByDescending(x => x.Count)
+                .ToList();
+
+            if (markerCounts.Count == 0) return;
+
+            double width = MarkersPerTypeCanvas.ActualWidth;
+            double height = MarkersPerTypeCanvas.ActualHeight;
+
+            int maxCount = markerCounts.Max(x => x.Count);
+            double barHeight = Math.Min((height - 10) / markerCounts.Count, 20);
+            double labelWidth = 100;
+            double barAreaWidth = width - labelWidth - 40;
+
+            for (int i = 0; i < markerCounts.Count; i++)
+            {
+                var item = markerCounts[i];
+                double y = 5 + i * barHeight;
+
+                // Cell type label
+                var label = new TextBlock
+                {
+                    Text = item.CellType.Length > 15 ? item.CellType.Substring(0, 13) + ".." : item.CellType,
+                    FontSize = 9,
+                    Foreground = Brushes.Black,
+                    TextAlignment = TextAlignment.Right,
+                    Width = labelWidth - 5
+                };
+                Canvas.SetLeft(label, 0);
+                Canvas.SetTop(label, y + 2);
+                MarkersPerTypeCanvas.Children.Add(label);
+
+                // Bar
+                double barWidth = maxCount > 0 ? (item.Count * barAreaWidth / maxCount) : 0;
+                var color = _cellTypeColors.TryGetValue(item.CellType, out var c) ? c : PastelColors[i % PastelColors.Length];
+
+                var bar = new Rectangle
+                {
+                    Width = Math.Max(barWidth, 2),
+                    Height = barHeight - 4,
+                    Fill = new SolidColorBrush(color),
+                    RadiusX = 2,
+                    RadiusY = 2
+                };
+                Canvas.SetLeft(bar, labelWidth);
+                Canvas.SetTop(bar, y + 2);
+                MarkersPerTypeCanvas.Children.Add(bar);
+
+                // Count label
+                var countLabel = new TextBlock
+                {
+                    Text = item.Count.ToString(),
+                    FontSize = 9,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = Brushes.Black
+                };
+                Canvas.SetLeft(countLabel, labelWidth + barWidth + 5);
+                Canvas.SetTop(countLabel, y + 2);
+                MarkersPerTypeCanvas.Children.Add(countLabel);
+            }
+        }
+
+        private void ExportPanelPng_Click(object sender, RoutedEventArgs e)
+        {
+            // TODO: Implement PNG export if needed
+            MessageBox.Show("PNG export not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void ExportPanelPdf_Click(object sender, RoutedEventArgs e)
+        {
+            // Not implementing PDF export per user request
+            MessageBox.Show("PDF export is not available.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         #endregion

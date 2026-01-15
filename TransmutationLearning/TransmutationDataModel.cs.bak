@@ -89,19 +89,40 @@ namespace TransmutationLearning
     }
 
     /// <summary>
-    /// Result of confidence filtering
+    /// Result of confidence filtering with valid label set support
     /// </summary>
     public class FilteredDataset
     {
         public double DeltaThreshold { get; set; }
+        public HashSet<string> ValidLabelSet { get; set; } = new HashSet<string>();
+        
+        // Three buckets
         public List<CellClassification> RetainedCells { get; set; } = new List<CellClassification>();
-        public List<CellClassification> FilteredOutCells { get; set; } = new List<CellClassification>();
+        public List<CellClassification> FilteredOutCells { get; set; } = new List<CellClassification>();  // Valid label, low delta
+        public List<CellClassification> InvalidLabelCells { get; set; } = new List<CellClassification>(); // Invalid label (excluded regardless of delta)
+        
         public List<CellTypeStatistics> CellTypeStats { get; set; } = new List<CellTypeStatistics>();
         
+        // Counts
         public int TotalRetained => RetainedCells.Count;
         public int TotalFiltered => FilteredOutCells.Count;
-        public double RetentionPercent => (TotalRetained + TotalFiltered) > 0 
-            ? (TotalRetained * 100.0 / (TotalRetained + TotalFiltered)) : 0;
+        public int TotalInvalid => InvalidLabelCells.Count;
+        public int TotalValidLabeled => TotalRetained + TotalFiltered;
+        
+        // Percentages
+        public double RetentionPercent => TotalValidLabeled > 0 
+            ? (TotalRetained * 100.0 / TotalValidLabeled) : 0;
+        public double InvalidPercent => (TotalValidLabeled + TotalInvalid) > 0
+            ? (TotalInvalid * 100.0 / (TotalValidLabeled + TotalInvalid)) : 0;
+        
+        // Invalid label diagnostics
+        public Dictionary<string, int> InvalidLabelDistribution => InvalidLabelCells
+            .GroupBy(c => c.Labels)
+            .ToDictionary(g => g.Key, g => g.Count());
+        
+        public Dictionary<string, double> InvalidLabelMedianDelta => InvalidLabelCells
+            .GroupBy(c => c.Labels)
+            .ToDictionary(g => g.Key, g => StatisticsHelper.Median(g.Select(c => c.DeltaNext)));
     }
 
     /// <summary>

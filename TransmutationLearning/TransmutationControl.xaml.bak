@@ -5,7 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:TransmutationLearning"
              mc:Ignorable="d" 
-             d:DesignHeight="700" d:DesignWidth="1000">
+             d:DesignHeight="700" d:DesignWidth="1100">
     
     <UserControl.Resources>
         <Style x:Key="SectionHeader" TargetType="TextBlock">
@@ -20,6 +20,11 @@
         <Style x:Key="StatValue" TargetType="TextBlock">
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style x:Key="SmallButton" TargetType="Button">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="Margin" Value="2,0"/>
         </Style>
     </UserControl.Resources>
     
@@ -75,15 +80,81 @@
         <!-- Main Content (visible after loading) -->
         <Grid x:Name="MainContentGrid" Grid.Row="1" Visibility="Collapsed">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="280"/>
             </Grid.ColumnDefinitions>
             
-            <!-- Left: Charts and Threshold -->
-            <Grid Grid.Column="0" Margin="0,0,12,0">
+            <!-- Left: Valid Cell Types Panel -->
+            <Border Grid.Column="0" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Margin="0,0,10,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Header with Info Button -->
+                    <Grid Grid.Row="0" Margin="10,8,10,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Valid Cell Types" Style="{StaticResource SectionHeader}" Margin="0"/>
+                        <Button x:Name="InfoButton" Grid.Column="1" Content="?" FontWeight="Bold" 
+                                Width="20" Height="20" FontSize="11" Padding="0"
+                                ToolTip="Learn about valid label filtering"
+                                Click="ShowMethodologyInfo_Click"/>
+                    </Grid>
+                    
+                    <!-- Select All/None Buttons -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="10,0,10,5">
+                        <Button Content="All" Style="{StaticResource SmallButton}" Click="SelectAllValid_Click"/>
+                        <Button Content="None" Style="{StaticResource SmallButton}" Click="SelectNoneValid_Click"/>
+                    </StackPanel>
+                    
+                    <!-- Checkbox List -->
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="10,0,10,10">
+                        <StackPanel x:Name="ValidCellTypesPanel"/>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+            
+            <!-- Methodology Popup -->
+            <Popup x:Name="MethodologyPopup" PlacementTarget="{Binding ElementName=InfoButton}" 
+                   Placement="Right" StaysOpen="False" AllowsTransparency="True">
+                <Border Background="White" BorderBrush="#4A90D9" BorderThickness="2" 
+                        CornerRadius="6" Padding="12" MaxWidth="400">
+                    <StackPanel>
+                        <TextBlock Text="Valid Label Set Methodology" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#333">
+                            <Run FontWeight="SemiBold">Purpose:</Run>
+                            <Run> This approach separates threshold determination from quality auditing. Invalid labels (e.g., decoy cell types not present in your sample) are diagnostic signals, not competing classes.</Run>
+                            <LineBreak/><LineBreak/>
+                            <Run FontWeight="SemiBold">How it works:</Run>
+                            <LineBreak/>
+                            <Run>• Threshold (Otsu) is computed ONLY on valid-labeled cells</Run>
+                            <LineBreak/>
+                            <Run>• Cells are retained if: (Label ∈ ValidSet) AND (Δ ≥ τ)</Run>
+                            <LineBreak/>
+                            <Run>• Invalid-labeled cells are always excluded (regardless of delta)</Run>
+                            <LineBreak/><LineBreak/>
+                            <Run FontWeight="SemiBold">Why this matters:</Run>
+                            <Run> A global threshold can be warped if decoy/invalid cell types attract misclassifications with different delta distributions. By excluding them from threshold computation, you get a stable, unbiased cutoff for your true cell types.</Run>
+                            <LineBreak/><LineBreak/>
+                            <Run FontWeight="SemiBold">Invalid label diagnostics:</Run>
+                            <Run> Use the invalid assignment panel below to monitor misclassification rates as a QC metric, not as a decision driver.</Run>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+            </Popup>
+            
+            <!-- Center: Charts and Threshold -->
+            <Grid Grid.Column="1" Margin="0,0,12,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
@@ -117,7 +188,7 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Delta.next Distribution" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
+                        <TextBlock Grid.Row="0" Text="Delta.next Distribution (Valid Labels Only)" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
                         <Canvas x:Name="HistogramCanvas" Grid.Row="1" Margin="40,5,20,30" ClipToBounds="True"/>
                         <!-- X-axis label -->
                         <TextBlock Grid.Row="1" Text="Delta.next" HorizontalAlignment="Center" VerticalAlignment="Bottom" 
@@ -156,7 +227,7 @@
                         <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
                             <TextBlock Text="Retained:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
                             <TextBlock x:Name="RetainedCountText" Text="-" FontWeight="SemiBold" Margin="6,0,15,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Filtered:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
+                            <TextBlock Text="Filtered (low Δ):" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
                             <TextBlock x:Name="FilteredCountText" Text="-" FontWeight="SemiBold" Margin="6,0,15,0" VerticalAlignment="Center"/>
                             <TextBlock Text="Retention:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
                             <TextBlock x:Name="RetentionPercentText" Text="-" FontWeight="SemiBold" Foreground="#059669" Margin="6,0,0,0" VerticalAlignment="Center"/>
@@ -164,12 +235,47 @@
                     </Grid>
                 </Border>
                 
+                <!-- Invalid Label Diagnostics Panel -->
+                <Border Grid.Row="3" Background="#FEF2F2" CornerRadius="4" Padding="10" Margin="0,10,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        
+                        <StackPanel Grid.Row="0" Orientation="Horizontal">
+                            <TextBlock Text="⚠️ Invalid Label Assignments" FontWeight="SemiBold" FontSize="12" Foreground="#991B1B"/>
+                            <TextBlock Text=" (excluded from training)" FontSize="11" Foreground="#666" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        
+                        <Grid Grid.Row="1" Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Count: " Style="{StaticResource StatLabel}"/>
+                                    <TextBlock x:Name="InvalidCountText" Text="0" FontWeight="SemiBold" Foreground="#B91C1C"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                    <TextBlock Text="Percent: " Style="{StaticResource StatLabel}"/>
+                                    <TextBlock x:Name="InvalidPercentText" Text="0%" FontWeight="SemiBold" Foreground="#B91C1C"/>
+                                </StackPanel>
+                            </StackPanel>
+                            
+                            <StackPanel x:Name="InvalidLabelBreakdownPanel" Grid.Column="1" />
+                        </Grid>
+                    </Grid>
+                </Border>
+                
                 <!-- Status -->
-                <TextBlock x:Name="StatusText" Grid.Row="3" Text="" Foreground="#666" FontSize="11" Margin="0,8,0,0"/>
+                <TextBlock x:Name="StatusText" Grid.Row="4" Text="" Foreground="#666" FontSize="11" Margin="0,8,0,0"/>
             </Grid>
             
             <!-- Right: Pie Chart and Cell Type Table -->
-            <Grid Grid.Column="1">
+            <Grid Grid.Column="2">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="200"/>
                     <RowDefinition Height="*"/>
@@ -182,7 +288,7 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Cell Type Distribution" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
+                        <TextBlock Grid.Row="0" Text="Cell Type Distribution (Retained)" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
                         <Canvas x:Name="PieChartCanvas" Grid.Row="1" Margin="10,0,10,10"/>
                     </Grid>
                 </Border>
@@ -194,7 +300,7 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Per-Cell-Type Statistics" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
+                        <TextBlock Grid.Row="0" Text="Per-Cell-Type Statistics (Valid Only)" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
                         <DataGrid x:Name="CellTypeStatsGrid" Grid.Row="1" 
                                   AutoGenerateColumns="False" 
                                   IsReadOnly="True"

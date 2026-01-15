@@ -5,7 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:TransmutationLearning"
              mc:Ignorable="d" 
-             d:DesignHeight="700" d:DesignWidth="1100">
+             d:DesignHeight="750" d:DesignWidth="1100">
     
     <UserControl.Resources>
         <Style x:Key="SectionHeader" TargetType="TextBlock">
@@ -77,256 +77,529 @@
             </Grid>
         </Border>
         
-        <!-- Main Content (visible after loading) -->
-        <Grid x:Name="MainContentGrid" Grid.Row="1" Visibility="Collapsed">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="180"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="280"/>
-            </Grid.ColumnDefinitions>
+        <!-- Main Content TabControl (visible after loading) -->
+        <TabControl x:Name="MainTabControl" Grid.Row="1" Visibility="Collapsed">
             
-            <!-- Left: Valid Cell Types Panel -->
-            <Border Grid.Column="0" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Margin="0,0,10,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
+            <!-- Tab 1: Confidence Filtering -->
+            <TabItem Header="1. Confidence Filtering">
+                <Grid Margin="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="180"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="280"/>
+                    </Grid.ColumnDefinitions>
                     
-                    <!-- Header with Info Button -->
-                    <Grid Grid.Row="0" Margin="10,8,10,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="Valid Cell Types" Style="{StaticResource SectionHeader}" Margin="0"/>
-                        <Button x:Name="InfoButton" Grid.Column="1" Content="?" FontWeight="Bold" 
-                                Width="20" Height="20" FontSize="11" Padding="0"
-                                ToolTip="Learn about valid label filtering"
-                                Click="ShowMethodologyInfo_Click"/>
-                    </Grid>
+                    <!-- Left: Valid Cell Types Panel -->
+                    <Border Grid.Column="0" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Margin="0,0,10,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            
+                            <!-- Header with Info Button -->
+                            <Grid Grid.Row="0" Margin="10,8,10,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Valid Cell Types" Style="{StaticResource SectionHeader}" Margin="0"/>
+                                <Button x:Name="InfoButton" Grid.Column="1" Content="?" FontWeight="Bold" 
+                                        Width="20" Height="20" FontSize="11" Padding="0"
+                                        ToolTip="Learn about valid label filtering"
+                                        Click="ShowMethodologyInfo_Click"/>
+                            </Grid>
+                            
+                            <!-- Select All/None Buttons -->
+                            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="10,0,10,5">
+                                <Button Content="All" Style="{StaticResource SmallButton}" Click="SelectAllValid_Click"/>
+                                <Button Content="None" Style="{StaticResource SmallButton}" Click="SelectNoneValid_Click"/>
+                            </StackPanel>
+                            
+                            <!-- Checkbox List -->
+                            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="10,0,10,10">
+                                <StackPanel x:Name="ValidCellTypesPanel"/>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
                     
-                    <!-- Select All/None Buttons -->
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="10,0,10,5">
-                        <Button Content="All" Style="{StaticResource SmallButton}" Click="SelectAllValid_Click"/>
-                        <Button Content="None" Style="{StaticResource SmallButton}" Click="SelectNoneValid_Click"/>
-                    </StackPanel>
+                    <!-- Methodology Popup -->
+                    <Popup x:Name="MethodologyPopup" PlacementTarget="{Binding ElementName=InfoButton}" 
+                           Placement="Right" StaysOpen="False" AllowsTransparency="True">
+                        <Border Background="White" BorderBrush="#4A90D9" BorderThickness="2" 
+                                CornerRadius="6" Padding="12" MaxWidth="400">
+                            <StackPanel>
+                                <TextBlock Text="Valid Label Set Methodology" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#333">
+                                    <Run FontWeight="SemiBold">Purpose:</Run>
+                                    <Run> This approach separates threshold determination from quality auditing. Invalid labels (e.g., decoy cell types not present in your sample) are diagnostic signals, not competing classes.</Run>
+                                    <LineBreak/><LineBreak/>
+                                    <Run FontWeight="SemiBold">How it works:</Run>
+                                    <LineBreak/>
+                                    <Run>• Threshold (Otsu) is computed ONLY on valid-labeled cells</Run>
+                                    <LineBreak/>
+                                    <Run>• Cells are retained if: (Label ∈ ValidSet) AND (Δ ≥ τ)</Run>
+                                    <LineBreak/>
+                                    <Run>• Invalid-labeled cells are always excluded (regardless of delta)</Run>
+                                    <LineBreak/><LineBreak/>
+                                    <Run FontWeight="SemiBold">Why this matters:</Run>
+                                    <Run> A global threshold can be warped if decoy/invalid cell types attract misclassifications with different delta distributions. By excluding them from threshold computation, you get a stable, unbiased cutoff for your true cell types.</Run>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                     
-                    <!-- Checkbox List -->
-                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="10,0,10,10">
-                        <StackPanel x:Name="ValidCellTypesPanel"/>
-                    </ScrollViewer>
-                </Grid>
-            </Border>
-            
-            <!-- Methodology Popup -->
-            <Popup x:Name="MethodologyPopup" PlacementTarget="{Binding ElementName=InfoButton}" 
-                   Placement="Right" StaysOpen="False" AllowsTransparency="True">
-                <Border Background="White" BorderBrush="#4A90D9" BorderThickness="2" 
-                        CornerRadius="6" Padding="12" MaxWidth="400">
-                    <StackPanel>
-                        <TextBlock Text="Valid Label Set Methodology" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
-                        <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#333">
-                            <Run FontWeight="SemiBold">Purpose:</Run>
-                            <Run> This approach separates threshold determination from quality auditing. Invalid labels (e.g., decoy cell types not present in your sample) are diagnostic signals, not competing classes.</Run>
-                            <LineBreak/><LineBreak/>
-                            <Run FontWeight="SemiBold">How it works:</Run>
-                            <LineBreak/>
-                            <Run>• Threshold (Otsu) is computed ONLY on valid-labeled cells</Run>
-                            <LineBreak/>
-                            <Run>• Cells are retained if: (Label ∈ ValidSet) AND (Δ ≥ τ)</Run>
-                            <LineBreak/>
-                            <Run>• Invalid-labeled cells are always excluded (regardless of delta)</Run>
-                            <LineBreak/><LineBreak/>
-                            <Run FontWeight="SemiBold">Why this matters:</Run>
-                            <Run> A global threshold can be warped if decoy/invalid cell types attract misclassifications with different delta distributions. By excluding them from threshold computation, you get a stable, unbiased cutoff for your true cell types.</Run>
-                            <LineBreak/><LineBreak/>
-                            <Run FontWeight="SemiBold">Invalid label diagnostics:</Run>
-                            <Run> Use the invalid assignment panel below to monitor misclassification rates as a QC metric, not as a decision driver.</Run>
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
-            </Popup>
-            
-            <!-- Center: Charts and Threshold -->
-            <Grid Grid.Column="1" Margin="0,0,12,0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                
-                <!-- Summary Stats -->
-                <Border Grid.Row="0" Background="#F0F7FF" CornerRadius="4" Padding="10" Margin="0,0,0,10">
-                    <StackPanel Orientation="Horizontal">
-                        <StackPanel Margin="0,0,30,0">
-                            <TextBlock Text="Total Runs" Style="{StaticResource StatLabel}"/>
-                            <TextBlock x:Name="TotalRunsText" Text="-" Style="{StaticResource StatValue}"/>
-                        </StackPanel>
-                        <StackPanel Margin="0,0,30,0">
-                            <TextBlock Text="Proteins" Style="{StaticResource StatLabel}"/>
-                            <TextBlock x:Name="TotalProteinsText" Text="-" Style="{StaticResource StatValue}"/>
-                        </StackPanel>
-                        <StackPanel Margin="0,0,30,0">
-                            <TextBlock Text="Cell Types" Style="{StaticResource StatLabel}"/>
-                            <TextBlock x:Name="CellTypesCountText" Text="-" Style="{StaticResource StatValue}"/>
-                        </StackPanel>
-                        <StackPanel Margin="0,0,30,0">
-                            <TextBlock Text="Delta Range" Style="{StaticResource StatLabel}"/>
-                            <TextBlock x:Name="DeltaRangeText" Text="-" Style="{StaticResource StatValue}"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-                
-                <!-- Histogram -->
-                <Border Grid.Row="1" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
-                    <Grid>
+                    <!-- Center: Charts and Threshold -->
+                    <Grid Grid.Column="1" Margin="0,0,12,0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Delta.next Distribution (Valid Labels Only)" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
-                        <Canvas x:Name="HistogramCanvas" Grid.Row="1" Margin="40,5,20,30" ClipToBounds="True"/>
-                        <!-- X-axis label -->
-                        <TextBlock Grid.Row="1" Text="Delta.next" HorizontalAlignment="Center" VerticalAlignment="Bottom" 
-                                   Margin="0,0,0,8" FontSize="10" Foreground="#666"/>
+                        
+                        <!-- Summary Stats -->
+                        <Border Grid.Row="0" Background="#F0F7FF" CornerRadius="4" Padding="10" Margin="0,0,0,10">
+                            <StackPanel Orientation="Horizontal">
+                                <StackPanel Margin="0,0,30,0">
+                                    <TextBlock Text="Total Runs" Style="{StaticResource StatLabel}"/>
+                                    <TextBlock x:Name="TotalRunsText" Text="-" Style="{StaticResource StatValue}"/>
+                                </StackPanel>
+                                <StackPanel Margin="0,0,30,0">
+                                    <TextBlock Text="Proteins" Style="{StaticResource StatLabel}"/>
+                                    <TextBlock x:Name="TotalProteinsText" Text="-" Style="{StaticResource StatValue}"/>
+                                </StackPanel>
+                                <StackPanel Margin="0,0,30,0">
+                                    <TextBlock Text="Cell Types" Style="{StaticResource StatLabel}"/>
+                                    <TextBlock x:Name="CellTypesCountText" Text="-" Style="{StaticResource StatValue}"/>
+                                </StackPanel>
+                                <StackPanel Margin="0,0,30,0">
+                                    <TextBlock Text="Delta Range" Style="{StaticResource StatLabel}"/>
+                                    <TextBlock x:Name="DeltaRangeText" Text="-" Style="{StaticResource StatValue}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        
+                        <!-- Histogram -->
+                        <Border Grid.Row="1" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="Delta.next Distribution (Valid Labels Only)" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
+                                <Canvas x:Name="HistogramCanvas" Grid.Row="1" Margin="40,5,20,30" ClipToBounds="True"/>
+                                <TextBlock Grid.Row="1" Text="Delta.next" HorizontalAlignment="Center" VerticalAlignment="Bottom" 
+                                           Margin="0,0,0,8" FontSize="10" Foreground="#666"/>
+                            </Grid>
+                        </Border>
+                        
+                        <!-- Threshold Slider -->
+                        <Border Grid.Row="2" Background="#FFF9E6" CornerRadius="4" Padding="12" Margin="0,10,0,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                
+                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Delta Threshold:" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="ThresholdValueText" Text="0.05" FontWeight="Bold" FontSize="14" 
+                                               Foreground="#D97706" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                    <Button x:Name="OtsuButton" Content="Use Otsu's Threshold" Margin="20,0,0,0" 
+                                            Padding="10,2" FontSize="11" Click="ApplyOtsu_Click"/>
+                                    <TextBlock x:Name="OtsuSuggestionText" Text="" FontSize="11" Foreground="#666" 
+                                               Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                
+                                <Slider x:Name="ThresholdSlider" Grid.Row="1"
+                                        Minimum="0" Maximum="0.5" Value="0.05" 
+                                        TickFrequency="0.01" IsSnapToTickEnabled="False"
+                                        ValueChanged="ThresholdSlider_ValueChanged"/>
+                                
+                                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="Retained:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="RetainedCountText" Text="-" FontWeight="SemiBold" Margin="6,0,15,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Filtered (low Δ):" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="FilteredCountText" Text="-" FontWeight="SemiBold" Margin="6,0,15,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Retention:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="RetentionPercentText" Text="-" FontWeight="SemiBold" Foreground="#059669" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        
+                        <!-- Invalid Label Diagnostics Panel -->
+                        <Border Grid.Row="3" Background="#FEF2F2" CornerRadius="4" Padding="10" Margin="0,10,0,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                
+                                <StackPanel Grid.Row="0" Orientation="Horizontal">
+                                    <TextBlock Text="⚠️ Invalid Label Assignments" FontWeight="SemiBold" FontSize="12" Foreground="#991B1B"/>
+                                    <TextBlock Text=" (excluded from training)" FontSize="11" Foreground="#666" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                
+                                <Grid Grid.Row="1" Margin="0,6,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Count: " Style="{StaticResource StatLabel}"/>
+                                            <TextBlock x:Name="InvalidCountText" Text="0" FontWeight="SemiBold" Foreground="#B91C1C"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                            <TextBlock Text="Percent: " Style="{StaticResource StatLabel}"/>
+                                            <TextBlock x:Name="InvalidPercentText" Text="0%" FontWeight="SemiBold" Foreground="#B91C1C"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    
+                                    <StackPanel x:Name="InvalidLabelBreakdownPanel" Grid.Column="1" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        
+                        <!-- Status -->
+                        <TextBlock x:Name="StatusText" Grid.Row="4" Text="" Foreground="#666" FontSize="11" Margin="0,8,0,0"/>
                     </Grid>
-                </Border>
-                
-                <!-- Threshold Slider -->
-                <Border Grid.Row="2" Background="#FFF9E6" CornerRadius="4" Padding="12" Margin="0,10,0,0">
-                    <Grid>
+                    
+                    <!-- Right: Pie Chart and Cell Type Table -->
+                    <Grid Grid.Column="2">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="200"/>
+                            <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
+                        
+                        <!-- Pie Chart -->
+                        <Border Grid.Row="0" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="Cell Type Distribution (Retained)" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
+                                <Canvas x:Name="PieChartCanvas" Grid.Row="1" Margin="10,0,10,10"/>
+                            </Grid>
+                        </Border>
+                        
+                        <!-- Cell Type Statistics Table -->
+                        <Border Grid.Row="1" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="Per-Cell-Type Statistics (Valid Only)" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
+                                <DataGrid x:Name="CellTypeStatsGrid" Grid.Row="1" 
+                                          AutoGenerateColumns="False" 
+                                          IsReadOnly="True"
+                                          HeadersVisibility="Column"
+                                          GridLinesVisibility="Horizontal"
+                                          BorderThickness="0"
+                                          RowHeight="24"
+                                          FontSize="11"
+                                          Margin="5,0,5,5">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Cell Type" Binding="{Binding CellType}" Width="*"/>
+                                        <DataGridTextColumn Header="Total" Binding="{Binding TotalCount}" Width="45"/>
+                                        <DataGridTextColumn Header="Kept" Binding="{Binding RetainedCount}" Width="40"/>
+                                        <DataGridTextColumn Header="%" Binding="{Binding RetentionPercent, StringFormat=F0}" Width="35"/>
+                                        <DataGridTextColumn Header="Med Δ" Binding="{Binding MedianDelta, StringFormat=F3}" Width="50"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+            
+            <!-- Tab 2: Feature Selection -->
+            <TabItem Header="2. Feature Selection">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Selection Criteria Panel -->
+                    <Border Grid.Row="0" Background="#F0FDF4" CornerRadius="4" Padding="12" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                                <TextBlock Text="Max p-value" Style="{StaticResource StatLabel}"/>
+                                <ComboBox x:Name="MaxPValueCombo" Width="80" SelectedIndex="1">
+                                    <ComboBoxItem Content="0.001"/>
+                                    <ComboBoxItem Content="0.01"/>
+                                    <ComboBoxItem Content="0.05"/>
+                                    <ComboBoxItem Content="0.10"/>
+                                </ComboBox>
+                            </StackPanel>
+                            
+                            <StackPanel Grid.Column="1" Margin="0,0,20,0">
+                                <TextBlock Text="Min Detection %" Style="{StaticResource StatLabel}"/>
+                                <ComboBox x:Name="MinDetectionCombo" Width="80" SelectedIndex="1">
+                                    <ComboBoxItem Content="20%"/>
+                                    <ComboBoxItem Content="30%"/>
+                                    <ComboBoxItem Content="40%"/>
+                                    <ComboBoxItem Content="50%"/>
+                                </ComboBox>
+                            </StackPanel>
+                            
+                            <StackPanel Grid.Column="2" Margin="0,0,20,0">
+                                <TextBlock Text="Min Specificity Δ" Style="{StaticResource StatLabel}"/>
+                                <ComboBox x:Name="MinSpecificityCombo" Width="80" SelectedIndex="1">
+                                    <ComboBoxItem Content="0.25"/>
+                                    <ComboBoxItem Content="0.50"/>
+                                    <ComboBoxItem Content="0.75"/>
+                                    <ComboBoxItem Content="1.00"/>
+                                </ComboBox>
+                            </StackPanel>
+                            
+                            <StackPanel Grid.Column="3" Margin="0,0,20,0">
+                                <TextBlock Text="Min Cell %" Style="{StaticResource StatLabel}"/>
+                                <ComboBox x:Name="MinCellFractionCombo" Width="80" SelectedIndex="1">
+                                    <ComboBoxItem Content="20%"/>
+                                    <ComboBoxItem Content="30%"/>
+                                    <ComboBoxItem Content="40%"/>
+                                    <ComboBoxItem Content="50%"/>
+                                </ComboBox>
+                            </StackPanel>
+                            
+                            <StackPanel Grid.Column="4" Margin="0,0,20,0" VerticalAlignment="Bottom">
+                                <CheckBox x:Name="RequireRobustCheckbox" Content="Require Robustness" IsChecked="True"/>
+                            </StackPanel>
+                            
+                            <Button x:Name="RunFeatureSelectionButton" Grid.Column="6" 
+                                    Content="Run Feature Selection" Padding="15,8"
+                                    Background="#059669" Foreground="White" BorderThickness="0"
+                                    Click="RunFeatureSelection_Click"/>
+                        </Grid>
+                    </Border>
+                    
+                    <!-- Protein Statistics Grid -->
+                    <Border Grid.Row="1" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            
+                            <Grid Grid.Row="0" Margin="10,8,10,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Protein Statistics" Style="{StaticResource SectionHeader}" Margin="0"/>
+                                    <TextBlock x:Name="ProteinStatsCountText" Text="" FontSize="11" Foreground="#666" 
+                                               Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button Content="Select All Passing" Style="{StaticResource SmallButton}" Click="SelectAllPassing_Click"/>
+                                    <Button Content="Clear" Style="{StaticResource SmallButton}" Click="ClearSelection_Click"/>
+                                </StackPanel>
+                            </Grid>
+                            
+                            <DataGrid x:Name="ProteinStatsGrid" Grid.Row="1" 
+                                      AutoGenerateColumns="False" 
+                                      IsReadOnly="False"
+                                      HeadersVisibility="Column"
+                                      GridLinesVisibility="Horizontal"
+                                      BorderThickness="0"
+                                      RowHeight="24"
+                                      FontSize="11"
+                                      Margin="5,0,5,5"
+                                      CanUserSortColumns="True">
+                                <DataGrid.Columns>
+                                    <DataGridCheckBoxColumn Header="✓" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="30"/>
+                                    <DataGridTextColumn Header="Protein" Binding="{Binding ProteinName}" Width="120" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Best Type" Binding="{Binding BestCellType}" Width="100" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Detect%" Binding="{Binding BestDetectionPercent, StringFormat=F0}" Width="60" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Expr" Binding="{Binding BestCellTypeExpression, StringFormat=F2}" Width="50" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Δ Spec" Binding="{Binding SpecificityDelta, StringFormat=F2}" Width="55" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="p-value" Binding="{Binding PValueFormatted}" Width="70" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Robust" Binding="{Binding RobustFlag}" Width="50" IsReadOnly="True"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+                    
+                    <!-- Bottom: Selection Summary and Export -->
+                    <Border Grid.Row="2" Background="#F8F9FA" CornerRadius="4" Padding="10" Margin="0,10,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Selected Markers:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="SelectedMarkersCountText" Text="0" FontWeight="Bold" FontSize="16" 
+                                           Foreground="#059669" Margin="8,0,20,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Median Δ:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="MedianDeltaText" Text="-" FontWeight="SemiBold" Margin="8,0,20,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Cell Types Covered:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="CellTypesCoveredText" Text="-" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button x:Name="ExportPrefButton" Content="Export .pref" Padding="15,8" Margin="0,0,10,0"
+                                        Background="#4A90D9" Foreground="White" BorderThickness="0"
+                                        Click="ExportPref_Click" IsEnabled="False"/>
+                                <Button x:Name="ViewPanelReportButton" Content="View Panel Report →" Padding="15,8"
+                                        Background="#7C3AED" Foreground="White" BorderThickness="0"
+                                        Click="ViewPanelReport_Click" IsEnabled="False"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+            
+            <!-- Tab 3: Panel Report -->
+            <TabItem Header="3. Panel Report">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Header -->
+                    <Border Grid.Row="0" Background="#EDE9FE" CornerRadius="4" Padding="12" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <StackPanel>
+                                <TextBlock Text="PROTEOMICS MARKER PANEL" FontSize="18" FontWeight="Bold" Foreground="#5B21B6"/>
+                                <TextBlock x:Name="PanelReportSubtitle" Text="Generated from TransmutationLearning" 
+                                           FontSize="11" Foreground="#666"/>
+                            </StackPanel>
+                            
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Content="Export PNG" Padding="10,5" Margin="0,0,8,0" Click="ExportPanelPng_Click"/>
+                                <Button Content="Export PDF" Padding="10,5" Click="ExportPanelPdf_Click"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    
+                    <!-- Main Content: DotPlot + Side Panels -->
+                    <Grid Grid.Row="1">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="280"/>
                         </Grid.ColumnDefinitions>
                         
-                        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBlock Text="Delta Threshold:" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="ThresholdValueText" Text="0.05" FontWeight="Bold" FontSize="14" 
-                                       Foreground="#D97706" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                            <Button x:Name="OtsuButton" Content="Use Otsu's Threshold" Margin="20,0,0,0" 
-                                    Padding="10,2" FontSize="11" Click="ApplyOtsu_Click"/>
-                            <TextBlock x:Name="OtsuSuggestionText" Text="" FontSize="11" Foreground="#666" 
-                                       Margin="10,0,0,0" VerticalAlignment="Center"/>
-                        </StackPanel>
+                        <!-- DotPlot Canvas -->
+                        <Border Grid.Column="0" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Margin="0,0,10,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="Marker Expression DotPlot" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
+                                <Canvas x:Name="DotPlotCanvas" Grid.Row="1" Margin="60,10,20,40" ClipToBounds="True"/>
+                                <!-- Legend -->
+                                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
+                                    <TextBlock Text="Size: Detection %" FontSize="10" Foreground="#666" Margin="0,0,20,0"/>
+                                    <TextBlock Text="Color: Expression (log2)" FontSize="10" Foreground="#666"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                         
-                        <Slider x:Name="ThresholdSlider" Grid.Row="1" Grid.Column="0"
-                                Minimum="0" Maximum="0.5" Value="0.05" 
-                                TickFrequency="0.01" IsSnapToTickEnabled="False"
-                                ValueChanged="ThresholdSlider_ValueChanged"/>
-                        
-                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,8,0,0">
-                            <TextBlock Text="Retained:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="RetainedCountText" Text="-" FontWeight="SemiBold" Margin="6,0,15,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Filtered (low Δ):" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="FilteredCountText" Text="-" FontWeight="SemiBold" Margin="6,0,15,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Retention:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="RetentionPercentText" Text="-" FontWeight="SemiBold" Foreground="#059669" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                        </StackPanel>
+                        <!-- Right: Top Markers + Stats -->
+                        <Grid Grid.Column="1">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <!-- Top Markers by Cell Type -->
+                            <Border Grid.Row="0" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Margin="0,0,0,10">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="Top Markers by Cell Type" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="10,0,10,10">
+                                        <StackPanel x:Name="TopMarkersPanel"/>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+                            
+                            <!-- Panel Statistics -->
+                            <Border Grid.Row="1" Background="#F8F9FA" CornerRadius="4" Padding="10">
+                                <StackPanel>
+                                    <TextBlock Text="Panel Statistics" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition/>
+                                            <RowDefinition/>
+                                            <RowDefinition/>
+                                            <RowDefinition/>
+                                        </Grid.RowDefinitions>
+                                        
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Total Markers:" Style="{StaticResource StatLabel}"/>
+                                        <TextBlock x:Name="PanelTotalMarkersText" Grid.Row="0" Grid.Column="1" Text="-" FontWeight="SemiBold"/>
+                                        
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Cell Types:" Style="{StaticResource StatLabel}"/>
+                                        <TextBlock x:Name="PanelCellTypesText" Grid.Row="1" Grid.Column="1" Text="-" FontWeight="SemiBold"/>
+                                        
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Median Δ:" Style="{StaticResource StatLabel}"/>
+                                        <TextBlock x:Name="PanelMedianDeltaText" Grid.Row="2" Grid.Column="1" Text="-" FontWeight="SemiBold"/>
+                                        
+                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Training Cells:" Style="{StaticResource StatLabel}"/>
+                                        <TextBlock x:Name="PanelTrainingCellsText" Grid.Row="3" Grid.Column="1" Text="-" FontWeight="SemiBold"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
                     </Grid>
-                </Border>
-                
-                <!-- Invalid Label Diagnostics Panel -->
-                <Border Grid.Row="3" Background="#FEF2F2" CornerRadius="4" Padding="10" Margin="0,10,0,0">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        
-                        <StackPanel Grid.Row="0" Orientation="Horizontal">
-                            <TextBlock Text="⚠️ Invalid Label Assignments" FontWeight="SemiBold" FontSize="12" Foreground="#991B1B"/>
-                            <TextBlock Text=" (excluded from training)" FontSize="11" Foreground="#666" VerticalAlignment="Center"/>
-                        </StackPanel>
-                        
-                        <Grid Grid.Row="1" Margin="0,6,0,0">
+                    
+                    <!-- Markers per Type Bar Chart -->
+                    <Border Grid.Row="2" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,10,0,0" Height="100">
+                        <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            
-                            <StackPanel Grid.Column="0" Margin="0,0,20,0">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="Count: " Style="{StaticResource StatLabel}"/>
-                                    <TextBlock x:Name="InvalidCountText" Text="0" FontWeight="SemiBold" Foreground="#B91C1C"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-                                    <TextBlock Text="Percent: " Style="{StaticResource StatLabel}"/>
-                                    <TextBlock x:Name="InvalidPercentText" Text="0%" FontWeight="SemiBold" Foreground="#B91C1C"/>
-                                </StackPanel>
-                            </StackPanel>
-                            
-                            <StackPanel x:Name="InvalidLabelBreakdownPanel" Grid.Column="1" />
+                            <TextBlock Text="Markers per Cell Type" FontWeight="SemiBold" VerticalAlignment="Top" Margin="0,0,15,0"/>
+                            <Canvas x:Name="MarkersPerTypeCanvas" Grid.Column="1" ClipToBounds="True"/>
                         </Grid>
-                    </Grid>
-                </Border>
-                
-                <!-- Status -->
-                <TextBlock x:Name="StatusText" Grid.Row="4" Text="" Foreground="#666" FontSize="11" Margin="0,8,0,0"/>
-            </Grid>
-            
-            <!-- Right: Pie Chart and Cell Type Table -->
-            <Grid Grid.Column="2">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="200"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                
-                <!-- Pie Chart -->
-                <Border Grid.Row="0" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Margin="0,0,0,10">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Cell Type Distribution (Retained)" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
-                        <Canvas x:Name="PieChartCanvas" Grid.Row="1" Margin="10,0,10,10"/>
-                    </Grid>
-                </Border>
-                
-                <!-- Cell Type Statistics Table -->
-                <Border Grid.Row="1" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Per-Cell-Type Statistics (Valid Only)" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
-                        <DataGrid x:Name="CellTypeStatsGrid" Grid.Row="1" 
-                                  AutoGenerateColumns="False" 
-                                  IsReadOnly="True"
-                                  HeadersVisibility="Column"
-                                  GridLinesVisibility="Horizontal"
-                                  BorderThickness="0"
-                                  RowHeight="24"
-                                  FontSize="11"
-                                  Margin="5,0,5,5">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Cell Type" Binding="{Binding CellType}" Width="*"/>
-                                <DataGridTextColumn Header="Total" Binding="{Binding TotalCount}" Width="45"/>
-                                <DataGridTextColumn Header="Kept" Binding="{Binding RetainedCount}" Width="40"/>
-                                <DataGridTextColumn Header="%" Binding="{Binding RetentionPercent, StringFormat=F0}" Width="35"/>
-                                <DataGridTextColumn Header="Med Δ" Binding="{Binding MedianDelta, StringFormat=F3}" Width="50"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </Grid>
-                </Border>
-            </Grid>
-        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
         
         <!-- Loading indicator -->
         <Border x:Name="LoadingOverlay" Grid.RowSpan="2" Background="#80FFFFFF" Visibility="Collapsed">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <TextBlock Text="Loading..." FontSize="16" FontWeight="SemiBold"/>
+                <TextBlock x:Name="LoadingText" Text="Loading..." FontSize="16" FontWeight="SemiBold"/>
             </StackPanel>
         </Border>
     </Grid>

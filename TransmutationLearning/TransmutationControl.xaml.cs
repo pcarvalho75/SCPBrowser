@@ -158,10 +158,10 @@ namespace TransmutationLearning
                 
                 // Apply initial filtering
                 ApplyThresholdFilter(ThresholdSlider.Value);
-                
-                // Draw charts
-                RedrawCharts();
-                
+
+                // Draw charts after layout pass completes
+                Dispatcher.BeginInvoke(new Action(() => RedrawCharts()), System.Windows.Threading.DispatcherPriority.Loaded);
+
                 DataLoaded?.Invoke(this, EventArgs.Empty);
                 StatusText.Text = $"Loaded {Dataset.TotalMatchedRuns:N0} matched runs. " +
                                   $"{Dataset.UnmatchedClassifications} classifications had no proteomic data.";
@@ -1141,6 +1141,22 @@ namespace TransmutationLearning
                 Canvas.SetLeft(countLabel, labelWidth + barWidth + 5);
                 Canvas.SetTop(countLabel, y + 2);
                 MarkersPerTypeCanvas.Children.Add(countLabel);
+            }
+        }
+
+        private void DotPlotCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (_featureResult != null && e.NewSize.Width > 0 && e.NewSize.Height > 0)
+            {
+                DrawDotPlot();
+            }
+        }
+
+        private void MarkersPerTypeCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (_featureResult != null && e.NewSize.Width > 0 && e.NewSize.Height > 0)
+            {
+                DrawMarkersPerTypeChart();
             }
         }
 

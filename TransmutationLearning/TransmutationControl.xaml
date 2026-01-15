@@ -518,7 +518,7 @@
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 <TextBlock Grid.Row="0" Text="Marker Expression DotPlot" Style="{StaticResource SectionHeader}" Margin="10,8,0,0"/>
-                                <Canvas x:Name="DotPlotCanvas" Grid.Row="1" Margin="60,10,20,40" ClipToBounds="True"/>
+                                <Canvas x:Name="DotPlotCanvas" Grid.Row="1" Margin="60,10,20,40" ClipToBounds="True" SizeChanged="DotPlotCanvas_SizeChanged"/>
                                 <!-- Legend -->
                                 <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
                                     <TextBlock Text="Size: Detection %" FontSize="10" Foreground="#666" Margin="0,0,20,0"/>
@@ -589,7 +589,7 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Markers per Cell Type" FontWeight="SemiBold" VerticalAlignment="Top" Margin="0,0,15,0"/>
-                            <Canvas x:Name="MarkersPerTypeCanvas" Grid.Column="1" ClipToBounds="True"/>
+                            <Canvas x:Name="MarkersPerTypeCanvas" Grid.Column="1" ClipToBounds="True" SizeChanged="MarkersPerTypeCanvas_SizeChanged"/>
                         </Grid>
                     </Border>
                 </Grid>

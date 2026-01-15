@@ -37,8 +37,8 @@ namespace TransmutationLearning
         // Summary statistics
         public int TotalProteins => AllProteins.Count;
         public int TotalRuns => AllRuns.Count;
-        public int TotalMatchedRuns => Classifications.Count(c => ProteinMatrix.ContainsKey(c.Run));
-        public int UnmatchedClassifications => Classifications.Count(c => !ProteinMatrix.ContainsKey(c.Run));
+        public int TotalMatchedRuns => Classifications.Count(c => AllRuns.Contains(c.Run));
+        public int UnmatchedClassifications => Classifications.Count(c => !AllRuns.Contains(c.Run));
         
         // Delta statistics
         public double MinDelta => Classifications.Count > 0 ? Classifications.Min(c => c.DeltaNext) : 0;

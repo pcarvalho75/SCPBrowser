@@ -16,11 +16,13 @@ namespace TransmutationLearning
         /// <param name="dataset">Full transmutation dataset</param>
         /// <param name="criteria">Selection criteria</param>
         /// <param name="distilledData">Optional distilled dataset - if provided and applied, uses distilled labels</param>
+        /// <param name="restrictToProteins">Optional set of protein names to restrict analysis to (e.g., from distillation)</param>
         public FeatureSelectionResult ComputeProteinStatistics(
             FilteredDataset filteredData,
             TransmutationDataset dataset,
             FeatureSelectionCriteria criteria,
-            DistilledDataset distilledData = null)
+            DistilledDataset distilledData = null,
+            HashSet<string> restrictToProteins = null)
         {
             var result = new FeatureSelectionResult { Criteria = criteria };
 
@@ -259,7 +261,7 @@ namespace TransmutationLearning
         {
             result.SelectedMarkers = result.AllProteinStats
                 .Where(p => p.IsSelected)
-                .OrderByDescending(p => p.SpecificityDelta)
+                .OrderByDescending(p => p.WeightedSpecificityScore)
                 .ToList();
 
             // Group by best cell type
@@ -267,7 +269,7 @@ namespace TransmutationLearning
                 .GroupBy(p => p.BestCellType)
                 .ToDictionary(
                     g => g.Key,
-                    g => g.OrderByDescending(p => p.SpecificityDelta).ToList());
+                    g => g.OrderByDescending(p => p.WeightedSpecificityScore).ToList());
         }
 
         /// <summary>

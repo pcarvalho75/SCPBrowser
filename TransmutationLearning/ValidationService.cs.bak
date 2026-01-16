@@ -106,15 +106,9 @@ namespace TransmutationLearning
             // Generate warning message if needed
             if (!result.PassesValidation)
             {
-                result.WarningMessage = $"Self-consistency check: {result.AgreementRate:P1} agreement " +
-                    $"(threshold: 80%).\n\n" +
-                    $"This may indicate:\n" +
-                    $"• Noisy or poorly separated clusters\n" +
-                    $"• Complex non-spherical cluster shapes (e.g., developmental trajectories)\n" +
-                    $"• Insufficient marker coverage for some cell types\n\n" +
-                    $"Note: Centroid-based validation assumes spherical clusters. " +
-                    $"Trajectory-like data (e.g., differentiating cells) may fail validation " +
-                    $"even when the classifier is valid.";
+                result.WarningMessage = $"Self-consistency check failed: {result.AgreementRate:P1} agreement " +
+                    $"(threshold: 80%). The generated classifier may not reliably reproduce the training labels. " +
+                    $"Consider reviewing marker selection or adjusting confidence thresholds.";
             }
 
             return result;

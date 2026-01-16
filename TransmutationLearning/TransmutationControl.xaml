@@ -40,7 +40,6 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Parquet File -->
@@ -57,7 +56,7 @@
                 </StackPanel>
 
                 <!-- Classification Metadata -->
-                <StackPanel Grid.Column="1" Margin="10,0,10,0">
+                <StackPanel Grid.Column="1" Margin="10,0,0,0">
                     <TextBlock Text="Classification Metadata (SingleR output)" Style="{StaticResource StatLabel}"/>
                     <Grid Margin="0,4,0,0">
                         <Grid.ColumnDefinitions>
@@ -68,12 +67,6 @@
                         <Button Grid.Column="1" Content="Browse..." Margin="6,0,0,0" Padding="12,0" Height="28" Click="BrowseMetadata_Click"/>
                     </Grid>
                 </StackPanel>
-
-                <!-- Load Button -->
-                <Button x:Name="LoadButton" Grid.Column="2" Content="Load &amp; Process"
-                        Padding="20,0" Height="28" VerticalAlignment="Bottom"
-                        Click="LoadData_Click" IsEnabled="False"
-                        Background="#4A90D9" Foreground="White" BorderThickness="0"/>
             </Grid>
         </Border>
 
@@ -702,13 +695,15 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <StackPanel Grid.Column="0" Margin="0,0,20,0"
+                                        ToolTip="P-value from Kruskal-Wallis H test for differential expression.&#x0a;&#x0a;TEST: Non-parametric rank-based ANOVA alternative&#x0a;H₀: All cell types have the same median expression&#x0a;H₁: At least one cell type differs significantly&#x0a;&#x0a;ASSUMPTIONS:&#x0a;• Independent observations (cells are independent)&#x0a;• Ordinal/continuous data (log2 intensities)&#x0a;• Does NOT assume normal distribution&#x0a;• Does NOT assume equal variances&#x0a;&#x0a;MOTIVATION: Proteomics data often violates normality due to&#x0a;missing values and technical variation. Kruskal-Wallis is robust&#x0a;to these issues and tests whether a protein's expression ranks&#x0a;differ across cell types.&#x0a;&#x0a;INTERPRETATION:&#x0a;• p &lt; 0.10: Suggestive evidence of differential expression&#x0a;• p &lt; 0.05: Moderate evidence&#x0a;• p &lt; 0.01: Strong evidence&#x0a;• p &lt; 0.001: Very strong evidence&#x0a;&#x0a;NOTE: With many proteins tested, consider this as a pre-filter.&#x0a;The specificity Δ provides additional biological relevance.">
                                 <TextBlock Text="Max p-value" Style="{StaticResource StatLabel}"/>
-                                <ComboBox x:Name="MaxPValueCombo" Width="80" SelectedIndex="1">
+                                <ComboBox x:Name="MaxPValueCombo" Width="80" SelectedIndex="3">
                                     <ComboBoxItem Content="0.001"/>
                                     <ComboBoxItem Content="0.01"/>
                                     <ComboBoxItem Content="0.05"/>
@@ -716,7 +711,8 @@
                                 </ComboBox>
                             </StackPanel>
 
-                            <StackPanel Grid.Column="1" Margin="0,0,20,0">
+                            <StackPanel Grid.Column="1" Margin="0,0,20,0"
+                                        ToolTip="Minimum detection rate in the best cell type.&#x0a;&#x0a;A protein detected in only 20% of cells may be noisy or&#x0a;unreliable. Higher thresholds (40-50%) ensure the marker&#x0a;is consistently present in its target cell type.&#x0a;&#x0a;Recommended: 30-40% for typical SCP data.">
                                 <TextBlock Text="Min Detection %" Style="{StaticResource StatLabel}"/>
                                 <ComboBox x:Name="MinDetectionCombo" Width="80" SelectedIndex="1">
                                     <ComboBoxItem Content="20%"/>
@@ -726,7 +722,8 @@
                                 </ComboBox>
                             </StackPanel>
 
-                            <StackPanel Grid.Column="2" Margin="0,0,20,0">
+                            <StackPanel Grid.Column="2" Margin="0,0,20,0"
+                                        ToolTip="Minimum specificity delta (Δ) between best and second-best cell type.&#x0a;&#x0a;Higher values select proteins that are more uniquely expressed&#x0a;in one cell type vs. others. A Δ of 0.5 means the protein's&#x0a;expression in its best type is 0.5 log2 units higher than&#x0a;the next best type.&#x0a;&#x0a;Recommended: 0.50 for balanced panels, 0.75+ for high specificity.">
                                 <TextBlock Text="Min Specificity Δ" Style="{StaticResource StatLabel}"/>
                                 <ComboBox x:Name="MinSpecificityCombo" Width="80" SelectedIndex="1">
                                     <ComboBoxItem Content="0.25"/>
@@ -736,7 +733,8 @@
                                 </ComboBox>
                             </StackPanel>
 
-                            <StackPanel Grid.Column="3" Margin="0,0,20,0">
+                            <StackPanel Grid.Column="3" Margin="0,0,20,0"
+                                        ToolTip="Minimum fraction of cells (across all types) where the protein is detected.&#x0a;&#x0a;Filters out proteins that are only detected in a tiny subset&#x0a;of the dataset. A marker detected in only 10% of all cells&#x0a;may not generalize well.&#x0a;&#x0a;Recommended: 30% for robust panels.">
                                 <TextBlock Text="Min Cell %" Style="{StaticResource StatLabel}"/>
                                 <ComboBox x:Name="MinCellFractionCombo" Width="80" SelectedIndex="1">
                                     <ComboBoxItem Content="20%"/>
@@ -747,10 +745,19 @@
                             </StackPanel>
 
                             <StackPanel Grid.Column="4" Margin="0,0,20,0" VerticalAlignment="Bottom">
-                                <CheckBox x:Name="RequireRobustCheckbox" Content="Require Robustness" IsChecked="True"/>
+                                <CheckBox x:Name="RequireRobustCheckbox" Content="Require Robustness" IsChecked="True"
+                                          ToolTip="When checked, only includes proteins that pass a robustness&#x0a;check (consistent ranking across bootstrap samples).&#x0a;&#x0a;Recommended: Keep checked for reliable panels."/>
                             </StackPanel>
 
-                            <Button x:Name="RunFeatureSelectionButton" Grid.Column="6"
+                            <StackPanel Grid.Column="5" Margin="0,0,20,0" VerticalAlignment="Bottom">
+                                <CheckBox x:Name="FilterFromDistillationCheckbox" Content="Distillation markers only"
+                                          IsChecked="False" IsEnabled="False"
+                                          Checked="FilterFromDistillationCheckbox_Changed"
+                                          Unchecked="FilterFromDistillationCheckbox_Changed"
+                                          ToolTip="When checked, only considers the markers auto-selected&#x0a;by Smart Distillation. The filters below will only apply&#x0a;within this pre-selected set.&#x0a;&#x0a;Enable this to refine the distillation results rather than&#x0a;searching all proteins."/>
+                            </StackPanel>
+
+                            <Button x:Name="RunFeatureSelectionButton" Grid.Column="7"
                                     Content="Run Feature Selection" Padding="15,8"
                                     Background="#059669" Foreground="White" BorderThickness="0"
                                     Click="RunFeatureSelection_Click"/>

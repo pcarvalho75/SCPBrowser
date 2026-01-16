@@ -8,7 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Shapes;
+using TransmutationLearning.Services;
 
 namespace TransmutationLearning
 {
@@ -20,8 +20,12 @@ namespace TransmutationLearning
 
         private double _otsuThreshold;
         private bool _isUpdating;
-        private Dictionary<string, Color> _cellTypeColors = new Dictionary<string, Color>();
         private HashSet<string> _validCellTypes = new HashSet<string>();
+
+        // Services
+        private readonly ColorService _colorService = new ColorService();
+        private readonly SettingsService _settingsService = new SettingsService();
+        private readonly ChartRenderer _chartRenderer;
 
         // Distillation
         private KnnDistillationService _distillationService = new KnnDistillationService();
@@ -33,29 +37,25 @@ namespace TransmutationLearning
         // Sticky order: remembers user's expected distribution order across data reloads
         private static List<string> _savedExpectedOrder = new List<string>();
 
-        // Soft pastel colors for pie chart and histogram
-        private static readonly Color[] PastelColors = new[]
-        {
-            Color.FromRgb(255, 179, 186), // soft pink
-            Color.FromRgb(255, 223, 186), // soft peach
-            Color.FromRgb(255, 255, 186), // soft yellow
-            Color.FromRgb(186, 255, 201), // soft mint
-            Color.FromRgb(186, 225, 255), // soft sky
-            Color.FromRgb(219, 186, 255), // soft lavender
-            Color.FromRgb(255, 186, 255), // soft magenta
-            Color.FromRgb(186, 255, 255), // soft cyan
-            Color.FromRgb(255, 209, 186), // soft coral
-            Color.FromRgb(209, 255, 186), // soft lime
-            Color.FromRgb(186, 209, 255), // soft periwinkle
-            Color.FromRgb(255, 186, 209), // soft rose
-        };
-
         public event EventHandler DataLoaded;
 
         public TransmutationControl()
         {
             InitializeComponent();
+            _chartRenderer = new ChartRenderer(_colorService);
             SizeChanged += (s, e) => RedrawCharts();
+        }
+
+        private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Only respond to TabControl selection changes (not nested controls)
+            if (e.Source != MainTabControl) return;
+
+            // When navigating to Feature Selection tab (index 2), update the auto-selected markers banner
+            if (MainTabControl.SelectedIndex == 2)
+            {
+                UpdateAutoSelectedMarkersBanner();
+            }
         }
 
         #region File Loading
@@ -71,7 +71,7 @@ namespace TransmutationLearning
             if (dialog.ShowDialog() == true)
             {
                 ParquetPathTextBox.Text = dialog.FileName;
-                UpdateLoadButtonState();
+                TryAutoLoad();
             }
         }
 
@@ -86,22 +86,24 @@ namespace TransmutationLearning
             if (dialog.ShowDialog() == true)
             {
                 MetadataPathTextBox.Text = dialog.FileName;
-                UpdateLoadButtonState();
+                TryAutoLoad();
             }
         }
 
-        private void UpdateLoadButtonState()
+        private void TryAutoLoad()
         {
-            LoadButton.IsEnabled = !string.IsNullOrEmpty(ParquetPathTextBox.Text) &&
-                                   !string.IsNullOrEmpty(MetadataPathTextBox.Text);
+            if (!string.IsNullOrEmpty(ParquetPathTextBox.Text) && !string.IsNullOrEmpty(MetadataPathTextBox.Text))
+            {
+                // Both files selected - auto-load
+                LoadData();
+            }
         }
 
-        private async void LoadData_Click(object sender, RoutedEventArgs e)
+        private async void LoadData()
         {
             try
             {
                 LoadingOverlay.Visibility = Visibility.Visible;
-                LoadButton.IsEnabled = false;
 
                 // Capture UI values before background thread
                 string parquetPath = ParquetPathTextBox.Text;
@@ -137,13 +139,8 @@ namespace TransmutationLearning
                 // Initialize all cell types as valid by default
                 _validCellTypes = new HashSet<string>(Dataset.CellTypes);
 
-                // Assign fixed colors to each cell type (alphabetically sorted for consistency)
-                _cellTypeColors.Clear();
-                var sortedCellTypes = Dataset.CellTypes.OrderBy(ct => ct).ToList();
-                for (int i = 0; i < sortedCellTypes.Count; i++)
-                {
-                    _cellTypeColors[sortedCellTypes[i]] = PastelColors[i % PastelColors.Length];
-                }
+                // Assign fixed colors to each cell type
+                _colorService.AssignColors(Dataset.CellTypes);
 
                 // Build the valid cell types checkbox list
                 BuildValidCellTypesCheckboxList();
@@ -186,7 +183,6 @@ namespace TransmutationLearning
             finally
             {
                 LoadingOverlay.Visibility = Visibility.Collapsed;
-                LoadButton.IsEnabled = true;
             }
         }
 
@@ -447,229 +443,19 @@ namespace TransmutationLearning
             if (Dataset == null) return;
 
             DrawHistogram();
-            DrawPieChart();
+            _chartRenderer.DrawPieChart(PieChartCanvas, FilteredData?.CellTypeStats);
         }
 
         private void DrawHistogram()
         {
-            HistogramCanvas.Children.Clear();
+            if (Dataset == null) return;
 
-            if (Dataset == null || HistogramCanvas.ActualWidth <= 0 || HistogramCanvas.ActualHeight <= 0)
-                return;
-
-            // Draw histogram only for valid-labeled cells
             var deltaValues = Dataset.Classifications
                 .Where(c => _validCellTypes.Contains(c.Labels))
                 .Select(c => c.DeltaNext)
                 .ToList();
 
-            if (deltaValues.Count == 0) return;
-
-            var (binEdges, counts) = StatisticsHelper.ComputeHistogram(deltaValues, 40);
-            if (counts.Length == 0) return;
-
-            double width = HistogramCanvas.ActualWidth;
-            double height = HistogramCanvas.ActualHeight;
-            double barWidth = width / counts.Length;
-            int maxCount = counts.Max();
-
-            double threshold = ThresholdSlider?.Value ?? 0;
-            double minDelta = binEdges[0];
-            double maxDelta = binEdges[binEdges.Length - 1];
-
-            // Draw bars
-            for (int i = 0; i < counts.Length; i++)
-            {
-                double barHeight = maxCount > 0 ? (counts[i] * (height - 20) / maxCount) : 0;
-                double binCenter = (binEdges[i] + binEdges[i + 1]) / 2;
-
-                // Color based on threshold
-                bool aboveThreshold = binCenter >= threshold;
-                var brush = aboveThreshold
-                    ? new SolidColorBrush(Color.FromRgb(74, 144, 226))
-                    : new SolidColorBrush(Color.FromRgb(200, 200, 200));
-
-                var rect = new Rectangle
-                {
-                    Width = Math.Max(barWidth - 1, 1),
-                    Height = barHeight,
-                    Fill = brush
-                };
-
-                Canvas.SetLeft(rect, i * barWidth);
-                Canvas.SetBottom(rect, 20);
-                HistogramCanvas.Children.Add(rect);
-            }
-
-            // Draw threshold line
-            if (threshold >= minDelta && threshold <= maxDelta)
-            {
-                double thresholdX = ((threshold - minDelta) / (maxDelta - minDelta)) * width;
-
-                var line = new Line
-                {
-                    X1 = thresholdX,
-                    Y1 = 0,
-                    X2 = thresholdX,
-                    Y2 = height - 20,
-                    Stroke = new SolidColorBrush(Color.FromRgb(220, 38, 38)),
-                    StrokeThickness = 2,
-                    StrokeDashArray = new DoubleCollection { 4, 2 }
-                };
-                HistogramCanvas.Children.Add(line);
-
-                // Threshold label
-                var label = new TextBlock
-                {
-                    Text = $"τ={threshold:F3}",
-                    FontSize = 9,
-                    Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38))
-                };
-                Canvas.SetLeft(label, thresholdX + 3);
-                Canvas.SetTop(label, 2);
-                HistogramCanvas.Children.Add(label);
-            }
-
-            // Draw x-axis labels
-            DrawAxisLabel(minDelta.ToString("F2"), 0, height - 15);
-            DrawAxisLabel(maxDelta.ToString("F2"), width - 30, height - 15);
-        }
-
-        private void DrawAxisLabel(string text, double x, double y)
-        {
-            var label = new TextBlock
-            {
-                Text = text,
-                FontSize = 9,
-                Foreground = new SolidColorBrush(Color.FromRgb(100, 100, 100))
-            };
-            Canvas.SetLeft(label, x);
-            Canvas.SetTop(label, y);
-            HistogramCanvas.Children.Add(label);
-        }
-
-        private void DrawPieChart()
-        {
-            PieChartCanvas.Children.Clear();
-
-            if (FilteredData == null || PieChartCanvas.ActualWidth <= 0 || PieChartCanvas.ActualHeight <= 0)
-                return;
-
-            var stats = FilteredData.CellTypeStats.Where(s => s.RetainedCount > 0).ToList();
-            if (stats.Count == 0) return;
-
-            double width = PieChartCanvas.ActualWidth;
-            double height = PieChartCanvas.ActualHeight;
-            double centerX = width * 0.35;
-            double centerY = height / 2;
-            double radius = Math.Min(centerX, centerY) - 10;
-
-            int total = stats.Sum(s => s.RetainedCount);
-            double startAngle = -90; // Start from top
-
-            for (int i = 0; i < stats.Count; i++)
-            {
-                var stat = stats[i];
-                double sweepAngle = (stat.RetainedCount * 360.0) / total;
-
-                if (sweepAngle < 0.5) continue; // Skip tiny slices
-
-                var color = _cellTypeColors.TryGetValue(stat.CellType, out var c) ? c : PastelColors[i % PastelColors.Length];
-                DrawPieSlice(centerX, centerY, radius, startAngle, sweepAngle, color);
-
-                startAngle += sweepAngle;
-            }
-
-            // Draw legend
-            double legendX = width * 0.55;
-            double legendY = 5;
-            double legendItemHeight = Math.Min(14, (height - 10) / stats.Count);
-
-            for (int i = 0; i < stats.Count && legendY < height - 10; i++)
-            {
-                var stat = stats[i];
-                var color = _cellTypeColors.TryGetValue(stat.CellType, out var c) ? c : PastelColors[i % PastelColors.Length];
-
-                // Color box
-                var rect = new Rectangle
-                {
-                    Width = 10,
-                    Height = 10,
-                    Fill = new SolidColorBrush(color)
-                };
-                Canvas.SetLeft(rect, legendX);
-                Canvas.SetTop(rect, legendY);
-                PieChartCanvas.Children.Add(rect);
-
-                // Label (truncate if needed)
-                string label = stat.CellType.Length > 12
-                    ? stat.CellType.Substring(0, 10) + "..."
-                    : stat.CellType;
-
-                var text = new TextBlock
-                {
-                    Text = $"{label} ({stat.RetainedCount})",
-                    FontSize = 9,
-                    Foreground = Brushes.Black
-                };
-                Canvas.SetLeft(text, legendX + 14);
-                Canvas.SetTop(text, legendY - 1);
-                PieChartCanvas.Children.Add(text);
-
-                legendY += legendItemHeight;
-            }
-        }
-
-        private void DrawPieSlice(double cx, double cy, double r, double startAngle, double sweepAngle, Color color)
-        {
-            if (sweepAngle >= 360)
-            {
-                // Full circle
-                var ellipse = new Ellipse
-                {
-                    Width = r * 2,
-                    Height = r * 2,
-                    Fill = new SolidColorBrush(color)
-                };
-                Canvas.SetLeft(ellipse, cx - r);
-                Canvas.SetTop(ellipse, cy - r);
-                PieChartCanvas.Children.Add(ellipse);
-                return;
-            }
-
-            double startRad = startAngle * Math.PI / 180;
-            double endRad = (startAngle + sweepAngle) * Math.PI / 180;
-
-            double x1 = cx + r * Math.Cos(startRad);
-            double y1 = cy + r * Math.Sin(startRad);
-            double x2 = cx + r * Math.Cos(endRad);
-            double y2 = cy + r * Math.Sin(endRad);
-
-            bool largeArc = sweepAngle > 180;
-
-            var path = new Path
-            {
-                Fill = new SolidColorBrush(color),
-                Stroke = Brushes.White,
-                StrokeThickness = 1
-            };
-
-            var figure = new PathFigure { StartPoint = new Point(cx, cy) };
-            figure.Segments.Add(new LineSegment(new Point(x1, y1), false));
-            figure.Segments.Add(new ArcSegment(
-                new Point(x2, y2),
-                new Size(r, r),
-                0,
-                largeArc,
-                SweepDirection.Clockwise,
-                false));
-            figure.Segments.Add(new LineSegment(new Point(cx, cy), false));
-
-            var geometry = new PathGeometry();
-            geometry.Figures.Add(figure);
-            path.Data = geometry;
-
-            PieChartCanvas.Children.Add(path);
+            _chartRenderer.DrawHistogram(HistogramCanvas, deltaValues, ThresholdSlider?.Value ?? 0, _validCellTypes);
         }
 
         #endregion
@@ -703,9 +489,15 @@ namespace TransmutationLearning
                     RequireRobustCheckbox.IsChecked == true);
 
                 // Run feature selection on background thread
+                HashSet<string> restrictToProteins = null;
+                if (FilterFromDistillationCheckbox.IsChecked == true && _autoSelectedMarkers != null)
+                {
+                    restrictToProteins = new HashSet<string>(_autoSelectedMarkers.Select(m => m.ProteinName));
+                }
+
                 await System.Threading.Tasks.Task.Run(() =>
                 {
-                    _featureResult = _featureService.ComputeProteinStatistics(FilteredData, Dataset, criteria, DistilledData);
+                    _featureResult = _featureService.ComputeProteinStatistics(FilteredData, Dataset, criteria, DistilledData, restrictToProteins);
                 });
 
                 // Update UI
@@ -719,8 +511,10 @@ namespace TransmutationLearning
                 ExportPrefButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
                 ViewPanelReportButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
 
-                ProteinStatsCountText.Text = $"Showing {_featureResult.AllProteinStats.Count:N0} proteins, " +
-                                             $"{_featureResult.AllProteinStats.Count(p => p.PassesFilter):N0} pass filter";
+                string sourceText = (FilterFromDistillationCheckbox.IsChecked == true && _autoSelectedMarkers != null)
+                    ? $"Showing {_featureResult.AllProteinStats.Count:N0} proteins (from distillation), "
+                    : $"Showing {_featureResult.AllProteinStats.Count:N0} proteins, ";
+                ProteinStatsCountText.Text = sourceText + $"{_featureResult.AllProteinStats.Count(p => p.PassesFilter):N0} pass filter";
             }
             catch (Exception ex)
             {
@@ -742,11 +536,24 @@ namespace TransmutationLearning
             {
                 AutoSelectedMarkersBanner.Visibility = Visibility.Visible;
                 AutoSelectedMarkersText.Text = $"Auto-selected {_autoSelectedMarkers.Count} markers from Smart Distillation.";
+
+                // Enable the "Distillation markers only" checkbox
+                FilterFromDistillationCheckbox.IsEnabled = true;
             }
             else
             {
                 AutoSelectedMarkersBanner.Visibility = Visibility.Collapsed;
+
+                // Disable and uncheck the checkbox when no auto-selected markers
+                FilterFromDistillationCheckbox.IsEnabled = false;
+                FilterFromDistillationCheckbox.IsChecked = false;
             }
+        }
+
+        private void FilterFromDistillationCheckbox_Changed(object sender, RoutedEventArgs e)
+        {
+            // If feature selection has already run, we could re-run it automatically here
+            // For now, just let the user click "Run Feature Selection" again
         }
 
         private void ApplyAutoMarkers_Click(object sender, RoutedEventArgs e)
@@ -980,253 +787,17 @@ namespace TransmutationLearning
 
         private void DrawDotPlot()
         {
-            DotPlotCanvas.Children.Clear();
-
-            if (_featureResult == null || DotPlotCanvas.ActualWidth <= 0 || DotPlotCanvas.ActualHeight <= 0)
-                return;
-
-            var markers = _featureResult.SelectedMarkers;
-            if (markers.Count == 0) return;
+            if (_featureResult == null) return;
 
             var cellTypes = _featureResult.MarkersByCellType.Keys.OrderBy(c => c).ToList();
-            if (cellTypes.Count == 0) return;
-
-            double width = DotPlotCanvas.ActualWidth;
-            double height = DotPlotCanvas.ActualHeight;
-
-            // Layout parameters
-            double labelWidth = 80;  // Space for protein names on left
-            double labelHeight = 60; // Space for cell type labels on bottom
-            double plotWidth = width - labelWidth - 10;
-            double plotHeight = height - labelHeight - 10;
-
-            // Limit to top 30 markers for readability
-            var displayMarkers = markers.Take(30).ToList();
-
-            double cellWidth = plotWidth / cellTypes.Count;
-            double rowHeight = Math.Min(plotHeight / displayMarkers.Count, 18);
-            double maxRadius = Math.Min(cellWidth, rowHeight) / 2 - 2;
-
-            // Find expression range for color scaling
-            double minExpr = double.MaxValue;
-            double maxExpr = double.MinValue;
-            foreach (var marker in displayMarkers)
-            {
-                foreach (var ct in cellTypes)
-                {
-                    if (marker.CellTypeMetrics.TryGetValue(ct, out var m) && m.MedianExpression > 0)
-                    {
-                        minExpr = Math.Min(minExpr, m.MedianExpression);
-                        maxExpr = Math.Max(maxExpr, m.MedianExpression);
-                    }
-                }
-            }
-            if (minExpr == double.MaxValue) minExpr = 0;
-            if (maxExpr == double.MinValue) maxExpr = 1;
-            double exprRange = maxExpr - minExpr;
-            if (exprRange < 0.1) exprRange = 1;
-
-            // Draw dots
-            for (int row = 0; row < displayMarkers.Count; row++)
-            {
-                var marker = displayMarkers[row];
-                double y = 5 + row * rowHeight + rowHeight / 2;
-
-                // Protein label
-                var proteinLabel = new TextBlock
-                {
-                    Text = marker.ProteinName.Length > 10
-                        ? marker.ProteinName.Substring(0, 8) + ".."
-                        : marker.ProteinName,
-                    FontSize = 9,
-                    Foreground = Brushes.Black,
-                    TextAlignment = TextAlignment.Right,
-                    Width = labelWidth - 5
-                };
-                Canvas.SetLeft(proteinLabel, 0);
-                Canvas.SetTop(proteinLabel, y - 6);
-                DotPlotCanvas.Children.Add(proteinLabel);
-
-                // Dots for each cell type
-                for (int col = 0; col < cellTypes.Count; col++)
-                {
-                    var cellType = cellTypes[col];
-                    double x = labelWidth + col * cellWidth + cellWidth / 2;
-
-                    if (marker.CellTypeMetrics.TryGetValue(cellType, out var metrics))
-                    {
-                        // Size based on detection rate (0-1)
-                        double radius = Math.Max(2, metrics.DetectionRate * maxRadius);
-
-                        // Color based on expression (blue gradient)
-                        double normExpr = exprRange > 0
-                            ? (metrics.MedianExpression - minExpr) / exprRange
-                            : 0.5;
-                        normExpr = Math.Max(0, Math.Min(1, normExpr));
-
-                        byte r = (byte)(220 - normExpr * 170);  // 220 -> 50
-                        byte g = (byte)(230 - normExpr * 150);  // 230 -> 80
-                        byte b = (byte)(240 - normExpr * 40);   // 240 -> 200
-
-                        var dot = new Ellipse
-                        {
-                            Width = radius * 2,
-                            Height = radius * 2,
-                            Fill = new SolidColorBrush(Color.FromRgb(r, g, b)),
-                            Stroke = new SolidColorBrush(Color.FromRgb(100, 100, 100)),
-                            StrokeThickness = 0.5,
-                            ToolTip = $"{marker.ProteinName}\n{cellType}\nDetect: {metrics.DetectionRate:P0}\nExpr: {metrics.MedianExpression:F2}"
-                        };
-                        Canvas.SetLeft(dot, x - radius);
-                        Canvas.SetTop(dot, y - radius);
-                        DotPlotCanvas.Children.Add(dot);
-                    }
-                }
-            }
-
-            // Draw cell type labels at bottom
-            for (int col = 0; col < cellTypes.Count; col++)
-            {
-                var cellType = cellTypes[col];
-                double x = labelWidth + col * cellWidth + cellWidth / 2;
-
-                var label = new TextBlock
-                {
-                    Text = cellType.Length > 12 ? cellType.Substring(0, 10) + ".." : cellType,
-                    FontSize = 9,
-                    Foreground = Brushes.Black,
-                    RenderTransform = new RotateTransform(45)
-                };
-                Canvas.SetLeft(label, x - 5);
-                Canvas.SetTop(label, plotHeight + 10);
-                DotPlotCanvas.Children.Add(label);
-            }
-
-            // Draw legend if space permits
-            if (width > 400)
-            {
-                DrawDotPlotLegend(width - 80, 5, maxRadius);
-            }
-        }
-
-        private void DrawDotPlotLegend(double x, double y, double maxRadius)
-        {
-            // Size legend
-            var sizeLabel = new TextBlock
-            {
-                Text = "Size: Detection",
-                FontSize = 8,
-                Foreground = Brushes.Gray
-            };
-            Canvas.SetLeft(sizeLabel, x);
-            Canvas.SetTop(sizeLabel, y);
-            DotPlotCanvas.Children.Add(sizeLabel);
-
-            // Small dot (25%)
-            var smallDot = new Ellipse
-            {
-                Width = maxRadius * 0.5,
-                Height = maxRadius * 0.5,
-                Fill = Brushes.LightGray,
-                Stroke = Brushes.Gray,
-                StrokeThickness = 0.5
-            };
-            Canvas.SetLeft(smallDot, x);
-            Canvas.SetTop(smallDot, y + 15);
-            DotPlotCanvas.Children.Add(smallDot);
-
-            var smallLabel = new TextBlock { Text = "25%", FontSize = 7, Foreground = Brushes.Gray };
-            Canvas.SetLeft(smallLabel, x + maxRadius * 0.5 + 3);
-            Canvas.SetTop(smallLabel, y + 15);
-            DotPlotCanvas.Children.Add(smallLabel);
-
-            // Large dot (100%)
-            var largeDot = new Ellipse
-            {
-                Width = maxRadius * 2,
-                Height = maxRadius * 2,
-                Fill = Brushes.LightGray,
-                Stroke = Brushes.Gray,
-                StrokeThickness = 0.5
-            };
-            Canvas.SetLeft(largeDot, x);
-            Canvas.SetTop(largeDot, y + 30);
-            DotPlotCanvas.Children.Add(largeDot);
-
-            var largeLabel = new TextBlock { Text = "100%", FontSize = 7, Foreground = Brushes.Gray };
-            Canvas.SetLeft(largeLabel, x + maxRadius * 2 + 3);
-            Canvas.SetTop(largeLabel, y + 35);
-            DotPlotCanvas.Children.Add(largeLabel);
+            _chartRenderer.DrawDotPlot(DotPlotCanvas, _featureResult.SelectedMarkers, cellTypes);
         }
 
         private void DrawMarkersPerTypeChart()
         {
-            MarkersPerTypeCanvas.Children.Clear();
+            if (_featureResult == null) return;
 
-            if (_featureResult == null || MarkersPerTypeCanvas.ActualWidth <= 0 || MarkersPerTypeCanvas.ActualHeight <= 0)
-                return;
-
-            var markerCounts = _featureResult.MarkersByCellType
-                .Select(kvp => new { CellType = kvp.Key, Count = kvp.Value.Count })
-                .OrderByDescending(x => x.Count)
-                .ToList();
-
-            if (markerCounts.Count == 0) return;
-
-            double width = MarkersPerTypeCanvas.ActualWidth;
-            double height = MarkersPerTypeCanvas.ActualHeight;
-
-            int maxCount = markerCounts.Max(x => x.Count);
-            double barHeight = Math.Min((height - 10) / markerCounts.Count, 20);
-            double labelWidth = 100;
-            double barAreaWidth = width - labelWidth - 40;
-
-            for (int i = 0; i < markerCounts.Count; i++)
-            {
-                var item = markerCounts[i];
-                double y = 5 + i * barHeight;
-
-                // Cell type label
-                var label = new TextBlock
-                {
-                    Text = item.CellType.Length > 15 ? item.CellType.Substring(0, 13) + ".." : item.CellType,
-                    FontSize = 9,
-                    Foreground = Brushes.Black,
-                    TextAlignment = TextAlignment.Right,
-                    Width = labelWidth - 5
-                };
-                Canvas.SetLeft(label, 0);
-                Canvas.SetTop(label, y + 2);
-                MarkersPerTypeCanvas.Children.Add(label);
-
-                // Bar
-                double barWidth = maxCount > 0 ? (item.Count * barAreaWidth / maxCount) : 0;
-                var color = _cellTypeColors.TryGetValue(item.CellType, out var c) ? c : PastelColors[i % PastelColors.Length];
-
-                var bar = new Rectangle
-                {
-                    Width = Math.Max(barWidth, 2),
-                    Height = barHeight - 4,
-                    Fill = new SolidColorBrush(color),
-                    RadiusX = 2,
-                    RadiusY = 2
-                };
-                Canvas.SetLeft(bar, labelWidth);
-                Canvas.SetTop(bar, y + 2);
-                MarkersPerTypeCanvas.Children.Add(bar);
-
-                // Count label
-                var countLabel = new TextBlock
-                {
-                    Text = item.Count.ToString(),
-                    FontSize = 9,
-                    FontWeight = FontWeights.SemiBold,
-                    Foreground = Brushes.Black
-                };
-                Canvas.SetLeft(countLabel, labelWidth + barWidth + 5);
-                Canvas.SetTop(countLabel, y + 2);
-                MarkersPerTypeCanvas.Children.Add(countLabel);
-            }
+            _chartRenderer.DrawMarkersPerTypeChart(MarkersPerTypeCanvas, _featureResult.MarkersByCellType);
         }
 
         private void DotPlotCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -1429,14 +1000,19 @@ namespace TransmutationLearning
                 .Distinct()
                 .ToList();
 
+            // Try to load saved order from disk first, then fall back to in-memory saved order
+            var savedOrder = _settingsService.LoadExpectedOrder(ParquetPathTextBox?.Text);
+            if (savedOrder.Count == 0)
+                savedOrder = _savedExpectedOrder;
+
             // Try to restore saved order if we have one and it contains relevant types
-            if (_savedExpectedOrder.Count > 0)
+            if (savedOrder.Count > 0)
             {
                 // Use saved order, putting saved types first (in saved order), then any new types alphabetically
                 var orderedTypes = new List<string>();
 
                 // Add types from saved order that are present
-                foreach (var savedType in _savedExpectedOrder)
+                foreach (var savedType in savedOrder)
                 {
                     if (presentCellTypes.Contains(savedType))
                         orderedTypes.Add(savedType);
@@ -1487,16 +1063,19 @@ namespace TransmutationLearning
             // Update protection hint
             UpdateProtectionHint();
 
-            // Save current order
-            SaveExpectedOrder();
+            // NOTE: Do NOT save here - only save when user explicitly changes the order
+            // (via Move Up/Down, drag-drop, or Reset buttons)
+            // Saving here would overwrite the full saved order with a truncated version
+            // when some cell types are temporarily filtered out
         }
 
         /// <summary>
-        /// Saves the current expected distribution order so it persists across data reloads
+        /// Saves the current expected distribution order to a JSON file in the same directory as the parquet file
         /// </summary>
         private void SaveExpectedOrder()
         {
             _savedExpectedOrder = _expectedDistributionItems.Select(x => x.CellType).ToList();
+            _settingsService.SaveExpectedOrder(ParquetPathTextBox?.Text, _savedExpectedOrder);
         }
 
         private void SensitivitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -1982,8 +1561,8 @@ namespace TransmutationLearning
 
         private void DrawDistillationPieCharts()
         {
-            DrawDistillationPieChart(OriginalDistPieCanvas, GetOriginalDistribution(), "Original");
-            DrawDistillationPieChart(DistilledDistPieCanvas, GetDistilledDistribution(), "Distilled");
+            _chartRenderer.DrawDistributionPieChart(OriginalDistPieCanvas, GetOriginalDistribution());
+            _chartRenderer.DrawDistributionPieChart(DistilledDistPieCanvas, GetDistilledDistribution());
         }
 
         private Dictionary<string, int> GetOriginalDistribution()
@@ -2001,123 +1580,6 @@ namespace TransmutationLearning
                 return DistilledData.GetDistilledDistribution();
             }
             return GetOriginalDistribution();
-        }
-
-        private void DrawDistillationPieChart(Canvas canvas, Dictionary<string, int> distribution, string title)
-        {
-            canvas.Children.Clear();
-
-            if (distribution.Count == 0 || canvas.ActualWidth <= 0 || canvas.ActualHeight <= 0)
-                return;
-
-            double width = canvas.ActualWidth;
-            double height = canvas.ActualHeight;
-            double centerX = width * 0.4;
-            double centerY = height / 2;
-            double radius = Math.Min(centerX, centerY) - 10;
-
-            int total = distribution.Values.Sum();
-            double startAngle = -90;
-
-            var orderedItems = distribution.OrderByDescending(x => x.Value).ToList();
-
-            for (int i = 0; i < orderedItems.Count; i++)
-            {
-                var kvp = orderedItems[i];
-                double sweepAngle = (kvp.Value * 360.0) / total;
-
-                if (sweepAngle < 0.5) continue;
-
-                var color = _cellTypeColors.TryGetValue(kvp.Key, out var c) ? c : PastelColors[i % PastelColors.Length];
-                DrawDistillationPieSlice(canvas, centerX, centerY, radius, startAngle, sweepAngle, color);
-
-                startAngle += sweepAngle;
-            }
-
-            // Draw legend
-            double legendX = width * 0.55;
-            double legendY = 5;
-            double legendItemHeight = Math.Min(12, (height - 10) / orderedItems.Count);
-
-            for (int i = 0; i < orderedItems.Count && legendY < height - 10; i++)
-            {
-                var kvp = orderedItems[i];
-                var color = _cellTypeColors.TryGetValue(kvp.Key, out var c) ? c : PastelColors[i % PastelColors.Length];
-
-                var rect = new Rectangle
-                {
-                    Width = 8,
-                    Height = 8,
-                    Fill = new SolidColorBrush(color)
-                };
-                Canvas.SetLeft(rect, legendX);
-                Canvas.SetTop(rect, legendY);
-                canvas.Children.Add(rect);
-
-                string label = kvp.Key.Length > 10 ? kvp.Key.Substring(0, 8) + ".." : kvp.Key;
-                var text = new TextBlock
-                {
-                    Text = $"{label} ({kvp.Value})",
-                    FontSize = 8,
-                    Foreground = Brushes.Black
-                };
-                Canvas.SetLeft(text, legendX + 12);
-                Canvas.SetTop(text, legendY - 1);
-                canvas.Children.Add(text);
-
-                legendY += legendItemHeight;
-            }
-        }
-
-        private void DrawDistillationPieSlice(Canvas canvas, double cx, double cy, double r, double startAngle, double sweepAngle, Color color)
-        {
-            if (sweepAngle >= 360)
-            {
-                var ellipse = new Ellipse
-                {
-                    Width = r * 2,
-                    Height = r * 2,
-                    Fill = new SolidColorBrush(color)
-                };
-                Canvas.SetLeft(ellipse, cx - r);
-                Canvas.SetTop(ellipse, cy - r);
-                canvas.Children.Add(ellipse);
-                return;
-            }
-
-            double startRad = startAngle * Math.PI / 180;
-            double endRad = (startAngle + sweepAngle) * Math.PI / 180;
-
-            double x1 = cx + r * Math.Cos(startRad);
-            double y1 = cy + r * Math.Sin(startRad);
-            double x2 = cx + r * Math.Cos(endRad);
-            double y2 = cy + r * Math.Sin(endRad);
-
-            bool largeArc = sweepAngle > 180;
-
-            var path = new Path
-            {
-                Fill = new SolidColorBrush(color),
-                Stroke = Brushes.White,
-                StrokeThickness = 1
-            };
-
-            var figure = new PathFigure { StartPoint = new Point(cx, cy) };
-            figure.Segments.Add(new LineSegment(new Point(x1, y1), false));
-            figure.Segments.Add(new ArcSegment(
-                new Point(x2, y2),
-                new Size(r, r),
-                0,
-                largeArc,
-                SweepDirection.Clockwise,
-                false));
-            figure.Segments.Add(new LineSegment(new Point(cx, cy), false));
-
-            var geometry = new PathGeometry();
-            geometry.Figures.Add(figure);
-            path.Data = geometry;
-
-            canvas.Children.Add(path);
         }
 
         private void DistillationPieCanvas_SizeChanged(object sender, SizeChangedEventArgs e)

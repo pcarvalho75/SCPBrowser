@@ -1,0 +1,93 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Text.Json;
+
+namespace TransmutationLearning.Services
+{
+    /// <summary>
+    /// Handles persistence of user settings like expected distribution order
+    /// </summary>
+    public class SettingsService
+    {
+        private const string OrderFileExtension = ".distillorder.json";
+
+        /// <summary>
+        /// Gets the path for the expected order file (same directory as parquet, with .distillorder.json extension)
+        /// </summary>
+        public string GetExpectedOrderFilePath(string parquetPath)
+        {
+            if (string.IsNullOrEmpty(parquetPath))
+                return null;
+
+            return parquetPath + OrderFileExtension;
+        }
+
+        /// <summary>
+        /// Saves the expected distribution order to disk
+        /// </summary>
+        public bool SaveExpectedOrder(string parquetPath, List<string> order)
+        {
+            try
+            {
+                string orderFilePath = GetExpectedOrderFilePath(parquetPath);
+                if (string.IsNullOrEmpty(orderFilePath))
+                {
+                    Debug.WriteLine("[SettingsService] SaveExpectedOrder: parquetPath is null/empty");
+                    return false;
+                }
+
+                if (order == null || order.Count == 0)
+                {
+                    Debug.WriteLine("[SettingsService] SaveExpectedOrder: order is null/empty");
+                    return false;
+                }
+
+                string json = JsonSerializer.Serialize(order, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(orderFilePath, json);
+                Debug.WriteLine($"[SettingsService] Saved order to: {orderFilePath}");
+                Debug.WriteLine($"[SettingsService] Order: {string.Join(", ", order)}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[SettingsService] SaveExpectedOrder ERROR: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Loads saved expected order from disk if available
+        /// </summary>
+        public List<string> LoadExpectedOrder(string parquetPath)
+        {
+            try
+            {
+                string orderFilePath = GetExpectedOrderFilePath(parquetPath);
+                if (string.IsNullOrEmpty(orderFilePath))
+                {
+                    Debug.WriteLine("[SettingsService] LoadExpectedOrder: parquetPath is null/empty");
+                    return new List<string>();
+                }
+
+                if (!File.Exists(orderFilePath))
+                {
+                    Debug.WriteLine($"[SettingsService] LoadExpectedOrder: file does not exist: {orderFilePath}");
+                    return new List<string>();
+                }
+
+                string json = File.ReadAllText(orderFilePath);
+                var order = JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+                Debug.WriteLine($"[SettingsService] Loaded order from: {orderFilePath}");
+                Debug.WriteLine($"[SettingsService] Order: {string.Join(", ", order)}");
+                return order;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[SettingsService] LoadExpectedOrder ERROR: {ex.Message}");
+                return new List<string>();
+            }
+        }
+    }
+}

@@ -164,9 +164,10 @@ namespace TransmutationLearning
                     }
 
                     double sim;
-                    if (sharedCount < 5 || normI == 0 || normJ == 0)
+                    if (sharedCount < 15 || normI == 0 || normJ == 0)
                     {
                         // Too few shared proteins or zero vector - treat as dissimilar
+                        // Note: sharedCount >= 15 ensures statistical quorum for similarity assertion
                         sim = 0;
                     }
                     else

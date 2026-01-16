@@ -16,11 +16,13 @@ namespace TransmutationLearning
         /// <param name="dataset">Full transmutation dataset</param>
         /// <param name="criteria">Selection criteria</param>
         /// <param name="distilledData">Optional distilled dataset - if provided and applied, uses distilled labels</param>
+        /// <param name="restrictToProteins">Optional set of protein names to restrict analysis to (e.g., from distillation)</param>
         public FeatureSelectionResult ComputeProteinStatistics(
             FilteredDataset filteredData,
             TransmutationDataset dataset,
             FeatureSelectionCriteria criteria,
-            DistilledDataset distilledData = null)
+            DistilledDataset distilledData = null,
+            HashSet<string> restrictToProteins = null)
         {
             var result = new FeatureSelectionResult { Criteria = criteria };
 
@@ -53,8 +55,13 @@ namespace TransmutationLearning
                 .OrderBy(c => c)
                 .ToList();
 
+            // Determine which proteins to process
+            var proteinsToProcess = restrictToProteins != null && restrictToProteins.Count > 0
+                ? dataset.AllProteins.Where(p => restrictToProteins.Contains(p)).ToList()
+                : dataset.AllProteins;
+
             // Process each protein
-            foreach (var protein in dataset.AllProteins)
+            foreach (var protein in proteinsToProcess)
             {
                 var stats = ComputeSingleProteinStats(protein, dataset, retainedRuns, runToCellType, cellTypes);
 

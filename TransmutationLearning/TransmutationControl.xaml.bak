@@ -392,16 +392,17 @@
                         <!-- Info Banner -->
                         <Border Grid.Row="0" Background="#FEF3C7" CornerRadius="4" Padding="12" Margin="0,0,0,10">
                             <StackPanel>
-                                <TextBlock Text="What is Distillation?" FontWeight="SemiBold" Foreground="#92400E"/>
+                                <TextBlock Text="What is kNN Distillation?" FontWeight="SemiBold" Foreground="#92400E"/>
                                 <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#78350F" Margin="0,4,0,0">
-                                    Distillation refines cell type assignments by combining RNA-seq classification confidence
-                                    with your biological expectations. Low-confidence cells may be reclassified to better match
-                                    the expected distribution while respecting the original scoring.
+                                    Distillation refines cell type assignments using proteomic neighborhood voting (kNN).
+                                    For each cell, we ask: "What cell types do my nearest proteomic neighbors have?"
+                                    Neighbor votes can be weighted by your biological expectations (Prior Influence).
+                                    This is more data-driven than forcing labels to match an expected distribution.
                                 </TextBlock>
                             </StackPanel>
                         </Border>
 
-                        <!-- Sensitivity Control -->
+                        <!-- kNN Distillation Controls -->
                         <Border Grid.Row="1" Background="#F0FDF4" CornerRadius="4" Padding="12" Margin="0,0,0,10">
                             <Grid>
                                 <Grid.RowDefinitions>
@@ -409,34 +410,62 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                                    <TextBlock Text="Distillation Sensitivity:" FontWeight="SemiBold" VerticalAlignment="Center"
-                                               ToolTip="Controls how aggressively cells are reclassified. Higher values mean more cells will be reassigned to match the expected distribution."/>
+                                <!-- k Neighbors and Min Confidence -->
+                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="Neighbors (k):" FontWeight="SemiBold" VerticalAlignment="Center"
+                                               ToolTip="Number of nearest proteomic neighbors to consider for voting. More neighbors = smoother but may miss local structure."/>
+                                    <ComboBox x:Name="KNeighborsCombo" Margin="8,0,20,0" Width="60" SelectedIndex="1"
+                                              ToolTip="Recommended: 10-15 for typical SCP datasets">
+                                        <ComboBoxItem Content="5"/>
+                                        <ComboBoxItem Content="10"/>
+                                        <ComboBoxItem Content="15"/>
+                                        <ComboBoxItem Content="20"/>
+                                        <ComboBoxItem Content="30"/>
+                                    </ComboBox>
+
+                                    <TextBlock Text="Min Confidence:" FontWeight="SemiBold" VerticalAlignment="Center"
+                                               ToolTip="Minimum vote confidence required to reclassify a cell. Higher = more conservative."/>
+                                    <ComboBox x:Name="MinConfidenceCombo" Margin="8,0,0,0" Width="70" SelectedIndex="2"
+                                              ToolTip="60% means at least 6 of 10 neighbors must agree to reclassify">
+                                        <ComboBoxItem Content="50%"/>
+                                        <ComboBoxItem Content="55%"/>
+                                        <ComboBoxItem Content="60%"/>
+                                        <ComboBoxItem Content="70%"/>
+                                        <ComboBoxItem Content="80%"/>
+                                    </ComboBox>
+                                </StackPanel>
+
+                                <!-- Prior Influence (Sensitivity) -->
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Prior Influence:" FontWeight="SemiBold" VerticalAlignment="Center"
+                                               ToolTip="Controls how much your expected distribution influences neighbor voting. 0 = pure kNN (data only), 1 = strong prior influence."/>
                                     <TextBlock x:Name="SensitivityValueText" Text="0.50" FontWeight="Bold" FontSize="14"
                                                Foreground="#059669" Margin="8,0,0,0" VerticalAlignment="Center"/>
                                 </StackPanel>
 
-                                <Slider x:Name="SensitivitySlider" Grid.Row="1"
+                                <Slider x:Name="SensitivitySlider" Grid.Row="2"
                                         Minimum="0" Maximum="1" Value="0.5"
                                         TickFrequency="0.1" IsSnapToTickEnabled="False"
                                         ValueChanged="SensitivitySlider_ValueChanged"
-                                        ToolTip="0 = Conservative (few changes), 1 = Aggressive (many changes)"/>
+                                        ToolTip="0 = Trust neighbors only, 1 = Expected types get 2x vote weight"/>
 
-                                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
-                                    <TextBlock Text="Conservative" FontSize="10" Foreground="#666"/>
+                                <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,0">
+                                    <TextBlock Text="Pure kNN" FontSize="10" Foreground="#666"/>
                                     <TextBlock Text="→" Margin="5,0" Foreground="#CCC"/>
-                                    <TextBlock Text="Aggressive" FontSize="10" Foreground="#666"/>
-                                    <TextBlock x:Name="SensitivityHintText" Text="(moderate)" FontSize="10" Foreground="#059669" Margin="20,0,0,0"/>
+                                    <TextBlock Text="Strong Prior" FontSize="10" Foreground="#666"/>
+                                    <TextBlock x:Name="SensitivityHintText" Text="(balanced)" FontSize="10" Foreground="#059669" Margin="20,0,0,0"/>
                                 </StackPanel>
 
                                 <!-- Protection Rank -->
-                                <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,12,0,0">
+                                <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,12,0,0">
                                     <TextBlock Text="Protection Rank:" FontWeight="SemiBold" VerticalAlignment="Center"
-                                               ToolTip="Protects high-priority cell types from being reclassified. Cells with labels ranked this high or better in your expected distribution will be preserved."/>
+                                               ToolTip="Protects high-priority cell types from being reclassified away. Even if neighbors vote for a different type, protected labels are preserved."/>
                                     <ComboBox x:Name="ProtectionRankCombo" Margin="8,0,0,0" Width="100" SelectedIndex="2"
-                                              ToolTip="None = No protection. Top N = Protect cell types ranked 1 to N in expected distribution.">
+                                              ToolTip="None = No protection. Top N = Protect cell types ranked 1 to N in expected distribution."
+                                              SelectionChanged="ProtectionRankCombo_SelectionChanged">
                                         <ComboBoxItem Content="None"/>
                                         <ComboBoxItem Content="Top 1"/>
                                         <ComboBoxItem Content="Top 2"/>
@@ -703,6 +732,13 @@
                                     <DataGridTextColumn Header="Detect%" Binding="{Binding BestDetectionPercent, StringFormat=F0}" Width="60" IsReadOnly="True"/>
                                     <DataGridTextColumn Header="Expr" Binding="{Binding BestCellTypeExpression, StringFormat=F2}" Width="50" IsReadOnly="True"/>
                                     <DataGridTextColumn Header="Δ Spec" Binding="{Binding SpecificityDelta, StringFormat=F2}" Width="55" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Wt.Score" Binding="{Binding WeightedSpecificityScore, StringFormat=F2}" Width="60" IsReadOnly="True">
+                                        <DataGridTextColumn.HeaderStyle>
+                                            <Style TargetType="DataGridColumnHeader">
+                                                <Setter Property="ToolTip" Value="Weighted Specificity Score = Delta × Detection Rate. Higher = better marker."/>
+                                            </Style>
+                                        </DataGridTextColumn.HeaderStyle>
+                                    </DataGridTextColumn>
                                     <DataGridTextColumn Header="p-value" Binding="{Binding PValueFormatted}" Width="70" IsReadOnly="True"/>
                                     <DataGridTextColumn Header="Robust" Binding="{Binding RobustFlag}" Width="50" IsReadOnly="True"/>
                                 </DataGrid.Columns>

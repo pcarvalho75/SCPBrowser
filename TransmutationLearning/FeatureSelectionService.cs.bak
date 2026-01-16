@@ -12,22 +12,43 @@ namespace TransmutationLearning
         /// <summary>
         /// Compute statistics for all proteins based on retained cells
         /// </summary>
+        /// <param name="filteredData">Filtered dataset from confidence filtering</param>
+        /// <param name="dataset">Full transmutation dataset</param>
+        /// <param name="criteria">Selection criteria</param>
+        /// <param name="distilledData">Optional distilled dataset - if provided and applied, uses distilled labels</param>
         public FeatureSelectionResult ComputeProteinStatistics(
             FilteredDataset filteredData,
             TransmutationDataset dataset,
-            FeatureSelectionCriteria criteria)
+            FeatureSelectionCriteria criteria,
+            DistilledDataset distilledData = null)
         {
             var result = new FeatureSelectionResult { Criteria = criteria };
 
             // Get retained runs for lookup
             var retainedRuns = new HashSet<string>(filteredData.RetainedCells.Select(c => c.Run));
-            
-            // Build run -> cell type mapping from retained cells
-            var runToCellType = filteredData.RetainedCells.ToDictionary(c => c.Run, c => c.Labels);
-            
-            // Get cell types present in retained data
-            var cellTypes = filteredData.RetainedCells
-                .Select(c => c.Labels)
+
+            // Build run -> cell type mapping
+            // Use distilled labels if distillation was applied, otherwise use original labels
+            Dictionary<string, string> runToCellType;
+            if (distilledData != null && distilledData.DistillationApplied)
+            {
+                runToCellType = new Dictionary<string, string>();
+                foreach (var cell in filteredData.RetainedCells)
+                {
+                    // Use distilled label if available, fall back to original
+                    if (distilledData.DistilledLabels.TryGetValue(cell.Run, out var distilledLabel))
+                        runToCellType[cell.Run] = distilledLabel;
+                    else
+                        runToCellType[cell.Run] = cell.Labels;
+                }
+            }
+            else
+            {
+                runToCellType = filteredData.RetainedCells.ToDictionary(c => c.Run, c => c.Labels);
+            }
+
+            // Get cell types present in data (using the effective labels)
+            var cellTypes = runToCellType.Values
                 .Distinct()
                 .OrderBy(c => c)
                 .ToList();
@@ -36,16 +57,16 @@ namespace TransmutationLearning
             foreach (var protein in dataset.AllProteins)
             {
                 var stats = ComputeSingleProteinStats(protein, dataset, retainedRuns, runToCellType, cellTypes);
-                
+
                 // Evaluate against criteria
                 stats.PassesFilter = EvaluateCriteria(stats, criteria);
-                
+
                 result.AllProteinStats.Add(stats);
             }
 
-            // Sort by specificity delta descending
+            // Sort by weighted specificity score descending (detection-weighted)
             result.AllProteinStats = result.AllProteinStats
-                .OrderByDescending(p => p.SpecificityDelta)
+                .OrderByDescending(p => p.WeightedSpecificityScore)
                 .ToList();
 
             return result;
@@ -144,6 +165,11 @@ namespace TransmutationLearning
                     stats.SecondBestCellType = "-";
                     stats.SpecificityDelta = best.MedianExpression; // No second type means very specific
                 }
+
+                // Weighted score: prioritize proteins with high specificity AND high detection rate
+                // A protein detected in 80% of T-Cells with good delta is better than
+                // one with same delta but only 20% detection
+                stats.WeightedSpecificityScore = stats.SpecificityDelta * stats.BestCellTypeDetection;
             }
 
             // Kruskal-Wallis test for differential expression across cell types

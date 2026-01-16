@@ -111,6 +111,12 @@ namespace TransmutationLearning
             sb.AppendLine($"##FeatureCount:{reference.Metadata.FeatureCount}");
             sb.AppendLine($"##CellTypes:{string.Join(",", reference.Metadata.CellTypes)}");
             sb.AppendLine($"##SelectionCriteria:{reference.Metadata.SelectionCriteria}");
+            sb.AppendLine($"##DistillationApplied:{reference.Metadata.DistillationApplied}");
+            if (reference.Metadata.DistillationApplied)
+            {
+                sb.AppendLine($"##DistillationSensitivity:{reference.Metadata.DistillationSensitivity:F2}");
+                sb.AppendLine($"##CellsReclassified:{reference.Metadata.CellsReclassified}");
+            }
             sb.AppendLine();
 
             var cellTypes = reference.GetOrderedCellTypes();
@@ -148,7 +154,7 @@ namespace TransmutationLearning
 
             // Write marker statistics section
             sb.AppendLine("##SECTION:MARKER_STATS");
-            sb.AppendLine("Protein\tBestCellType\tSpecificityDelta\tKW_H\tKW_pValue\tBestDetection\tIsRobust");
+            sb.AppendLine("Protein\tBestCellType\tSpecificityDelta\tWeightedScore\tKW_H\tKW_pValue\tBestDetection\tIsRobust");
 
             foreach (var protein in proteins)
             {

@@ -24,7 +24,7 @@ namespace TransmutationLearning
         private HashSet<string> _validCellTypes = new HashSet<string>();
 
         // Distillation
-        private DistillationService _distillationService = new DistillationService();
+        private KnnDistillationService _distillationService = new KnnDistillationService();
         private List<ExpectedCellTypeItem> _expectedDistributionItems = new List<ExpectedCellTypeItem>();
         private Point _dragStartPoint;
 
@@ -1291,13 +1291,15 @@ namespace TransmutationLearning
 
             SensitivityValueText.Text = e.NewValue.ToString("F2");
 
-            // Update hint text
-            if (e.NewValue < 0.3)
-                SensitivityHintText.Text = "(conservative - few changes)";
-            else if (e.NewValue < 0.7)
-                SensitivityHintText.Text = "(moderate)";
+            // Update hint text for kNN prior influence
+            if (e.NewValue < 0.2)
+                SensitivityHintText.Text = "(pure kNN - data only)";
+            else if (e.NewValue < 0.5)
+                SensitivityHintText.Text = "(slight prior influence)";
+            else if (e.NewValue < 0.8)
+                SensitivityHintText.Text = "(balanced)";
             else
-                SensitivityHintText.Text = "(aggressive - many changes)";
+                SensitivityHintText.Text = "(strong prior influence)";
         }
 
         private void MoveExpectedUp_Click(object sender, RoutedEventArgs e)
@@ -1383,6 +1385,7 @@ namespace TransmutationLearning
                     ExpectedDistributionListBox.ItemsSource = null;
                     ExpectedDistributionListBox.ItemsSource = _expectedDistributionItems;
                     UpdateProtectionHint();
+                    SaveExpectedOrder();
                 }
             }
         }
@@ -1414,15 +1417,26 @@ namespace TransmutationLearning
                 return;
             }
 
+            if (Dataset?.ProteinMatrix == null || Dataset.ProteinMatrix.Count == 0)
+            {
+                MessageBox.Show("No protein expression data available.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
             var expectedDist = BuildExpectedDistribution();
+            int k = GetKNeighbors();
             double sensitivity = SensitivitySlider.Value;
+            double minConfidence = GetMinConfidence();
             int protectionRank = GetProtectionRank();
 
-            var (wouldReclassify, newDistribution) = _distillationService.PreviewDistillation(
+            var (wouldReclassify, newDistribution) = _distillationService.PreviewKnnDistillation(
                 FilteredData.RetainedCells,
+                Dataset.ProteinMatrix,
                 expectedDist,
+                k,
                 sensitivity,
-                _validCellTypes,
+                minConfidence,
                 protectionRank);
 
             ReclassifiedCountText.Text = wouldReclassify.ToString();
@@ -1436,6 +1450,32 @@ namespace TransmutationLearning
         {
             if (ProtectionRankCombo == null) return 2; // Default
             return ProtectionRankCombo.SelectedIndex; // 0 = None, 1 = Top 1, 2 = Top 2, etc.
+        }
+
+        /// <summary>
+        /// Gets k (number of neighbors) from combo box
+        /// </summary>
+        private int GetKNeighbors()
+        {
+            if (KNeighborsCombo == null) return 10; // Default
+            var content = (KNeighborsCombo.SelectedItem as ComboBoxItem)?.Content?.ToString();
+            return int.TryParse(content, out int k) ? k : 10;
+        }
+
+        /// <summary>
+        /// Gets minimum confidence threshold from combo box
+        /// </summary>
+        private double GetMinConfidence()
+        {
+            if (MinConfidenceCombo == null) return 0.6; // Default
+            var content = (MinConfidenceCombo.SelectedItem as ComboBoxItem)?.Content?.ToString();
+            if (content != null && content.EndsWith("%"))
+            {
+                var numStr = content.TrimEnd('%');
+                if (double.TryParse(numStr, out double pct))
+                    return pct / 100.0;
+            }
+            return 0.6;
         }
 
         /// <summary>
@@ -1485,23 +1525,34 @@ namespace TransmutationLearning
                 return;
             }
 
+            if (Dataset?.ProteinMatrix == null || Dataset.ProteinMatrix.Count == 0)
+            {
+                MessageBox.Show("No protein expression data available.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
             try
             {
                 RunDistillationButton.IsEnabled = false;
                 LoadingOverlay.Visibility = Visibility.Visible;
-                LoadingText.Text = "Running distillation...";
+                LoadingText.Text = "Computing kNN distillation...";
 
                 var expectedDist = BuildExpectedDistribution();
+                int k = GetKNeighbors();
                 double sensitivity = SensitivitySlider.Value;
+                double minConfidence = GetMinConfidence();
                 int protectionRank = GetProtectionRank();
 
                 await System.Threading.Tasks.Task.Run(() =>
                 {
-                    DistilledData = _distillationService.RunDistillation(
+                    DistilledData = _distillationService.RunKnnDistillation(
                         FilteredData.RetainedCells,
+                        Dataset.ProteinMatrix,
                         expectedDist,
+                        k,
                         sensitivity,
-                        _validCellTypes,
+                        minConfidence,
                         protectionRank);
                 });
 
@@ -1523,7 +1574,7 @@ namespace TransmutationLearning
                 // Redraw pie charts
                 DrawDistillationPieCharts();
 
-                StatusText.Text = $"Distillation complete. {DistilledData.ReclassifiedCount} cells reclassified.";
+                StatusText.Text = $"kNN Distillation complete. {DistilledData.ReclassifiedCount} cells reclassified.";
             }
             catch (Exception ex)
             {

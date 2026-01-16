@@ -99,11 +99,11 @@ namespace TransmutationLearning
             };
 
             // Rule 0: Protection rank - don't reclassify cells with high-priority labels
-            // unless the score gap is extreme
+            // If user explicitly ranks a cell type high, protect it from reclassification
             int originalRankInExpected = expectedDistribution.GetRank(cell.Labels);
             bool isProtected = protectionRank > 0 && originalRankInExpected <= protectionRank;
 
-            if (isProtected && cell.DeltaNext >= 0.02) // Very minimal threshold for protected types
+            if (isProtected)
             {
                 record.Reason = $"Protected (rank {originalRankInExpected} ≤ {protectionRank})";
                 return record;

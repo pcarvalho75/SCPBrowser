@@ -24,7 +24,7 @@ namespace TransmutationLearning
         private HashSet<string> _validCellTypes = new HashSet<string>();
 
         // Distillation
-        private DistillationService _distillationService = new DistillationService();
+        private KnnDistillationService _distillationService = new KnnDistillationService();
         private List<ExpectedCellTypeItem> _expectedDistributionItems = new List<ExpectedCellTypeItem>();
         private Point _dragStartPoint;
 
@@ -1193,6 +1193,152 @@ namespace TransmutationLearning
             MessageBox.Show("PDF export is not available.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
+        private ValidationService _validationService = new ValidationService();
+
+        private async void RunValidation_Click(object sender, RoutedEventArgs e)
+        {
+            if (_featureResult == null || _featureResult.SelectedMarkers.Count == 0)
+            {
+                MessageBox.Show("No markers selected. Please select markers first.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (Dataset?.ProteinMatrix == null || FilteredData?.RetainedCells == null)
+            {
+                MessageBox.Show("No data available for validation.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                RunValidationButton.IsEnabled = false;
+                LoadingOverlay.Visibility = Visibility.Visible;
+                LoadingText.Text = "Running self-consistency validation...";
+
+                // Build effective labels (distilled if available, otherwise original)
+                Dictionary<string, string> effectiveLabels;
+                if (DistilledData != null && DistilledData.DistillationApplied)
+                {
+                    effectiveLabels = DistilledData.DistilledLabels;
+                }
+                else
+                {
+                    effectiveLabels = FilteredData.RetainedCells.ToDictionary(c => c.Run, c => c.Labels);
+                }
+
+                ValidationResult validationResult = null;
+                await System.Threading.Tasks.Task.Run(() =>
+                {
+                    validationResult = _validationService.RunSelfConsistencyCheck(
+                        FilteredData.RetainedCells,
+                        Dataset.ProteinMatrix,
+                        _featureResult.SelectedMarkers,
+                        effectiveLabels);
+                });
+
+                // Display results
+                DisplayValidationResults(validationResult);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error during validation: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                RunValidationButton.IsEnabled = true;
+                LoadingOverlay.Visibility = Visibility.Collapsed;
+                LoadingText.Text = "Loading...";
+            }
+        }
+
+        private void DisplayValidationResults(ValidationResult result)
+        {
+            ValidationResultsPanel.Visibility = Visibility.Visible;
+
+            if (!result.IsValid)
+            {
+                ValidationAgreementText.Text = "-";
+                ValidationStatusText.Text = "Error";
+                ValidationStatusText.Foreground = Brushes.Red;
+                ValidationWarningText.Text = result.ErrorMessage;
+                ValidationWarningText.Visibility = Visibility.Visible;
+                ValidationPanel.Background = new SolidColorBrush(Color.FromRgb(254, 242, 242)); // Red tint
+                return;
+            }
+
+            // Show agreement rate
+            ValidationAgreementText.Text = $"{result.AgreementRate:P1} ({result.AgreementCount}/{result.TotalCells})";
+
+            if (result.PassesValidation)
+            {
+                ValidationStatusText.Text = "✓ PASSED";
+                ValidationStatusText.Foreground = new SolidColorBrush(Color.FromRgb(22, 163, 74)); // Green
+                ValidationWarningText.Visibility = Visibility.Collapsed;
+                ValidationPanel.Background = new SolidColorBrush(Color.FromRgb(240, 253, 244)); // Green tint
+            }
+            else
+            {
+                ValidationStatusText.Text = "⚠ WARNING";
+                ValidationStatusText.Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38)); // Red
+                ValidationWarningText.Text = result.WarningMessage;
+                ValidationWarningText.Visibility = Visibility.Visible;
+                ValidationPanel.Background = new SolidColorBrush(Color.FromRgb(254, 252, 232)); // Yellow tint
+            }
+
+            // Show per-type accuracy
+            PerTypeAccuracyPanel.Children.Clear();
+            var perTypeAccuracy = result.GetPerTypeAccuracy();
+            foreach (var kvp in perTypeAccuracy.OrderByDescending(x => x.Value))
+            {
+                var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+
+                // Cell type name
+                panel.Children.Add(new TextBlock
+                {
+                    Text = kvp.Key,
+                    Width = 120,
+                    FontSize = 10
+                });
+
+                // Accuracy bar
+                var barBorder = new Border
+                {
+                    Width = 80,
+                    Height = 10,
+                    Background = Brushes.LightGray,
+                    CornerRadius = new CornerRadius(2),
+                    Margin = new Thickness(5, 0, 5, 0)
+                };
+                var barFill = new Border
+                {
+                    Width = 80 * kvp.Value,
+                    Height = 10,
+                    Background = kvp.Value >= 0.8
+                        ? new SolidColorBrush(Color.FromRgb(34, 197, 94))  // Green
+                        : kvp.Value >= 0.6
+                            ? new SolidColorBrush(Color.FromRgb(250, 204, 21)) // Yellow
+                            : new SolidColorBrush(Color.FromRgb(239, 68, 68)), // Red
+                    CornerRadius = new CornerRadius(2),
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                barBorder.Child = barFill;
+                panel.Children.Add(barBorder);
+
+                // Percentage
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"{kvp.Value:P0}",
+                    FontSize = 10,
+                    FontWeight = FontWeights.SemiBold
+                });
+
+                PerTypeAccuracyPanel.Children.Add(panel);
+            }
+        }
+
         #endregion
 
         #region Distillation (Phase 2)
@@ -1291,13 +1437,15 @@ namespace TransmutationLearning
 
             SensitivityValueText.Text = e.NewValue.ToString("F2");
 
-            // Update hint text
-            if (e.NewValue < 0.3)
-                SensitivityHintText.Text = "(conservative - few changes)";
-            else if (e.NewValue < 0.7)
-                SensitivityHintText.Text = "(moderate)";
+            // Update hint text for kNN prior influence
+            if (e.NewValue < 0.2)
+                SensitivityHintText.Text = "(pure kNN - data only)";
+            else if (e.NewValue < 0.5)
+                SensitivityHintText.Text = "(slight prior influence)";
+            else if (e.NewValue < 0.8)
+                SensitivityHintText.Text = "(balanced)";
             else
-                SensitivityHintText.Text = "(aggressive - many changes)";
+                SensitivityHintText.Text = "(strong prior influence)";
         }
 
         private void MoveExpectedUp_Click(object sender, RoutedEventArgs e)
@@ -1415,15 +1563,26 @@ namespace TransmutationLearning
                 return;
             }
 
+            if (Dataset?.ProteinMatrix == null || Dataset.ProteinMatrix.Count == 0)
+            {
+                MessageBox.Show("No protein expression data available.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
             var expectedDist = BuildExpectedDistribution();
+            int k = GetKNeighbors();
             double sensitivity = SensitivitySlider.Value;
+            double minConfidence = GetMinConfidence();
             int protectionRank = GetProtectionRank();
 
-            var (wouldReclassify, newDistribution) = _distillationService.PreviewDistillation(
+            var (wouldReclassify, newDistribution) = _distillationService.PreviewKnnDistillation(
                 FilteredData.RetainedCells,
+                Dataset.ProteinMatrix,
                 expectedDist,
+                k,
                 sensitivity,
-                _validCellTypes,
+                minConfidence,
                 protectionRank);
 
             ReclassifiedCountText.Text = wouldReclassify.ToString();
@@ -1437,6 +1596,32 @@ namespace TransmutationLearning
         {
             if (ProtectionRankCombo == null) return 2; // Default
             return ProtectionRankCombo.SelectedIndex; // 0 = None, 1 = Top 1, 2 = Top 2, etc.
+        }
+
+        /// <summary>
+        /// Gets k (number of neighbors) from combo box
+        /// </summary>
+        private int GetKNeighbors()
+        {
+            if (KNeighborsCombo == null) return 10; // Default
+            var content = (KNeighborsCombo.SelectedItem as ComboBoxItem)?.Content?.ToString();
+            return int.TryParse(content, out int k) ? k : 10;
+        }
+
+        /// <summary>
+        /// Gets minimum confidence threshold from combo box
+        /// </summary>
+        private double GetMinConfidence()
+        {
+            if (MinConfidenceCombo == null) return 0.6; // Default
+            var content = (MinConfidenceCombo.SelectedItem as ComboBoxItem)?.Content?.ToString();
+            if (content != null && content.EndsWith("%"))
+            {
+                var numStr = content.TrimEnd('%');
+                if (double.TryParse(numStr, out double pct))
+                    return pct / 100.0;
+            }
+            return 0.6;
         }
 
         /// <summary>
@@ -1486,23 +1671,34 @@ namespace TransmutationLearning
                 return;
             }
 
+            if (Dataset?.ProteinMatrix == null || Dataset.ProteinMatrix.Count == 0)
+            {
+                MessageBox.Show("No protein expression data available.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
             try
             {
                 RunDistillationButton.IsEnabled = false;
                 LoadingOverlay.Visibility = Visibility.Visible;
-                LoadingText.Text = "Running distillation...";
+                LoadingText.Text = "Computing kNN distillation...";
 
                 var expectedDist = BuildExpectedDistribution();
+                int k = GetKNeighbors();
                 double sensitivity = SensitivitySlider.Value;
+                double minConfidence = GetMinConfidence();
                 int protectionRank = GetProtectionRank();
 
                 await System.Threading.Tasks.Task.Run(() =>
                 {
-                    DistilledData = _distillationService.RunDistillation(
+                    DistilledData = _distillationService.RunKnnDistillation(
                         FilteredData.RetainedCells,
+                        Dataset.ProteinMatrix,
                         expectedDist,
+                        k,
                         sensitivity,
-                        _validCellTypes,
+                        minConfidence,
                         protectionRank);
                 });
 
@@ -1524,7 +1720,7 @@ namespace TransmutationLearning
                 // Redraw pie charts
                 DrawDistillationPieCharts();
 
-                StatusText.Text = $"Distillation complete. {DistilledData.ReclassifiedCount} cells reclassified.";
+                StatusText.Text = $"kNN Distillation complete. {DistilledData.ReclassifiedCount} cells reclassified.";
             }
             catch (Exception ex)
             {

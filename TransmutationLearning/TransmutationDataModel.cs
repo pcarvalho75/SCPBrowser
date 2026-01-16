@@ -651,6 +651,7 @@ namespace TransmutationLearning
         public string SecondBestCellType { get; set; }
         public double SecondBestCellTypeExpression { get; set; }
         public double SpecificityDelta { get; set; }   // Gap between best and second-best
+        public double WeightedSpecificityScore { get; set; }  // SpecificityDelta * BestCellTypeDetection
 
         // Robustness flags
         public bool IsRobust { get; set; }             // Passes minimum cell count

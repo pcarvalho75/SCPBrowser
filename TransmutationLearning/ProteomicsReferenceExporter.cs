@@ -154,7 +154,7 @@ namespace TransmutationLearning
 
             // Write marker statistics section
             sb.AppendLine("##SECTION:MARKER_STATS");
-            sb.AppendLine("Protein\tBestCellType\tSpecificityDelta\tKW_H\tKW_pValue\tBestDetection\tIsRobust");
+            sb.AppendLine("Protein\tBestCellType\tSpecificityDelta\tWeightedScore\tKW_H\tKW_pValue\tBestDetection\tIsRobust");
 
             foreach (var protein in proteins)
             {
@@ -165,6 +165,7 @@ namespace TransmutationLearning
                         stat.ProteinName,
                         stat.BestCellType,
                         stat.SpecificityDelta.ToString("F4", CultureInfo.InvariantCulture),
+                        stat.WeightedSpecificityScore.ToString("F4", CultureInfo.InvariantCulture),
                         stat.KruskalWallisH.ToString("F4", CultureInfo.InvariantCulture),
                         stat.KruskalWallisPValue.ToString("E4", CultureInfo.InvariantCulture),
                         stat.BestCellTypeDetection.ToString("F4", CultureInfo.InvariantCulture),

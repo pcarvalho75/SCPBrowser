@@ -64,9 +64,9 @@ namespace TransmutationLearning
                 result.AllProteinStats.Add(stats);
             }
 
-            // Sort by specificity delta descending
+            // Sort by weighted specificity score descending (detection-weighted)
             result.AllProteinStats = result.AllProteinStats
-                .OrderByDescending(p => p.SpecificityDelta)
+                .OrderByDescending(p => p.WeightedSpecificityScore)
                 .ToList();
 
             return result;
@@ -165,6 +165,11 @@ namespace TransmutationLearning
                     stats.SecondBestCellType = "-";
                     stats.SpecificityDelta = best.MedianExpression; // No second type means very specific
                 }
+
+                // Weighted score: prioritize proteins with high specificity AND high detection rate
+                // A protein detected in 80% of T-Cells with good delta is better than
+                // one with same delta but only 20% detection
+                stats.WeightedSpecificityScore = stats.SpecificityDelta * stats.BestCellTypeDetection;
             }
 
             // Kruskal-Wallis test for differential expression across cell types
@@ -254,7 +259,7 @@ namespace TransmutationLearning
         {
             result.SelectedMarkers = result.AllProteinStats
                 .Where(p => p.IsSelected)
-                .OrderByDescending(p => p.SpecificityDelta)
+                .OrderByDescending(p => p.WeightedSpecificityScore)
                 .ToList();
 
             // Group by best cell type
@@ -262,7 +267,7 @@ namespace TransmutationLearning
                 .GroupBy(p => p.BestCellType)
                 .ToDictionary(
                     g => g.Key,
-                    g => g.OrderByDescending(p => p.SpecificityDelta).ToList());
+                    g => g.OrderByDescending(p => p.WeightedSpecificityScore).ToList());
         }
 
         /// <summary>

@@ -726,6 +726,11 @@ namespace TransmutationLearning
         public int FeatureCount { get; set; }
         public List<string> CellTypes { get; set; } = new List<string>();
         public string SelectionCriteria { get; set; }
+
+        // Distillation info
+        public bool DistillationApplied { get; set; }
+        public double DistillationSensitivity { get; set; }
+        public int CellsReclassified { get; set; }
     }
 
     /// <summary>

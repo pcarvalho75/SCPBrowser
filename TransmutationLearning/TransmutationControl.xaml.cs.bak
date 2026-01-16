@@ -1383,7 +1383,6 @@ namespace TransmutationLearning
                     ExpectedDistributionListBox.ItemsSource = null;
                     ExpectedDistributionListBox.ItemsSource = _expectedDistributionItems;
                     UpdateProtectionHint();
-                    SaveExpectedOrder();
                 }
             }
         }

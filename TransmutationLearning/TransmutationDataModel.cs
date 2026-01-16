@@ -14,10 +14,54 @@ namespace TransmutationLearning
         public string Labels { get; set; }
         public double DeltaNext { get; set; }
         public string PrunedLabels { get; set; }
-        
+
         // Computed properties
         public double MaxScore => Scores.Count > 0 ? Scores.Values.Max() : 0;
         public bool IsPruned => PrunedLabels == "NA" || string.IsNullOrEmpty(PrunedLabels);
+
+        // Ranking data for Distillation
+        public List<(string CellType, double Score)> RankedScores { get; private set; } = new List<(string, double)>();
+        public string SecondLabel { get; private set; }
+        public double SecondScore { get; private set; }
+        public int RankOfAssignedLabel { get; private set; }
+
+        /// <summary>
+        /// Computes full ranking from Scores dictionary. Call after Scores are populated.
+        /// </summary>
+        public void ComputeRankings()
+        {
+            if (Scores == null || Scores.Count == 0)
+                return;
+
+            // Sort by score descending
+            RankedScores = Scores
+                .OrderByDescending(kvp => kvp.Value)
+                .Select(kvp => (kvp.Key, kvp.Value))
+                .ToList();
+
+            // Second label info
+            if (RankedScores.Count >= 2)
+            {
+                SecondLabel = RankedScores[1].CellType;
+                SecondScore = RankedScores[1].Score;
+            }
+            else
+            {
+                SecondLabel = null;
+                SecondScore = 0;
+            }
+
+            // Find where the assigned label ranks (1-based)
+            RankOfAssignedLabel = 0;
+            for (int i = 0; i < RankedScores.Count; i++)
+            {
+                if (RankedScores[i].CellType == Labels)
+                {
+                    RankOfAssignedLabel = i + 1;
+                    break;
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -28,33 +72,33 @@ namespace TransmutationLearning
         // Raw data
         public List<CellClassification> Classifications { get; set; } = new List<CellClassification>();
         public Dictionary<string, Dictionary<string, double>> ProteinMatrix { get; set; } = new Dictionary<string, Dictionary<string, double>>();
-        
+
         // Metadata
         public List<string> AllProteins { get; set; } = new List<string>();
         public List<string> AllRuns { get; set; } = new List<string>();
         public List<string> CellTypes { get; set; } = new List<string>();
-        
+
         // Summary statistics
         public int TotalProteins => AllProteins.Count;
         public int TotalRuns => AllRuns.Count;
         public int TotalMatchedRuns => Classifications.Count(c => AllRuns.Contains(c.Run));
         public int UnmatchedClassifications => Classifications.Count(c => !AllRuns.Contains(c.Run));
-        
+
         // Delta statistics
         public double MinDelta => Classifications.Count > 0 ? Classifications.Min(c => c.DeltaNext) : 0;
         public double MaxDelta => Classifications.Count > 0 ? Classifications.Max(c => c.DeltaNext) : 0;
         public double MedianDelta => GetMedian(Classifications.Select(c => c.DeltaNext).ToList());
-        
+
         private double GetMedian(List<double> values)
         {
             if (values.Count == 0) return 0;
             var sorted = values.OrderBy(v => v).ToList();
             int mid = sorted.Count / 2;
-            return sorted.Count % 2 == 0 
-                ? (sorted[mid - 1] + sorted[mid]) / 2.0 
+            return sorted.Count % 2 == 0
+                ? (sorted[mid - 1] + sorted[mid]) / 2.0
                 : sorted[mid];
         }
-        
+
         /// <summary>
         /// Get cell type distribution
         /// </summary>
@@ -64,7 +108,7 @@ namespace TransmutationLearning
                 .GroupBy(c => c.Labels)
                 .ToDictionary(g => g.Key, g => g.Count());
         }
-        
+
         /// <summary>
         /// Get delta values for histogram
         /// </summary>
@@ -95,31 +139,31 @@ namespace TransmutationLearning
     {
         public double DeltaThreshold { get; set; }
         public HashSet<string> ValidLabelSet { get; set; } = new HashSet<string>();
-        
+
         // Three buckets
         public List<CellClassification> RetainedCells { get; set; } = new List<CellClassification>();
         public List<CellClassification> FilteredOutCells { get; set; } = new List<CellClassification>();  // Valid label, low delta
         public List<CellClassification> InvalidLabelCells { get; set; } = new List<CellClassification>(); // Invalid label (excluded regardless of delta)
-        
+
         public List<CellTypeStatistics> CellTypeStats { get; set; } = new List<CellTypeStatistics>();
-        
+
         // Counts
         public int TotalRetained => RetainedCells.Count;
         public int TotalFiltered => FilteredOutCells.Count;
         public int TotalInvalid => InvalidLabelCells.Count;
         public int TotalValidLabeled => TotalRetained + TotalFiltered;
-        
+
         // Percentages
-        public double RetentionPercent => TotalValidLabeled > 0 
+        public double RetentionPercent => TotalValidLabeled > 0
             ? (TotalRetained * 100.0 / TotalValidLabeled) : 0;
         public double InvalidPercent => (TotalValidLabeled + TotalInvalid) > 0
             ? (TotalInvalid * 100.0 / (TotalValidLabeled + TotalInvalid)) : 0;
-        
+
         // Invalid label diagnostics
         public Dictionary<string, int> InvalidLabelDistribution => InvalidLabelCells
             .GroupBy(c => c.Labels)
             .ToDictionary(g => g.Key, g => g.Count());
-        
+
         public Dictionary<string, double> InvalidLabelMedianDelta => InvalidLabelCells
             .GroupBy(c => c.Labels)
             .ToDictionary(g => g.Key, g => StatisticsHelper.Median(g.Select(c => c.DeltaNext)));
@@ -141,14 +185,14 @@ namespace TransmutationLearning
 
             double min = values.Min();
             double max = values.Max();
-            
+
             if (max - min < 1e-10)
                 return min;
 
             // Create histogram
             double binWidth = (max - min) / numBins;
             int[] histogram = new int[numBins];
-            
+
             foreach (var v in values)
             {
                 int bin = Math.Min((int)((v - min) / binWidth), numBins - 1);
@@ -198,7 +242,7 @@ namespace TransmutationLearning
 
             double min = values.Min();
             double max = values.Max();
-            
+
             // Add small padding to include max value
             double range = max - min;
             if (range < 1e-10)
@@ -230,8 +274,8 @@ namespace TransmutationLearning
             var sorted = values.OrderBy(v => v).ToList();
             if (sorted.Count == 0) return 0;
             int mid = sorted.Count / 2;
-            return sorted.Count % 2 == 0 
-                ? (sorted[mid - 1] + sorted[mid]) / 2.0 
+            return sorted.Count % 2 == 0
+                ? (sorted[mid - 1] + sorted[mid]) / 2.0
                 : sorted[mid];
         }
 
@@ -414,6 +458,162 @@ namespace TransmutationLearning
         }
     }
 
+    #region Distillation Models
+
+    /// <summary>
+    /// Record of a single cell's reclassification during distillation
+    /// </summary>
+    public class ReclassificationRecord
+    {
+        public string Run { get; set; }
+        public string OriginalLabel { get; set; }
+        public string DistilledLabel { get; set; }
+        public double OriginalScore { get; set; }
+        public double DistilledScore { get; set; }
+        public double ScoreGap { get; set; }
+        public double OriginalDelta { get; set; }
+        public string Reason { get; set; }
+
+        public bool WasReclassified => OriginalLabel != DistilledLabel;
+    }
+
+    /// <summary>
+    /// User-defined expected distribution of cell types
+    /// </summary>
+    public class ExpectedDistribution
+    {
+        /// <summary>
+        /// Cell types in order of expected abundance (index 0 = most expected)
+        /// </summary>
+        public List<string> RankedCellTypes { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Optional: explicit proportions (if user wants to specify percentages)
+        /// </summary>
+        public Dictionary<string, double> Proportions { get; set; } = new Dictionary<string, double>();
+
+        /// <summary>
+        /// Get rank of a cell type (1-based, lower = more expected)
+        /// </summary>
+        public int GetRank(string cellType)
+        {
+            int idx = RankedCellTypes.IndexOf(cellType);
+            return idx >= 0 ? idx + 1 : RankedCellTypes.Count + 1;
+        }
+
+        /// <summary>
+        /// Convert rank ordering to proportions using exponential decay
+        /// </summary>
+        public Dictionary<string, double> ToProportions(double decayFactor = 0.5)
+        {
+            var result = new Dictionary<string, double>();
+            double total = 0;
+
+            for (int i = 0; i < RankedCellTypes.Count; i++)
+            {
+                double weight = Math.Pow(decayFactor, i);
+                result[RankedCellTypes[i]] = weight;
+                total += weight;
+            }
+
+            // Normalize to sum to 1
+            foreach (var key in result.Keys.ToList())
+            {
+                result[key] /= total;
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Result of the distillation process
+    /// </summary>
+    public class DistilledDataset
+    {
+        public ExpectedDistribution ExpectedDistribution { get; set; }
+        public double Sensitivity { get; set; }
+        public bool DistillationApplied { get; set; }
+
+        /// <summary>
+        /// All cells with their (potentially updated) labels
+        /// </summary>
+        public List<CellClassification> DistilledCells { get; set; } = new List<CellClassification>();
+
+        /// <summary>
+        /// Mapping from Run to distilled label (for quick lookup)
+        /// </summary>
+        public Dictionary<string, string> DistilledLabels { get; set; } = new Dictionary<string, string>();
+
+        /// <summary>
+        /// Record of all reclassifications made
+        /// </summary>
+        public List<ReclassificationRecord> ReclassificationHistory { get; set; } = new List<ReclassificationRecord>();
+
+        // Statistics
+        public int TotalCells => DistilledCells.Count;
+        public int ReclassifiedCount => ReclassificationHistory.Count(r => r.WasReclassified);
+        public double ReclassificationPercent => TotalCells > 0 ? (ReclassifiedCount * 100.0 / TotalCells) : 0;
+
+        /// <summary>
+        /// Get original distribution (before distillation)
+        /// </summary>
+        public Dictionary<string, int> GetOriginalDistribution()
+        {
+            return ReclassificationHistory
+                .GroupBy(r => r.OriginalLabel)
+                .ToDictionary(g => g.Key, g => g.Count());
+        }
+
+        /// <summary>
+        /// Get distilled distribution (after distillation)
+        /// </summary>
+        public Dictionary<string, int> GetDistilledDistribution()
+        {
+            return DistilledLabels.Values
+                .GroupBy(v => v)
+                .ToDictionary(g => g.Key, g => g.Count());
+        }
+
+        /// <summary>
+        /// Get reclassifications grouped by original -> distilled transition
+        /// </summary>
+        public Dictionary<(string From, string To), int> GetTransitionCounts()
+        {
+            return ReclassificationHistory
+                .Where(r => r.WasReclassified)
+                .GroupBy(r => (r.OriginalLabel, r.DistilledLabel))
+                .ToDictionary(g => g.Key, g => g.Count());
+        }
+
+        /// <summary>
+        /// Compute KL divergence between observed and expected distributions
+        /// </summary>
+        public double ComputeKLDivergence(Dictionary<string, double> expectedProportions)
+        {
+            var observed = GetDistilledDistribution();
+            int total = observed.Values.Sum();
+            if (total == 0) return 0;
+
+            double kl = 0;
+            foreach (var kvp in expectedProportions)
+            {
+                double p = kvp.Value; // Expected
+                double q = observed.TryGetValue(kvp.Key, out var count) ? (double)count / total : 1e-10;
+                q = Math.Max(q, 1e-10); // Avoid log(0)
+
+                if (p > 0)
+                {
+                    kl += p * Math.Log(p / q);
+                }
+            }
+
+            return kl;
+        }
+    }
+
+    #endregion
+
     #region Feature Selection Models
 
     /// <summary>
@@ -435,15 +635,15 @@ namespace TransmutationLearning
     public class ProteinStatistics
     {
         public string ProteinName { get; set; }
-        
+
         // Per-cell-type metrics
-        public Dictionary<string, ProteinCellTypeMetrics> CellTypeMetrics { get; set; } 
+        public Dictionary<string, ProteinCellTypeMetrics> CellTypeMetrics { get; set; }
             = new Dictionary<string, ProteinCellTypeMetrics>();
-        
+
         // Global discrimination metrics
         public double KruskalWallisH { get; set; }
         public double KruskalWallisPValue { get; set; }
-        
+
         // Specificity metrics (like delta.next but for proteins)
         public string BestCellType { get; set; }
         public double BestCellTypeExpression { get; set; }
@@ -451,23 +651,23 @@ namespace TransmutationLearning
         public string SecondBestCellType { get; set; }
         public double SecondBestCellTypeExpression { get; set; }
         public double SpecificityDelta { get; set; }   // Gap between best and second-best
-        
+
         // Robustness flags
         public bool IsRobust { get; set; }             // Passes minimum cell count
         public int MinCellCount { get; set; }          // Smallest group contributing
         public double OverallDetectionRate { get; set; } // Detection across all cells
-        
+
         // Selection state
         public bool IsSelected { get; set; }
         public bool PassesFilter { get; set; }
-        
+
         // Display helpers
-        public string PValueFormatted => KruskalWallisPValue < 0.001 
-            ? KruskalWallisPValue.ToString("0.0e0") 
+        public string PValueFormatted => KruskalWallisPValue < 0.001
+            ? KruskalWallisPValue.ToString("0.0e0")
             : KruskalWallisPValue.ToString("F4");
-        
+
         public string RobustFlag => IsRobust ? "✓" : "⚠️";
-        
+
         public double BestDetectionPercent => BestCellTypeDetection * 100;
     }
 
@@ -492,18 +692,18 @@ namespace TransmutationLearning
         public List<ProteinStatistics> AllProteinStats { get; set; } = new List<ProteinStatistics>();
         public List<ProteinStatistics> SelectedMarkers { get; set; } = new List<ProteinStatistics>();
         public FeatureSelectionCriteria Criteria { get; set; }
-        
+
         // Grouped view by best cell type
-        public Dictionary<string, List<ProteinStatistics>> MarkersByCellType { get; set; } 
+        public Dictionary<string, List<ProteinStatistics>> MarkersByCellType { get; set; }
             = new Dictionary<string, List<ProteinStatistics>>();
-        
+
         // Summary stats
         public int TotalProteinsAnalyzed => AllProteinStats.Count;
         public int TotalMarkersSelected => SelectedMarkers.Count;
         public double MedianSpecificityDelta => SelectedMarkers.Count > 0
             ? StatisticsHelper.Median(SelectedMarkers.Select(m => m.SpecificityDelta))
             : 0;
-        
+
         public DateTime GeneratedAt { get; set; } = DateTime.Now;
     }
 
@@ -526,6 +726,11 @@ namespace TransmutationLearning
         public int FeatureCount { get; set; }
         public List<string> CellTypes { get; set; } = new List<string>();
         public string SelectionCriteria { get; set; }
+
+        // Distillation info
+        public bool DistillationApplied { get; set; }
+        public double DistillationSensitivity { get; set; }
+        public int CellsReclassified { get; set; }
     }
 
     /// <summary>
@@ -534,21 +739,21 @@ namespace TransmutationLearning
     public class ProteomicsReference
     {
         public ProteomicsReferenceMetadata Metadata { get; set; } = new ProteomicsReferenceMetadata();
-        
+
         // Expression matrix: Protein -> CellType -> MedianLog2Expression
-        public Dictionary<string, Dictionary<string, double>> ExpressionMatrix { get; set; } 
+        public Dictionary<string, Dictionary<string, double>> ExpressionMatrix { get; set; }
             = new Dictionary<string, Dictionary<string, double>>();
-        
+
         // Detection matrix: Protein -> CellType -> DetectionRate (0-1)
-        public Dictionary<string, Dictionary<string, double>> DetectionMatrix { get; set; } 
+        public Dictionary<string, Dictionary<string, double>> DetectionMatrix { get; set; }
             = new Dictionary<string, Dictionary<string, double>>();
-        
+
         // Marker statistics for export
         public List<ProteinStatistics> MarkerStats { get; set; } = new List<ProteinStatistics>();
-        
+
         // Helper to get cell types in consistent order
         public List<string> GetOrderedCellTypes() => Metadata.CellTypes.OrderBy(c => c).ToList();
-        
+
         // Helper to get proteins in order (grouped by best cell type, then by specificity)
         public List<string> GetOrderedProteins()
         {

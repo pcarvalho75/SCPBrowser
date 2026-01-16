@@ -111,12 +111,6 @@ namespace TransmutationLearning
             sb.AppendLine($"##FeatureCount:{reference.Metadata.FeatureCount}");
             sb.AppendLine($"##CellTypes:{string.Join(",", reference.Metadata.CellTypes)}");
             sb.AppendLine($"##SelectionCriteria:{reference.Metadata.SelectionCriteria}");
-            sb.AppendLine($"##DistillationApplied:{reference.Metadata.DistillationApplied}");
-            if (reference.Metadata.DistillationApplied)
-            {
-                sb.AppendLine($"##DistillationSensitivity:{reference.Metadata.DistillationSensitivity:F2}");
-                sb.AppendLine($"##CellsReclassified:{reference.Metadata.CellsReclassified}");
-            }
             sb.AppendLine();
 
             var cellTypes = reference.GetOrderedCellTypes();

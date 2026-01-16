@@ -15,7 +15,7 @@ namespace TransmutationLearning
         {
             var results = new List<CellClassification>();
             var lines = File.ReadAllLines(filePath);
-            
+
             if (lines.Length < 2)
                 throw new Exception("File must have header and at least one data row");
 
@@ -23,7 +23,7 @@ namespace TransmutationLearning
             var header = lines[0].Split('\t')
                 .Select(h => h.Trim().Trim('"'))
                 .ToArray();
-            
+
             // Find special columns
             int runIndex = -1;
             int labelsIndex = -1;
@@ -34,9 +34,9 @@ namespace TransmutationLearning
             for (int i = 0; i < header.Length; i++)
             {
                 var col = header[i].Trim();
-                
+
                 // Handle different possible column names
-                if (col.Equals("Run", StringComparison.OrdinalIgnoreCase) || 
+                if (col.Equals("Run", StringComparison.OrdinalIgnoreCase) ||
                     col.Equals("cell", StringComparison.OrdinalIgnoreCase) ||
                     col.Equals("", StringComparison.OrdinalIgnoreCase) && i == 0)
                 {
@@ -56,7 +56,7 @@ namespace TransmutationLearning
                 {
                     prunedIndex = i;
                 }
-                else if (!col.StartsWith("scores.") && !col.Equals("labels") && 
+                else if (!col.StartsWith("scores.") && !col.Equals("labels") &&
                          !col.Equals("delta.next") && !col.Equals("pruned.labels"))
                 {
                     // Assume it's a score column (cell type name)
@@ -74,7 +74,7 @@ namespace TransmutationLearning
                         }
                     }
                 }
-                
+
                 // Handle scores.CellType format
                 if (col.StartsWith("scores."))
                 {
@@ -101,15 +101,15 @@ namespace TransmutationLearning
                 var classification = new CellClassification
                 {
                     Run = parts[runIndex].Trim().Trim('"'),
-                    Labels = labelsIndex >= 0 && labelsIndex < parts.Length 
-                        ? parts[labelsIndex].Trim().Trim('"') 
+                    Labels = labelsIndex >= 0 && labelsIndex < parts.Length
+                        ? parts[labelsIndex].Trim().Trim('"')
                         : "",
-                    DeltaNext = deltaIndex >= 0 && deltaIndex < parts.Length && 
+                    DeltaNext = deltaIndex >= 0 && deltaIndex < parts.Length &&
                                 double.TryParse(parts[deltaIndex].Trim().Trim('"'), out double delta)
-                        ? delta 
+                        ? delta
                         : 0,
-                    PrunedLabels = prunedIndex >= 0 && prunedIndex < parts.Length 
-                        ? parts[prunedIndex].Trim().Trim('"') 
+                    PrunedLabels = prunedIndex >= 0 && prunedIndex < parts.Length
+                        ? parts[prunedIndex].Trim().Trim('"')
                         : ""
                 };
 
@@ -121,6 +121,9 @@ namespace TransmutationLearning
                         classification.Scores[cellType] = score;
                     }
                 }
+
+                // Compute rankings for Distillation feature
+                classification.ComputeRankings();
 
                 results.Add(classification);
             }

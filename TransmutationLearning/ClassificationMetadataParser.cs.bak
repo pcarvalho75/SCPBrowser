@@ -134,7 +134,8 @@ namespace TransmutationLearning
         public static List<string> GetCellTypes(List<CellClassification> classifications)
         {
             return classifications
-                .SelectMany(c => c.Scores.Keys)
+                .Select(c => c.Labels)
+                .Where(l => !string.IsNullOrEmpty(l))
                 .Distinct()
                 .OrderBy(s => s)
                 .ToList();

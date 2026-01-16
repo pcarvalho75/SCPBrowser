@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TransmutationLearning.Services;
 
 namespace TransmutationLearning
 {
@@ -55,6 +56,17 @@ namespace TransmutationLearning
         public double MinConfidence { get; set; } = 0.60;
         public double PriorInfluence { get; set; } = 0.50;
         public int ProtectionRank { get; set; } = 2;
+
+        // Dual-mode similarity: "Dark Matter" metric
+        // Weight for detection pattern (Jaccard) vs intensity (Cosine)
+        // 0 = pure intensity, 1 = pure detection pattern, 0.3 = recommended default
+        public double DetectionPatternWeight { get; set; } = 0.30;
+
+        // Biological Gravity: PPI-informed similarity
+        // PPIService instance (null = disabled)
+        public PPIService PPIService { get; set; } = null;
+        // Weight for PPI boost (0 = no effect, higher = more biological gravity)
+        public double PPIWeight { get; set; } = 0.0;
     }
 
     /// <summary>
@@ -155,7 +167,10 @@ namespace TransmutationLearning
                 settings.PriorInfluence,
                 settings.MinConfidence,
                 settings.ProtectionRank,
-                bootstrapProteins);
+                bootstrapProteins,
+                settings.DetectionPatternWeight,
+                settings.PPIService,
+                settings.PPIWeight);
 
             result.History.Add(new IterationSummary
             {
@@ -225,7 +240,10 @@ namespace TransmutationLearning
                     settings.PriorInfluence,
                     settings.MinConfidence,
                     settings.ProtectionRank,
-                    markerProteins);
+                    markerProteins,
+                    settings.DetectionPatternWeight,
+                    settings.PPIService,
+                    settings.PPIWeight);
 
                 // Check convergence
                 int changed = CountLabelChanges(previousLabelMap, currentLabels.DistilledLabels);

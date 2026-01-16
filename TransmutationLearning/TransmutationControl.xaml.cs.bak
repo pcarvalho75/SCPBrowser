@@ -4,6 +4,7 @@ using SCPBrowser.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -32,6 +33,9 @@ namespace TransmutationLearning
         private IterativeDistillationService _iterativeDistillationService = new IterativeDistillationService();
         private List<ExpectedCellTypeItem> _expectedDistributionItems = new List<ExpectedCellTypeItem>();
         private Point _dragStartPoint;
+
+        // PPI Service (Biological Gravity)
+        private PPIService _ppiService = new PPIService();
         private List<ProteinStatistics> _autoSelectedMarkers = null;
 
         // Sticky order: remembers user's expected distribution order across data reloads
@@ -974,6 +978,158 @@ namespace TransmutationLearning
             }
         }
 
+        private async void RunCrossValidation_Click(object sender, RoutedEventArgs e)
+        {
+            if (_featureResult == null || _featureResult.SelectedMarkers.Count == 0)
+            {
+                MessageBox.Show("No markers selected. Please select markers first.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (Dataset?.ProteinMatrix == null || FilteredData?.RetainedCells == null)
+            {
+                MessageBox.Show("No data available for validation.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                RunCrossValidationButton.IsEnabled = false;
+                LoadingOverlay.Visibility = Visibility.Visible;
+                LoadingText.Text = "Running 5-fold cross-validation...";
+
+                // Build effective labels (distilled if available, otherwise original)
+                Dictionary<string, string> effectiveLabels;
+                if (DistilledData != null && DistilledData.DistillationApplied)
+                {
+                    effectiveLabels = DistilledData.DistilledLabels;
+                }
+                else
+                {
+                    effectiveLabels = FilteredData.RetainedCells
+                        .ToDictionary(c => c.Run, c => c.Labels);
+                }
+
+                // Exclude "Unassigned" cells from validation
+                var cellsForValidation = FilteredData.RetainedCells
+                    .Where(c => effectiveLabels.TryGetValue(c.Run, out var label) && label != "Unassigned")
+                    .ToList();
+
+                var labelsForValidation = effectiveLabels
+                    .Where(kvp => kvp.Value != "Unassigned")
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                // Run cross-validation
+                var cvResult = await Task.Run(() =>
+                    _validationService.RunCrossValidation(
+                        cellsForValidation,
+                        Dataset.ProteinMatrix,
+                        _featureResult.SelectedMarkers,
+                        labelsForValidation,
+                        k: 5));
+
+                // Display results
+                DisplayCrossValidationResults(cvResult);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error during cross-validation: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                RunCrossValidationButton.IsEnabled = true;
+                LoadingOverlay.Visibility = Visibility.Collapsed;
+                LoadingText.Text = "Loading...";
+            }
+        }
+
+        private void DisplayCrossValidationResults(CrossValidationResult result)
+        {
+            CVResultsPanel.Visibility = Visibility.Visible;
+
+            if (!result.IsValid)
+            {
+                CVAccuracyText.Text = "-";
+                CVStdText.Text = "-";
+                CVStatusText.Text = "Error";
+                CVStatusText.Foreground = Brushes.Red;
+                CVWarningText.Text = result.ErrorMessage;
+                CVWarningText.Visibility = Visibility.Visible;
+                return;
+            }
+
+            // Show accuracy
+            CVAccuracyText.Text = $"{result.MeanAccuracy:P1}";
+            CVStdText.Text = $"± {result.StdAccuracy:P1}";
+
+            if (result.PassesValidation)
+            {
+                CVStatusText.Text = "✓ PASSED";
+                CVStatusText.Foreground = new SolidColorBrush(Color.FromRgb(22, 163, 74)); // Green
+                CVWarningText.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                CVStatusText.Text = "⚠ WARNING";
+                CVStatusText.Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38)); // Red
+                CVWarningText.Text = result.WarningMessage;
+                CVWarningText.Visibility = Visibility.Visible;
+            }
+
+            // Show per-fold accuracy
+            PerFoldAccuracyPanel.Children.Clear();
+            for (int i = 0; i < result.FoldAccuracies.Count; i++)
+            {
+                var accuracy = result.FoldAccuracies[i];
+                var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+
+                // Fold label
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"Fold {i + 1}:",
+                    Width = 50,
+                    FontSize = 10
+                });
+
+                // Accuracy bar
+                var barBorder = new Border
+                {
+                    Width = 80,
+                    Height = 10,
+                    Background = Brushes.LightGray,
+                    CornerRadius = new CornerRadius(2),
+                    Margin = new Thickness(5, 0, 5, 0)
+                };
+                var barFill = new Border
+                {
+                    Width = 80 * accuracy,
+                    Height = 10,
+                    Background = accuracy >= 0.8
+                        ? new SolidColorBrush(Color.FromRgb(34, 197, 94))  // Green
+                        : accuracy >= 0.6
+                            ? new SolidColorBrush(Color.FromRgb(250, 204, 21)) // Yellow
+                            : new SolidColorBrush(Color.FromRgb(239, 68, 68)), // Red
+                    CornerRadius = new CornerRadius(2),
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                barBorder.Child = barFill;
+                panel.Children.Add(barBorder);
+
+                // Percentage
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"{accuracy:P0}",
+                    FontSize = 10,
+                    FontWeight = FontWeights.SemiBold
+                });
+
+                PerFoldAccuracyPanel.Children.Add(panel);
+            }
+        }
+
         #endregion
 
         #region Distillation (Phase 2)
@@ -1094,6 +1250,159 @@ namespace TransmutationLearning
             else
                 SensitivityHintText.Text = "(prior dominates)";
         }
+
+        private void DetectionPatternSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (DetectionWeightValueText == null || DetectionWeightHintText == null) return;
+
+            DetectionWeightValueText.Text = e.NewValue.ToString("F2");
+
+            // Update hint text for detection pattern weight ("Dark Matter" metric)
+            if (e.NewValue < 0.1)
+                DetectionWeightHintText.Text = "(intensity only)";
+            else if (e.NewValue < 0.25)
+                DetectionWeightHintText.Text = "(mild pattern influence)";
+            else if (e.NewValue < 0.4)
+                DetectionWeightHintText.Text = "(recommended)";
+            else if (e.NewValue < 0.55)
+                DetectionWeightHintText.Text = "(strong pattern influence)";
+            else
+                DetectionWeightHintText.Text = "(pattern dominant)";
+        }
+
+        #region PPI (Biological Gravity)
+
+        private async void PPIDownload_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                PPIDownloadButton.IsEnabled = false;
+                PPIDownloadProgress.Visibility = Visibility.Visible;
+                PPIStatusPanel.Visibility = Visibility.Collapsed;
+
+                // Set data directory (same as parquet file location, or AppData)
+                string dataDir = !string.IsNullOrEmpty(ParquetPathTextBox?.Text)
+                    ? System.IO.Path.GetDirectoryName(ParquetPathTextBox.Text)
+                    : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TransmutationLearning", "STRING");
+
+                _ppiService.SetDataDirectory(dataDir);
+
+                // Download with progress
+                var progress = new Progress<(string status, double percent)>(p =>
+                {
+                    PPIProgressText.Text = p.status;
+                    PPIProgressBar.Value = p.percent;
+                });
+
+                await _ppiService.DownloadDataAsync(progress, System.Threading.CancellationToken.None);
+
+                // Load the data
+                PPIProgressText.Text = "Loading PPI data...";
+                await _ppiService.LoadDataAsync(progress, System.Threading.CancellationToken.None);
+
+                // Update UI
+                UpdatePPIStatus();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error downloading STRING data: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                PPIStatusText.Text = "Download failed";
+                PPIDetailsText.Text = ex.Message;
+            }
+            finally
+            {
+                PPIDownloadButton.IsEnabled = true;
+                PPIDownloadProgress.Visibility = Visibility.Collapsed;
+                PPIStatusPanel.Visibility = Visibility.Visible;
+            }
+        }
+
+        private void PPIWeightSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (PPIWeightValueText == null || PPIWeightHintText == null) return;
+
+            PPIWeightValueText.Text = e.NewValue.ToString("F2");
+
+            // Update hint text
+            if (e.NewValue < 0.1)
+                PPIWeightHintText.Text = "(disabled)";
+            else if (e.NewValue < 0.3)
+                PPIWeightHintText.Text = "(mild biology)";
+            else if (e.NewValue < 0.6)
+                PPIWeightHintText.Text = "(balanced)";
+            else if (e.NewValue < 0.8)
+                PPIWeightHintText.Text = "(strong biology)";
+            else
+                PPIWeightHintText.Text = "(biology dominant)";
+        }
+
+        private void UpdatePPIStatus()
+        {
+            if (_ppiService.IsLoaded)
+            {
+                PPIStatusText.Text = $"✓ STRING data loaded";
+                PPIDetailsText.Text = $"{_ppiService.TotalInteractions:N0} interactions, {_ppiService.TotalProteins:N0} proteins";
+                PPIDownloadButton.Content = "Reload";
+                PPIWeightPanel.Visibility = Visibility.Visible;
+
+                // Show mapping stats if we have data
+                if (Dataset?.ProteinMatrix != null)
+                {
+                    var (mapped, total) = _ppiService.GetMappingStats(Dataset.ProteinMatrix.Keys);
+                    PPIMappingText.Text = $"Mapped {mapped:N0} of {total:N0} proteins ({100.0 * mapped / total:F1}%)";
+                }
+            }
+            else
+            {
+                PPIStatusText.Text = "STRING data not loaded";
+                PPIDetailsText.Text = "Download ~35MB to enable biological context";
+                PPIDownloadButton.Content = "Download STRING Data";
+                PPIWeightPanel.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private double GetPPIWeight()
+        {
+            if (!_ppiService.IsLoaded || PPIWeightSlider == null)
+                return 0.0;
+            return PPIWeightSlider.Value;
+        }
+
+        private PPIService GetPPIServiceIfEnabled()
+        {
+            if (!_ppiService.IsLoaded || GetPPIWeight() < 0.01)
+                return null;
+            return _ppiService;
+        }
+
+        /// <summary>
+        /// Try to load PPI data if it exists locally (called during initialization)
+        /// </summary>
+        private async Task TryLoadExistingPPIData()
+        {
+            try
+            {
+                string dataDir = !string.IsNullOrEmpty(ParquetPathTextBox?.Text)
+                    ? System.IO.Path.GetDirectoryName(ParquetPathTextBox.Text)
+                    : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TransmutationLearning", "STRING");
+
+                _ppiService.SetDataDirectory(dataDir);
+
+                if (_ppiService.DataFilesExist())
+                {
+                    PPIStatusText.Text = "Loading existing STRING data...";
+                    await _ppiService.LoadDataAsync(null, System.Threading.CancellationToken.None);
+                    UpdatePPIStatus();
+                }
+            }
+            catch
+            {
+                // Silently ignore - PPI is optional
+            }
+        }
+
+        #endregion
 
         private void MoveExpectedUp_Click(object sender, RoutedEventArgs e)
         {
@@ -1222,6 +1531,9 @@ namespace TransmutationLearning
             double sensitivity = SensitivitySlider.Value;
             double minConfidence = GetMinConfidence();
             int protectionRank = GetProtectionRank();
+            double detectionWeight = GetDetectionPatternWeight();
+            var ppiService = GetPPIServiceIfEnabled();
+            double ppiWeight = GetPPIWeight();
 
             var (wouldReclassify, newDistribution) = _distillationService.PreviewKnnDistillation(
                 FilteredData.RetainedCells,
@@ -1230,7 +1542,11 @@ namespace TransmutationLearning
                 k,
                 sensitivity,
                 minConfidence,
-                protectionRank);
+                protectionRank,
+                null, // no protein subset
+                detectionWeight,
+                ppiService,
+                ppiWeight);
 
             ReclassifiedCountText.Text = wouldReclassify.ToString();
             ReclassifiedPercentText.Text = $"({(wouldReclassify * 100.0 / FilteredData.TotalRetained):F1}%)";
@@ -1243,6 +1559,15 @@ namespace TransmutationLearning
         {
             if (ProtectionRankCombo == null) return 2; // Default
             return ProtectionRankCombo.SelectedIndex; // 0 = None, 1 = Top 1, 2 = Top 2, etc.
+        }
+
+        /// <summary>
+        /// Gets detection pattern weight from slider (0-0.7, "Dark Matter" metric)
+        /// </summary>
+        private double GetDetectionPatternWeight()
+        {
+            if (DetectionPatternSlider == null) return 0.3; // Default
+            return DetectionPatternSlider.Value;
         }
 
         /// <summary>
@@ -1337,6 +1662,9 @@ namespace TransmutationLearning
                 double sensitivity = SensitivitySlider.Value;
                 double minConfidence = GetMinConfidence();
                 int protectionRank = GetProtectionRank();
+                double detectionWeight = GetDetectionPatternWeight();
+                var ppiService = GetPPIServiceIfEnabled();
+                double ppiWeight = GetPPIWeight();
 
                 await System.Threading.Tasks.Task.Run(() =>
                 {
@@ -1347,7 +1675,11 @@ namespace TransmutationLearning
                         k,
                         sensitivity,
                         minConfidence,
-                        protectionRank);
+                        protectionRank,
+                        null, // no protein subset
+                        detectionWeight,
+                        ppiService,
+                        ppiWeight);
                 });
 
                 // Clear auto-selected markers (manual distillation doesn't auto-select)
@@ -1414,6 +1746,28 @@ namespace TransmutationLearning
                 return;
             }
 
+            // RAM usage warning for large datasets
+            // The similarity matrix is O(N²): 15k cells = ~1.8GB, 20k cells = ~3.2GB
+            int cellCount = FilteredData.TotalRetained;
+            if (cellCount > 15000)
+            {
+                long estimatedBytes = (long)cellCount * cellCount * sizeof(double);
+                double estimatedGB = estimatedBytes / (1024.0 * 1024.0 * 1024.0);
+
+                var result = MessageBox.Show(
+                    $"Warning: Your dataset has {cellCount:N0} cells.\n\n" +
+                    $"The distillation algorithm requires computing a pairwise similarity matrix, " +
+                    $"which will use approximately {estimatedGB:F1} GB of RAM.\n\n" +
+                    $"This may cause the application to crash or become unresponsive on systems with limited memory.\n\n" +
+                    $"Do you want to proceed?",
+                    "Large Dataset Warning",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (result != MessageBoxResult.Yes)
+                    return;
+            }
+
             try
             {
                 // Disable buttons during processing
@@ -1432,7 +1786,8 @@ namespace TransmutationLearning
                     K = GetKNeighbors(),
                     MinConfidence = GetMinConfidence(),
                     PriorInfluence = SensitivitySlider.Value,
-                    ProtectionRank = GetProtectionRank()
+                    ProtectionRank = GetProtectionRank(),
+                    DetectionPatternWeight = GetDetectionPatternWeight()
                 };
 
                 var expectedDist = BuildExpectedDistribution();

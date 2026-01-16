@@ -6,11 +6,128 @@ namespace TransmutationLearning
 {
     /// <summary>
     /// Service for validating the quality of transmutation learning results.
-    /// Implements self-consistency check by applying the generated classifier
-    /// back to training data and measuring agreement.
+    /// Implements self-consistency check and cross-validation.
     /// </summary>
     public class ValidationService
     {
+        private readonly Random _random = new Random(42); // Fixed seed for reproducibility
+
+        /// <summary>
+        /// Run k-fold cross-validation on the selected markers.
+        /// This provides a true measure of predictive power by testing on held-out data.
+        /// </summary>
+        /// <param name="retainedCells">Cells to validate</param>
+        /// <param name="proteinMatrix">Protein expression matrix</param>
+        /// <param name="selectedMarkers">Markers selected for the classifier</param>
+        /// <param name="effectiveLabels">Labels to validate against</param>
+        /// <param name="k">Number of folds (default 5)</param>
+        /// <returns>Cross-validation result with per-fold accuracies</returns>
+        public CrossValidationResult RunCrossValidation(
+            List<CellClassification> retainedCells,
+            Dictionary<string, Dictionary<string, double>> proteinMatrix,
+            List<ProteinStatistics> selectedMarkers,
+            Dictionary<string, string> effectiveLabels,
+            int k = 5)
+        {
+            var result = new CrossValidationResult { NumFolds = k };
+
+            if (selectedMarkers == null || selectedMarkers.Count == 0)
+            {
+                result.IsValid = false;
+                result.ErrorMessage = "No markers selected";
+                return result;
+            }
+
+            if (retainedCells.Count < k * 2)
+            {
+                result.IsValid = false;
+                result.ErrorMessage = $"Too few cells ({retainedCells.Count}) for {k}-fold cross-validation";
+                return result;
+            }
+
+            var markerProteins = selectedMarkers.Select(m => m.ProteinName).ToList();
+
+            // Shuffle cells for random fold assignment
+            var shuffledCells = retainedCells.OrderBy(_ => _random.Next()).ToList();
+
+            // Assign cells to folds
+            var folds = new List<List<CellClassification>>();
+            for (int i = 0; i < k; i++)
+                folds.Add(new List<CellClassification>());
+
+            for (int i = 0; i < shuffledCells.Count; i++)
+                folds[i % k].Add(shuffledCells[i]);
+
+            // Run k-fold CV
+            for (int fold = 0; fold < k; fold++)
+            {
+                // Test set: current fold
+                var testCells = folds[fold];
+
+                // Training set: all other folds
+                var trainCells = folds
+                    .Where((_, idx) => idx != fold)
+                    .SelectMany(f => f)
+                    .ToList();
+
+                // Build centroids from training set
+                var centroids = BuildCentroids(trainCells, proteinMatrix, markerProteins, effectiveLabels);
+
+                if (centroids.Count < 2)
+                {
+                    result.FoldAccuracies.Add(0);
+                    continue;
+                }
+
+                // Classify test cells
+                int correct = 0;
+                int total = 0;
+
+                foreach (var cell in testCells)
+                {
+                    if (!effectiveLabels.TryGetValue(cell.Run, out var trueLabel))
+                        continue;
+
+                    var cellVector = GetCellVector(cell.Run, proteinMatrix, markerProteins);
+                    if (cellVector == null)
+                        continue;
+
+                    var (predictedLabel, _) = ClassifyByNearestCentroid(cellVector, centroids);
+
+                    total++;
+                    if (predictedLabel == trueLabel)
+                        correct++;
+                }
+
+                double foldAccuracy = total > 0 ? (double)correct / total : 0;
+                result.FoldAccuracies.Add(foldAccuracy);
+            }
+
+            // Compute summary statistics
+            if (result.FoldAccuracies.Count > 0)
+            {
+                result.MeanAccuracy = result.FoldAccuracies.Average();
+                result.StdAccuracy = Math.Sqrt(result.FoldAccuracies
+                    .Select(x => Math.Pow(x - result.MeanAccuracy, 2))
+                    .Average());
+            }
+
+            result.IsValid = true;
+            result.PassesValidation = result.MeanAccuracy >= 0.75;
+
+            if (!result.PassesValidation)
+            {
+                result.WarningMessage = $"Cross-validation accuracy: {result.MeanAccuracy:P1} ± {result.StdAccuracy:P1}\n\n" +
+                    $"This suggests the markers may not generalize well to unseen cells.\n" +
+                    $"Consider:\n" +
+                    $"• Selecting more robust markers\n" +
+                    $"• Checking for batch effects\n" +
+                    $"• Reviewing cell type annotations";
+            }
+
+            return result;
+        }
+
         /// <summary>
         /// Run self-consistency validation on the selected markers.
         /// Builds a centroid classifier from training data and re-classifies
@@ -106,9 +223,15 @@ namespace TransmutationLearning
             // Generate warning message if needed
             if (!result.PassesValidation)
             {
-                result.WarningMessage = $"Self-consistency check failed: {result.AgreementRate:P1} agreement " +
-                    $"(threshold: 80%). The generated classifier may not reliably reproduce the training labels. " +
-                    $"Consider reviewing marker selection or adjusting confidence thresholds.";
+                result.WarningMessage = $"Self-consistency check: {result.AgreementRate:P1} agreement " +
+                    $"(threshold: 80%).\n\n" +
+                    $"This may indicate:\n" +
+                    $"• Noisy or poorly separated clusters\n" +
+                    $"• Complex non-spherical cluster shapes (e.g., developmental trajectories)\n" +
+                    $"• Insufficient marker coverage for some cell types\n\n" +
+                    $"Note: Centroid-based validation assumes spherical clusters. " +
+                    $"Trajectory-like data (e.g., differentiating cells) may fail validation " +
+                    $"even when the classifier is valid.";
             }
 
             return result;

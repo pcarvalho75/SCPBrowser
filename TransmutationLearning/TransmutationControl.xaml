@@ -78,7 +78,7 @@
         </Border>
 
         <!-- Main Content TabControl (visible after loading) -->
-        <TabControl x:Name="MainTabControl" Grid.Row="1" Visibility="Collapsed">
+        <TabControl x:Name="MainTabControl" Grid.Row="1" Visibility="Collapsed" SelectionChanged="MainTabControl_SelectionChanged">
 
             <!-- Tab 1: Confidence Filtering -->
             <TabItem Header="1. Confidence Filtering">
@@ -441,7 +441,7 @@
                                 <!-- Prior Influence (Sensitivity) -->
                                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
                                     <TextBlock Text="Prior Influence:" FontWeight="SemiBold" VerticalAlignment="Center"
-                                               ToolTip="Controls how much your expected distribution influences neighbor voting. 0 = pure kNN (data only), 1 = strong prior influence."/>
+                                               ToolTip="Controls the balance between proteomic data and your expected distribution. 0 = pure kNN (neighbors only), 1 = prior dominates (respects your ordering)."/>
                                     <TextBlock x:Name="SensitivityValueText" Text="0.50" FontWeight="Bold" FontSize="14"
                                                Foreground="#059669" Margin="8,0,0,0" VerticalAlignment="Center"/>
                                 </StackPanel>
@@ -450,12 +450,12 @@
                                         Minimum="0" Maximum="1" Value="0.5"
                                         TickFrequency="0.1" IsSnapToTickEnabled="False"
                                         ValueChanged="SensitivitySlider_ValueChanged"
-                                        ToolTip="0 = Trust neighbors only, 1 = Expected types get 2x vote weight"/>
+                                        ToolTip="0 = Trust neighbors only, 1 = Prior dominates (respects your ordering)"/>
 
                                 <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,4,0,0">
                                     <TextBlock Text="Pure kNN" FontSize="10" Foreground="#666"/>
                                     <TextBlock Text="→" Margin="5,0" Foreground="#CCC"/>
-                                    <TextBlock Text="Strong Prior" FontSize="10" Foreground="#666"/>
+                                    <TextBlock Text="Prior Dominates" FontSize="10" Foreground="#666"/>
                                     <TextBlock x:Name="SensitivityHintText" Text="(balanced)" FontSize="10" Foreground="#059669" Margin="20,0,0,0"/>
                                 </StackPanel>
 
@@ -513,33 +513,77 @@
                         <!-- Run Distillation Button and Stats -->
                         <Border Grid.Row="3" Background="#F8F9FA" CornerRadius="4" Padding="10" Margin="0,10,0,0">
                             <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
 
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="Reclassified:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="ReclassifiedCountText" Text="0" FontWeight="Bold" FontSize="14"
-                                               Foreground="#D97706" Margin="8,0,20,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="of" Style="{StaticResource StatLabel}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                    <TextBlock x:Name="DistillationTotalText" Text="0" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="ReclassifiedPercentText" Text="(0%)" FontSize="11" Foreground="#666"
-                                               Margin="8,0,0,0" VerticalAlignment="Center"/>
-                                </StackPanel>
+                                <Grid Grid.Row="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
 
-                                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                    <Button x:Name="PreviewDistillationButton" Content="Preview" Padding="12,8" Margin="0,0,8,0"
-                                            Click="PreviewDistillation_Click"
-                                            ToolTip="Preview how many cells would be reclassified without applying changes"/>
-                                    <Button x:Name="RunDistillationButton" Content="Run Distillation" Padding="15,8"
-                                            Background="#D97706" Foreground="White" BorderThickness="0"
-                                            Click="RunDistillation_Click"
-                                            ToolTip="Apply distillation and reclassify cells based on sensitivity and expected distribution"/>
-                                    <Button x:Name="SkipDistillationButton" Content="Skip →" Padding="12,8" Margin="8,0,0,0"
-                                            Click="SkipDistillation_Click"
-                                            ToolTip="Skip distillation and proceed to feature selection with original labels"/>
-                                </StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Reclassified:" Style="{StaticResource StatLabel}" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="ReclassifiedCountText" Text="0" FontWeight="Bold" FontSize="14"
+                                                   Foreground="#D97706" Margin="8,0,20,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="of" Style="{StaticResource StatLabel}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock x:Name="DistillationTotalText" Text="0" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="ReclassifiedPercentText" Text="(0%)" FontSize="11" Foreground="#666"
+                                                   Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <Button x:Name="RunSmartDistillationButton" Content="▶ Smart Distillation" Padding="15,8"
+                                                Background="#059669" Foreground="White" BorderThickness="0" FontWeight="Bold"
+                                                Click="RunSmartDistillation_Click"
+                                                ToolTip="Automatic iterative distillation with self-adjusting marker selection. Recommended for most use cases."/>
+                                        <Button x:Name="PreviewDistillationButton" Content="Preview" Padding="12,8" Margin="8,0,0,0"
+                                                Click="PreviewDistillation_Click"
+                                                ToolTip="Preview how many cells would be reclassified without applying changes"/>
+                                        <Button x:Name="RunDistillationButton" Content="Manual" Padding="12,8" Margin="8,0,0,0"
+                                                Click="RunDistillation_Click"
+                                                ToolTip="Single-pass distillation using all proteins (advanced users)"/>
+                                        <Button x:Name="SkipDistillationButton" Content="Skip →" Padding="12,8" Margin="8,0,0,0"
+                                                Click="SkipDistillation_Click"
+                                                ToolTip="Skip distillation and proceed to feature selection with original labels"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Smart Distillation Progress Panel (initially hidden) -->
+                                <Border x:Name="IterationProgressPanel" Grid.Row="1" Visibility="Collapsed"
+                                        Background="#ECFDF5" CornerRadius="4" Padding="10" Margin="0,10,0,0">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <StackPanel Grid.Row="0" Orientation="Horizontal">
+                                            <TextBlock x:Name="IterationStatusText" Text="Initializing..." FontWeight="SemiBold" Foreground="#047857"/>
+                                        </StackPanel>
+
+                                        <ProgressBar x:Name="IterationProgressBar" Grid.Row="1" Height="8" Margin="0,8,0,0"
+                                                     Foreground="#10B981" Background="#D1FAE5"/>
+
+                                        <!-- Iteration History -->
+                                        <ItemsControl x:Name="IterationHistoryList" Grid.Row="2" Margin="0,10,0,0" FontSize="10">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                        <TextBlock Text="{Binding Iteration, StringFormat=Iter {0}:}" FontWeight="SemiBold" Width="45" Foreground="#065F46"/>
+                                                        <TextBlock Text="{Binding ProteinsUsed, StringFormat={}{0} proteins}" Width="80" Foreground="#047857"/>
+                                                        <TextBlock Text="{Binding MarkersSelected, StringFormat=→ {0} markers}" Width="80" Foreground="#047857"/>
+                                                        <TextBlock Text="{Binding ChangePercent, StringFormat={}{0:F1}% changed}" Width="80" Foreground="#047857"/>
+                                                        <TextBlock Text="{Binding Notes}" Foreground="#6B7280" FontStyle="Italic"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Grid>
+                                </Border>
                             </Grid>
                         </Border>
                     </Grid>
@@ -623,12 +667,34 @@
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
+                    <!-- Auto-Selected Markers Banner (shown after Smart Distillation) -->
+                    <Border x:Name="AutoSelectedMarkersBanner" Grid.Row="0" Background="#DBEAFE" CornerRadius="4"
+                            Padding="12" Margin="0,0,0,10" Visibility="Collapsed">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="✓" FontWeight="Bold" Foreground="#1D4ED8" FontSize="14" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="AutoSelectedMarkersText" Text="Auto-selected 0 markers from Smart Distillation."
+                                           FontWeight="SemiBold" Foreground="#1E40AF" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text=" Review and adjust if needed." Foreground="#3B82F6" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <Button x:Name="ApplyAutoMarkersButton" Grid.Column="1" Content="Apply Auto-Selected"
+                                    Padding="12,6" Background="#2563EB" Foreground="White" BorderThickness="0"
+                                    Click="ApplyAutoMarkers_Click"
+                                    ToolTip="Select the markers that were automatically chosen by Smart Distillation"/>
+                        </Grid>
+                    </Border>
+
                     <!-- Selection Criteria Panel -->
-                    <Border Grid.Row="0" Background="#F0FDF4" CornerRadius="4" Padding="12" Margin="0,0,0,10">
+                    <Border Grid.Row="1" Background="#F0FDF4" CornerRadius="4" Padding="12" Margin="0,0,0,10">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -692,7 +758,7 @@
                     </Border>
 
                     <!-- Protein Statistics Grid -->
-                    <Border Grid.Row="1" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
+                    <Border Grid.Row="2" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -747,7 +813,7 @@
                     </Border>
 
                     <!-- Bottom: Selection Summary and Export -->
-                    <Border Grid.Row="2" Background="#F8F9FA" CornerRadius="4" Padding="10" Margin="0,10,0,0">
+                    <Border Grid.Row="3" Background="#F8F9FA" CornerRadius="4" Padding="10" Margin="0,10,0,0">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>

@@ -306,18 +306,12 @@ namespace TransmutationLearning
                 weightedVotes[label] += actualVotes * actualWeight;
             }
 
-            // Find winning label and runner-up
+            // Find winning label
+            double totalWeightedVotes = weightedVotes.Values.Sum();
             var sortedVotes = weightedVotes.OrderByDescending(kvp => kvp.Value).ToList();
             string winnerLabel = sortedVotes[0].Key;
             double winnerVotes = sortedVotes[0].Value;
-            double runnerUpVotes = sortedVotes.Count > 1 ? sortedVotes[1].Value : 0;
-
-            // Calculate confidence as winner's margin over runner-up
-            // This ensures high prior influence can actually cause reclassification
-            // confidence = winner / (winner + runner-up), ranges from 0.5 (tie) to 1.0 (dominant)
-            double confidence = (winnerVotes + runnerUpVotes) > 0
-                ? winnerVotes / (winnerVotes + runnerUpVotes)
-                : 0.5;
+            double confidence = winnerVotes / totalWeightedVotes;
 
             // Record vote details
             int rawWinnerVotes = votes.TryGetValue(winnerLabel, out var rv) ? (int)rv : 0;

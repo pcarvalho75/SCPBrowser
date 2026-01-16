@@ -25,8 +25,10 @@ namespace TransmutationLearning
 
         // Distillation
         private KnnDistillationService _distillationService = new KnnDistillationService();
+        private IterativeDistillationService _iterativeDistillationService = new IterativeDistillationService();
         private List<ExpectedCellTypeItem> _expectedDistributionItems = new List<ExpectedCellTypeItem>();
         private Point _dragStartPoint;
+        private List<ProteinStatistics> _autoSelectedMarkers = null;
 
         // Sticky order: remembers user's expected distribution order across data reloads
         private static List<string> _savedExpectedOrder = new List<string>();
@@ -54,6 +56,18 @@ namespace TransmutationLearning
         {
             InitializeComponent();
             SizeChanged += (s, e) => RedrawCharts();
+        }
+
+        private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Only respond to TabControl selection changes (not nested controls)
+            if (e.Source != MainTabControl) return;
+
+            // When navigating to Feature Selection tab (index 2), update the auto-selected markers banner
+            if (MainTabControl.SelectedIndex == 2)
+            {
+                UpdateAutoSelectedMarkersBanner();
+            }
         }
 
         #region File Loading
@@ -710,6 +724,9 @@ namespace TransmutationLearning
                 ProteinStatsGrid.ItemsSource = _featureResult.AllProteinStats;
                 UpdateFeatureSelectionSummary();
 
+                // Show auto-selected markers banner if available
+                UpdateAutoSelectedMarkersBanner();
+
                 // Enable export buttons if we have selections
                 ExportPrefButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
                 ViewPanelReportButton.IsEnabled = _featureResult.TotalMarkersSelected > 0;
@@ -728,6 +745,65 @@ namespace TransmutationLearning
                 LoadingOverlay.Visibility = Visibility.Collapsed;
                 LoadingText.Text = "Loading...";
             }
+        }
+
+        private void UpdateAutoSelectedMarkersBanner()
+        {
+            // Show banner if we have auto-selected markers (regardless of whether feature selection has run)
+            if (_autoSelectedMarkers != null && _autoSelectedMarkers.Count > 0)
+            {
+                AutoSelectedMarkersBanner.Visibility = Visibility.Visible;
+                AutoSelectedMarkersText.Text = $"Auto-selected {_autoSelectedMarkers.Count} markers from Smart Distillation.";
+            }
+            else
+            {
+                AutoSelectedMarkersBanner.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void ApplyAutoMarkers_Click(object sender, RoutedEventArgs e)
+        {
+            if (_autoSelectedMarkers == null || _autoSelectedMarkers.Count == 0)
+            {
+                MessageBox.Show("No auto-selected markers available.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // If feature selection hasn't been run yet, we need to run it first
+            if (_featureResult == null)
+            {
+                MessageBox.Show("Please click 'Run Feature Selection' first to compute protein statistics, then click 'Apply Auto-Selected' to select the markers.",
+                    "Run Feature Selection First", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Create a set of auto-selected protein names for fast lookup
+            var autoSelectedNames = new HashSet<string>(_autoSelectedMarkers.Select(m => m.ProteinName));
+
+            // Select matching proteins in the feature result
+            int matchedCount = 0;
+            foreach (var protein in _featureResult.AllProteinStats)
+            {
+                if (autoSelectedNames.Contains(protein.ProteinName))
+                {
+                    protein.IsSelected = true;
+                    matchedCount++;
+                }
+                else
+                {
+                    protein.IsSelected = false;
+                }
+            }
+
+            // Refresh grid and summary
+            ProteinStatsGrid.Items.Refresh();
+            UpdateFeatureSelectionSummary();
+
+            // Hide the banner after applying
+            AutoSelectedMarkersBanner.Visibility = Visibility.Collapsed;
+
+            MessageBox.Show($"Applied {matchedCount} of {_autoSelectedMarkers.Count} auto-selected markers.\n\nYou can review and adjust the selection in the grid below.",
+                "Markers Applied", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void SelectAllPassing_Click(object sender, RoutedEventArgs e)
@@ -1407,11 +1483,15 @@ namespace TransmutationLearning
 
             // Reset distillation state
             DistilledData = null;
+            _autoSelectedMarkers = null;
             ReclassifiedCountText.Text = "0";
             DistillationTotalText.Text = FilteredData.TotalRetained.ToString();
             ReclassifiedPercentText.Text = "(0%)";
             ReclassificationGrid.ItemsSource = null;
             TransitionSummaryPanel.Children.Clear();
+
+            // Hide iteration progress panel
+            IterationProgressPanel.Visibility = Visibility.Collapsed;
 
             // Draw initial pie charts
             DrawDistillationPieCharts();
@@ -1441,11 +1521,11 @@ namespace TransmutationLearning
             if (e.NewValue < 0.2)
                 SensitivityHintText.Text = "(pure kNN - data only)";
             else if (e.NewValue < 0.5)
-                SensitivityHintText.Text = "(slight prior influence)";
+                SensitivityHintText.Text = "(kNN + mild prior)";
             else if (e.NewValue < 0.8)
                 SensitivityHintText.Text = "(balanced)";
             else
-                SensitivityHintText.Text = "(strong prior influence)";
+                SensitivityHintText.Text = "(prior dominates)";
         }
 
         private void MoveExpectedUp_Click(object sender, RoutedEventArgs e)
@@ -1681,6 +1761,7 @@ namespace TransmutationLearning
             try
             {
                 RunDistillationButton.IsEnabled = false;
+                RunSmartDistillationButton.IsEnabled = false;
                 LoadingOverlay.Visibility = Visibility.Visible;
                 LoadingText.Text = "Computing kNN distillation...";
 
@@ -1702,6 +1783,9 @@ namespace TransmutationLearning
                         protectionRank);
                 });
 
+                // Clear auto-selected markers (manual distillation doesn't auto-select)
+                _autoSelectedMarkers = null;
+
                 // Update UI
                 ReclassifiedCountText.Text = DistilledData.ReclassifiedCount.ToString();
                 DistillationTotalText.Text = DistilledData.TotalCells.ToString();
@@ -1720,6 +1804,9 @@ namespace TransmutationLearning
                 // Redraw pie charts
                 DrawDistillationPieCharts();
 
+                // Hide iteration progress panel (if it was shown from a previous smart distillation)
+                IterationProgressPanel.Visibility = Visibility.Collapsed;
+
                 StatusText.Text = $"kNN Distillation complete. {DistilledData.ReclassifiedCount} cells reclassified.";
             }
             catch (Exception ex)
@@ -1730,6 +1817,7 @@ namespace TransmutationLearning
             finally
             {
                 RunDistillationButton.IsEnabled = true;
+                RunSmartDistillationButton.IsEnabled = true;
                 LoadingOverlay.Visibility = Visibility.Collapsed;
                 LoadingText.Text = "Loading...";
             }
@@ -1739,7 +1827,131 @@ namespace TransmutationLearning
         {
             // Move to Feature Selection tab without applying distillation
             DistilledData = null;
+            _autoSelectedMarkers = null;
             MainTabControl.SelectedIndex = 2; // Feature Selection tab
+        }
+
+        private async void RunSmartDistillation_Click(object sender, RoutedEventArgs e)
+        {
+            if (FilteredData == null || FilteredData.TotalRetained == 0)
+            {
+                MessageBox.Show("No retained cells available. Please complete confidence filtering first.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (Dataset?.ProteinMatrix == null || Dataset.ProteinMatrix.Count == 0)
+            {
+                MessageBox.Show("No protein expression data available.",
+                    "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                // Disable buttons during processing
+                RunSmartDistillationButton.IsEnabled = false;
+                RunDistillationButton.IsEnabled = false;
+                PreviewDistillationButton.IsEnabled = false;
+                SkipDistillationButton.IsEnabled = false;
+
+                // Show progress panel
+                IterationProgressPanel.Visibility = Visibility.Visible;
+                IterationHistoryList.ItemsSource = null;
+
+                // Build settings from UI
+                var settings = new IterativeDistillationSettings
+                {
+                    K = GetKNeighbors(),
+                    MinConfidence = GetMinConfidence(),
+                    PriorInfluence = SensitivitySlider.Value,
+                    ProtectionRank = GetProtectionRank()
+                };
+
+                var expectedDist = BuildExpectedDistribution();
+
+                // Create progress reporter
+                var progress = new Progress<IterationProgress>(UpdateIterationProgress);
+
+                // Run iterative distillation on background thread
+                IterativeDistillationResult result = null;
+                await System.Threading.Tasks.Task.Run(() =>
+                {
+                    result = _iterativeDistillationService.RunIterativeDistillation(
+                        FilteredData.RetainedCells,
+                        Dataset.ProteinMatrix,
+                        expectedDist,
+                        settings,
+                        progress);
+                });
+
+                // Store results
+                DistilledData = result.FinalLabels;
+                _autoSelectedMarkers = result.AutoSelectedMarkers;
+
+                // Update UI with final results
+                DisplayIterativeResults(result);
+
+                StatusText.Text = result.Converged
+                    ? $"Smart Distillation converged after {result.IterationsRun} iterations. {result.FinalMarkerCount} markers selected."
+                    : $"Smart Distillation completed {result.IterationsRun} iterations (max reached). {result.FinalMarkerCount} markers selected.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error during smart distillation: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                // Re-enable buttons
+                RunSmartDistillationButton.IsEnabled = true;
+                RunDistillationButton.IsEnabled = true;
+                PreviewDistillationButton.IsEnabled = true;
+                SkipDistillationButton.IsEnabled = true;
+            }
+        }
+
+        private void UpdateIterationProgress(IterationProgress progress)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                IterationStatusText.Text = progress.Status;
+                IterationProgressBar.Value = progress.Percent;
+            });
+        }
+
+        private void DisplayIterativeResults(IterativeDistillationResult result)
+        {
+            // Update iteration history list
+            IterationHistoryList.ItemsSource = result.History;
+
+            // Update stats
+            ReclassifiedCountText.Text = result.TotalReclassified.ToString();
+            DistillationTotalText.Text = result.TotalCells.ToString();
+            ReclassifiedPercentText.Text = result.TotalCells > 0
+                ? $"({result.TotalReclassified * 100.0 / result.TotalCells:F1}%)"
+                : "(0%)";
+
+            // Update reclassification details grid
+            if (result.FinalLabels != null)
+            {
+                ReclassificationGrid.ItemsSource = result.FinalLabels.ReclassificationHistory
+                    .Where(r => r.WasReclassified)
+                    .OrderBy(r => r.OriginalLabel)
+                    .ThenBy(r => r.DistilledLabel)
+                    .ToList();
+
+                // Update transition summary
+                UpdateTransitionSummary();
+            }
+
+            // Redraw pie charts
+            DrawDistillationPieCharts();
+
+            // Update progress panel to show completion
+            IterationStatusText.Text = result.Converged
+                ? $"✓ Converged after {result.IterationsRun} iterations with {result.FinalMarkerCount} markers"
+                : $"Completed {result.IterationsRun} iterations with {result.FinalMarkerCount} markers";
         }
 
         private void UpdateTransitionSummary()

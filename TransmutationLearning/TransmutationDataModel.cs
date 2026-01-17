@@ -456,6 +456,41 @@ namespace TransmutationLearning
                 ser += coef[j] / ++y;
             return -tmp + Math.Log(2.5066282746310005 * ser / x);
         }
+
+        /// <summary>
+        /// Benjamini-Hochberg FDR correction.
+        /// Computes q-values (FDR-adjusted p-values) for a list of p-values.
+        /// </summary>
+        /// <param name="pValues">List of raw p-values</param>
+        /// <returns>List of q-values in the same order as input</returns>
+        public static List<double> BenjaminiHochberg(List<double> pValues)
+        {
+            int n = pValues.Count;
+            if (n == 0) return new List<double>();
+
+            // Create indexed list and sort by p-value
+            var indexed = pValues
+                .Select((p, i) => (pValue: p, index: i))
+                .OrderBy(x => x.pValue)
+                .ToList();
+
+            // Compute q-values
+            var qValues = new double[n];
+            double minQ = 1.0;
+
+            // Work backwards to enforce monotonicity
+            for (int i = n - 1; i >= 0; i--)
+            {
+                int rank = i + 1;
+                double q = indexed[i].pValue * n / rank;
+                q = Math.Min(q, 1.0);
+                q = Math.Min(q, minQ);  // Enforce monotonicity
+                minQ = q;
+                qValues[indexed[i].index] = q;
+            }
+
+            return qValues.ToList();
+        }
     }
 
     #region Distillation Models
@@ -643,6 +678,7 @@ namespace TransmutationLearning
         // Global discrimination metrics
         public double KruskalWallisH { get; set; }
         public double KruskalWallisPValue { get; set; }
+        public double QValue { get; set; } = 1.0;  // FDR-corrected p-value (Benjamini-Hochberg)
 
         // Specificity metrics (like delta.next but for proteins)
         public string BestCellType { get; set; }
@@ -678,11 +714,13 @@ namespace TransmutationLearning
     public class FeatureSelectionCriteria
     {
         public double MaxPValue { get; set; } = 0.01;
+        public double MaxQValue { get; set; } = 0.05;            // FDR threshold (Benjamini-Hochberg)
         public double MinDetectionRate { get; set; } = 0.30;      // In best cell type
         public double MinSpecificityDelta { get; set; } = 0.50;
         public double MinCellFraction { get; set; } = 0.30;       // Min 30% of cells per type
         public double MaxMissingRate { get; set; } = 0.70;        // Exclude if >70% missing overall
         public bool RequireRobustness { get; set; } = true;
+        public bool UseFDR { get; set; } = true;                  // Use q-value instead of p-value
     }
 
     /// <summary>

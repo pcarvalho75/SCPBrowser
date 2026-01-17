@@ -55,15 +55,30 @@ namespace TransmutationLearning
                 .OrderBy(c => c)
                 .ToList();
 
-            // Process each protein
-            foreach (var protein in dataset.AllProteins)
+            // Determine which proteins to process
+            var proteinsToProcess = restrictToProteins != null && restrictToProteins.Count > 0
+                ? dataset.AllProteins.Where(p => restrictToProteins.Contains(p)).ToList()
+                : dataset.AllProteins;
+
+            // Process each protein (compute stats only, no filtering yet)
+            foreach (var protein in proteinsToProcess)
             {
                 var stats = ComputeSingleProteinStats(protein, dataset, retainedRuns, runToCellType, cellTypes);
-
-                // Evaluate against criteria
-                stats.PassesFilter = EvaluateCriteria(stats, criteria);
-
                 result.AllProteinStats.Add(stats);
+            }
+
+            // Compute FDR-corrected q-values using Benjamini-Hochberg
+            var pValues = result.AllProteinStats.Select(p => p.KruskalWallisPValue).ToList();
+            var qValues = StatisticsHelper.BenjaminiHochberg(pValues);
+            for (int i = 0; i < result.AllProteinStats.Count; i++)
+            {
+                result.AllProteinStats[i].QValue = qValues[i];
+            }
+
+            // Now evaluate criteria (using q-values if UseFDR is enabled)
+            foreach (var stats in result.AllProteinStats)
+            {
+                stats.PassesFilter = EvaluateCriteria(stats, criteria);
             }
 
             // Sort by weighted specificity score descending (detection-weighted)

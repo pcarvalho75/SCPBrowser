@@ -529,7 +529,9 @@ namespace TransmutationLearning
             double minConfidence = 0.6,
             int protectionRank = 2,
             HashSet<string> proteinSubset = null,
-            double detectionPatternWeight = 0.3)
+            double detectionPatternWeight = 0.3,
+            PPIService ppiService = null,
+            double ppiWeight = 0.0)
         {
             var result = RunKnnDistillation(
                 retainedCells,
@@ -540,7 +542,9 @@ namespace TransmutationLearning
                 minConfidence,
                 protectionRank,
                 proteinSubset,
-                detectionPatternWeight);
+                detectionPatternWeight,
+                ppiService,
+                ppiWeight);
 
             return (result.ReclassifiedCount, result.GetDistilledDistribution());
         }

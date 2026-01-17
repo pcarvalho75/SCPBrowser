@@ -28,6 +28,7 @@ namespace TransmutationLearning
         public int MarkersSelected { get; set; }
         public int LabelsChanged { get; set; }
         public double ChangePercent { get; set; }
+        public double CVAccuracy { get; set; }  // Cross-validation accuracy for this iteration
         public string Notes { get; set; }  // e.g., "Relaxed p-value to 0.05"
     }
 
@@ -50,6 +51,11 @@ namespace TransmutationLearning
         // Convergence
         public double ConvergenceThreshold { get; set; } = 0.02;  // <2% change
         public int MaxIterations { get; set; } = 5;
+
+        // Cross-validation early stopping
+        public bool UseCVEarlyStopping { get; set; } = true;  // Stop if CV accuracy drops
+        public int CVFolds { get; set; } = 5;
+        public double MinCVAccuracyDrop { get; set; } = 0.05;  // Stop if CV drops by >5% from previous
 
         // kNN parameters (from UI)
         public int K { get; set; } = 10;
@@ -97,6 +103,7 @@ namespace TransmutationLearning
     {
         private readonly KnnDistillationService _knnService = new KnnDistillationService();
         private readonly FeatureSelectionService _featureService = new FeatureSelectionService();
+        private readonly ValidationService _validationService = new ValidationService();
 
         /// <summary>
         /// Run iterative distillation with automatic marker selection
@@ -187,6 +194,7 @@ namespace TransmutationLearning
             // ═══════════════════════════════════════════════════════════════
             Dictionary<string, string> previousLabelMap = null;
             List<ProteinStatistics> selectedMarkers = null;
+            double previousCVAccuracy = 0;
 
             for (int iter = 1; iter <= settings.MaxIterations; iter++)
             {
@@ -249,6 +257,45 @@ namespace TransmutationLearning
                 int changed = CountLabelChanges(previousLabelMap, currentLabels.DistilledLabels);
                 double changePercent = (double)changed / retainedCells.Count;
 
+                // Run cross-validation to check if we're overfitting
+                double cvAccuracy = 0;
+                bool cvDropped = false;
+
+                if (settings.UseCVEarlyStopping && selectedMarkers.Count >= 10)
+                {
+                    progress?.Report(new IterationProgress
+                    {
+                        Current = iter,
+                        Total = settings.MaxIterations + 1,
+                        Status = $"Iteration {iter}: Running {settings.CVFolds}-fold CV..."
+                    });
+
+                    var cvResult = _validationService.RunCrossValidation(
+                        retainedCells,
+                        proteinMatrix,
+                        selectedMarkers,
+                        currentLabels.DistilledLabels,
+                        settings.CVFolds);
+
+                    if (cvResult.IsValid)
+                    {
+                        cvAccuracy = cvResult.MeanAccuracy;
+
+                        // Check if CV accuracy dropped significantly from previous iteration
+                        if (iter > 1 && previousCVAccuracy > 0)
+                        {
+                            double drop = previousCVAccuracy - cvAccuracy;
+                            if (drop > settings.MinCVAccuracyDrop)
+                            {
+                                cvDropped = true;
+                                selectionNotes += $", CV dropped {drop:P1}";
+                            }
+                        }
+
+                        previousCVAccuracy = cvAccuracy;
+                    }
+                }
+
                 result.History.Add(new IterationSummary
                 {
                     Iteration = iter,
@@ -256,8 +303,17 @@ namespace TransmutationLearning
                     MarkersSelected = selectedMarkers.Count,
                     LabelsChanged = changed,
                     ChangePercent = changePercent * 100,
+                    CVAccuracy = cvAccuracy,
                     Notes = selectionNotes
                 });
+
+                // Stop if CV accuracy dropped (overfitting signal)
+                if (cvDropped)
+                {
+                    result.History.Last().Notes += " - STOPPED (CV accuracy dropped)";
+                    result.IterationsRun = iter;
+                    break;
+                }
 
                 if (changePercent < settings.ConvergenceThreshold)
                 {

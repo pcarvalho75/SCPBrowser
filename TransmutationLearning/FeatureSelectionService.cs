@@ -60,15 +60,25 @@ namespace TransmutationLearning
                 ? dataset.AllProteins.Where(p => restrictToProteins.Contains(p)).ToList()
                 : dataset.AllProteins;
 
-            // Process each protein
+            // Process each protein (compute stats only, no filtering yet)
             foreach (var protein in proteinsToProcess)
             {
                 var stats = ComputeSingleProteinStats(protein, dataset, retainedRuns, runToCellType, cellTypes);
-
-                // Evaluate against criteria
-                stats.PassesFilter = EvaluateCriteria(stats, criteria);
-
                 result.AllProteinStats.Add(stats);
+            }
+
+            // Compute FDR-corrected q-values using Benjamini-Hochberg
+            var pValues = result.AllProteinStats.Select(p => p.KruskalWallisPValue).ToList();
+            var qValues = StatisticsHelper.BenjaminiHochberg(pValues);
+            for (int i = 0; i < result.AllProteinStats.Count; i++)
+            {
+                result.AllProteinStats[i].QValue = qValues[i];
+            }
+
+            // Now evaluate criteria (using q-values if UseFDR is enabled)
+            foreach (var stats in result.AllProteinStats)
+            {
+                stats.PassesFilter = EvaluateCriteria(stats, criteria);
             }
 
             // Sort by weighted specificity score descending (detection-weighted)
@@ -212,9 +222,17 @@ namespace TransmutationLearning
         /// </summary>
         private bool EvaluateCriteria(ProteinStatistics stats, FeatureSelectionCriteria criteria)
         {
-            // P-value threshold
-            if (stats.KruskalWallisPValue > criteria.MaxPValue)
-                return false;
+            // Statistical significance threshold (FDR-corrected or raw p-value)
+            if (criteria.UseFDR)
+            {
+                if (stats.QValue > criteria.MaxQValue)
+                    return false;
+            }
+            else
+            {
+                if (stats.KruskalWallisPValue > criteria.MaxPValue)
+                    return false;
+            }
 
             // Detection rate in best cell type
             if (stats.BestCellTypeDetection < criteria.MinDetectionRate)

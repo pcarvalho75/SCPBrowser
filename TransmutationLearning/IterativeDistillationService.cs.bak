@@ -28,6 +28,7 @@ namespace TransmutationLearning
         public int MarkersSelected { get; set; }
         public int LabelsChanged { get; set; }
         public double ChangePercent { get; set; }
+        public double CVAccuracy { get; set; }  // Cross-validation accuracy for this iteration
         public string Notes { get; set; }  // e.g., "Relaxed p-value to 0.05"
     }
 
@@ -50,6 +51,11 @@ namespace TransmutationLearning
         // Convergence
         public double ConvergenceThreshold { get; set; } = 0.02;  // <2% change
         public int MaxIterations { get; set; } = 5;
+
+        // Cross-validation early stopping
+        public bool UseCVEarlyStopping { get; set; } = true;  // Stop if CV accuracy drops
+        public int CVFolds { get; set; } = 5;
+        public double MinCVAccuracyDrop { get; set; } = 0.05;  // Stop if CV drops by >5% from previous
 
         // kNN parameters (from UI)
         public int K { get; set; } = 10;
@@ -97,6 +103,7 @@ namespace TransmutationLearning
     {
         private readonly KnnDistillationService _knnService = new KnnDistillationService();
         private readonly FeatureSelectionService _featureService = new FeatureSelectionService();
+        private readonly ValidationService _validationService = new ValidationService();
 
         /// <summary>
         /// Run iterative distillation with automatic marker selection
@@ -241,7 +248,9 @@ namespace TransmutationLearning
                     settings.MinConfidence,
                     settings.ProtectionRank,
                     markerProteins,
-                    settings.DetectionPatternWeight);
+                    settings.DetectionPatternWeight,
+                    settings.PPIService,
+                    settings.PPIWeight);
 
                 // Check convergence
                 int changed = CountLabelChanges(previousLabelMap, currentLabels.DistilledLabels);

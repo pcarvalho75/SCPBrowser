@@ -368,10 +368,18 @@ namespace TransmutationLearning
         }
 
         /// <summary>
-        /// Compute prior weights from expected distribution using exponential decay
+        /// Compute prior weights from expected distribution
+        /// Uses explicit proportions if set, otherwise falls back to exponential decay
         /// </summary>
         private Dictionary<string, double> ComputePriorWeights(ExpectedDistribution expectedDistribution)
         {
+            // Use explicit proportions if provided
+            if (expectedDistribution.Proportions != null && expectedDistribution.Proportions.Count > 0)
+            {
+                return new Dictionary<string, double>(expectedDistribution.Proportions);
+            }
+
+            // Fall back to exponential decay calculation
             return expectedDistribution.ToProportions(decayFactor: 0.6);
         }
 

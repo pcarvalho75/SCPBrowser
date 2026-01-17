@@ -72,6 +72,10 @@ namespace TransmutationLearning
             var priorWeights = ComputePriorWeights(expectedDistribution);
 
             // Step 6: Process each cell with weighted voting
+            // Note: We use batch updates - all cells are evaluated against the ORIGINAL labels
+            // from the start of this iteration. This avoids order-dependency where early
+            // reclassifications would affect later cells within the same iteration.
+            // Propagation happens BETWEEN iterations (in IterativeDistillationService), not within.
             for (int i = 0; i < retainedCells.Count; i++)
             {
                 var cell = retainedCells[i];
@@ -81,7 +85,7 @@ namespace TransmutationLearning
                     cell,
                     cellNeighbors,
                     runOrder,
-                    runToLabel,
+                    runToLabel,  // Uses original labels for all cells in this iteration
                     priorWeights,
                     expectedDistribution,
                     sensitivity,
@@ -92,8 +96,8 @@ namespace TransmutationLearning
                 result.DistilledCells.Add(cell);
                 result.DistilledLabels[cell.Run] = record.DistilledLabel;
 
-                // Update runToLabel for subsequent cells (propagate changes)
-                runToLabel[cell.Run] = record.DistilledLabel;
+                // Note: We intentionally do NOT update runToLabel here.
+                // All cells in this iteration see the same snapshot of labels.
             }
 
             return result;

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 
@@ -33,26 +32,17 @@ namespace TransmutationLearning.Services
             {
                 string orderFilePath = GetExpectedOrderFilePath(parquetPath);
                 if (string.IsNullOrEmpty(orderFilePath))
-                {
-                    Debug.WriteLine("[SettingsService] SaveExpectedOrder: parquetPath is null/empty");
                     return false;
-                }
 
                 if (order == null || order.Count == 0)
-                {
-                    Debug.WriteLine("[SettingsService] SaveExpectedOrder: order is null/empty");
                     return false;
-                }
 
                 string json = JsonSerializer.Serialize(order, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(orderFilePath, json);
-                Debug.WriteLine($"[SettingsService] Saved order to: {orderFilePath}");
-                Debug.WriteLine($"[SettingsService] Order: {string.Join(", ", order)}");
                 return true;
             }
-            catch (Exception ex)
+            catch
             {
-                Debug.WriteLine($"[SettingsService] SaveExpectedOrder ERROR: {ex.Message}");
                 return false;
             }
         }
@@ -65,27 +55,14 @@ namespace TransmutationLearning.Services
             try
             {
                 string orderFilePath = GetExpectedOrderFilePath(parquetPath);
-                if (string.IsNullOrEmpty(orderFilePath))
-                {
-                    Debug.WriteLine("[SettingsService] LoadExpectedOrder: parquetPath is null/empty");
+                if (string.IsNullOrEmpty(orderFilePath) || !File.Exists(orderFilePath))
                     return new List<string>();
-                }
-
-                if (!File.Exists(orderFilePath))
-                {
-                    Debug.WriteLine($"[SettingsService] LoadExpectedOrder: file does not exist: {orderFilePath}");
-                    return new List<string>();
-                }
 
                 string json = File.ReadAllText(orderFilePath);
-                var order = JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
-                Debug.WriteLine($"[SettingsService] Loaded order from: {orderFilePath}");
-                Debug.WriteLine($"[SettingsService] Order: {string.Join(", ", order)}");
-                return order;
+                return JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
             }
-            catch (Exception ex)
+            catch
             {
-                Debug.WriteLine($"[SettingsService] LoadExpectedOrder ERROR: {ex.Message}");
                 return new List<string>();
             }
         }

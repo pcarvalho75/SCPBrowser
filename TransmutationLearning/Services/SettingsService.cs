@@ -11,6 +11,7 @@ namespace TransmutationLearning.Services
     public class SettingsService
     {
         private const string OrderFileExtension = ".distillorder.json";
+        private const string WeightsFileExtension = ".distillweights.json";
 
         /// <summary>
         /// Gets the path for the expected order file (same directory as parquet, with .distillorder.json extension)
@@ -21,6 +22,17 @@ namespace TransmutationLearning.Services
                 return null;
 
             return parquetPath + OrderFileExtension;
+        }
+
+        /// <summary>
+        /// Gets the path for the weights file
+        /// </summary>
+        public string GetExpectedWeightsFilePath(string parquetPath)
+        {
+            if (string.IsNullOrEmpty(parquetPath))
+                return null;
+
+            return parquetPath + WeightsFileExtension;
         }
 
         /// <summary>
@@ -64,6 +76,50 @@ namespace TransmutationLearning.Services
             catch
             {
                 return new List<string>();
+            }
+        }
+
+        /// <summary>
+        /// Saves the expected distribution weights to disk
+        /// </summary>
+        public bool SaveExpectedWeights(string parquetPath, Dictionary<string, double> weights)
+        {
+            try
+            {
+                string weightsFilePath = GetExpectedWeightsFilePath(parquetPath);
+                if (string.IsNullOrEmpty(weightsFilePath))
+                    return false;
+
+                if (weights == null || weights.Count == 0)
+                    return false;
+
+                string json = JsonSerializer.Serialize(weights, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(weightsFilePath, json);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Loads saved expected weights from disk if available
+        /// </summary>
+        public Dictionary<string, double> LoadExpectedWeights(string parquetPath)
+        {
+            try
+            {
+                string weightsFilePath = GetExpectedWeightsFilePath(parquetPath);
+                if (string.IsNullOrEmpty(weightsFilePath) || !File.Exists(weightsFilePath))
+                    return null;
+
+                string json = File.ReadAllText(weightsFilePath);
+                return JsonSerializer.Deserialize<Dictionary<string, double>>(json);
+            }
+            catch
+            {
+                return null;
             }
         }
     }

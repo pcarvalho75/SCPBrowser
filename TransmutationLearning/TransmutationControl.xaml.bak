@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:local="clr-namespace:TransmutationLearning"
+             xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
              mc:Ignorable="d"
              d:DesignHeight="750" d:DesignWidth="1100">
 
@@ -417,7 +418,7 @@
 
                                 <!-- PPI Section -->
                                 <Border Grid.Row="3" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0" Margin="0,8,0,0" Padding="0,8,0,0">
-                                    <Grid>
+                                    <Grid x:Name="PPIStatusPanel">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
@@ -538,25 +539,35 @@
                                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8,8,8,4">
                                         <Button Content="↑" Style="{StaticResource SmallButton}" Click="MoveExpectedUp_Click" Width="24"/>
                                         <Button Content="↓" Style="{StaticResource SmallButton}" Click="MoveExpectedDown_Click" Width="24"/>
-                                        <TextBlock Text="Rank by abundance" FontSize="10" Foreground="#666" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Set weights (must sum to 1)" FontSize="10" Foreground="#666" Margin="8,0,0,0" VerticalAlignment="Center"/>
                                     </StackPanel>
 
                                     <ListBox x:Name="ExpectedDistributionListBox" Grid.Row="1" Margin="8,0,8,8"
-                                             SelectionMode="Single" AllowDrop="True"
-                                             PreviewMouseLeftButtonDown="ExpectedList_PreviewMouseLeftButtonDown"
-                                             Drop="ExpectedList_Drop">
+                                             SelectionMode="Single">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="{Binding Rank}" FontWeight="Bold" Width="20" Foreground="#666"/>
-                                                    <TextBlock Text="{Binding CellType}"/>
-                                                </StackPanel>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="25"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="80"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding Rank}" FontWeight="Bold" Foreground="#666" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding CellType}" VerticalAlignment="Center"/>
+                                                    <xctk:DecimalUpDown Grid.Column="2" Value="{Binding Weight, Mode=TwoWay}"
+                                                                        Minimum="0" Maximum="1" Increment="0.05" FormatString="F2"
+                                                                        ValueChanged="PriorWeight_ValueChanged"
+                                                                        Width="70" Height="22" VerticalAlignment="Center"/>
+                                                </Grid>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
 
-                                    <Button Grid.Row="2" Content="Reset to Alphabetical" Margin="8,0,8,8"
-                                            Style="{StaticResource SmallButton}" Click="ResetExpectedOrder_Click"/>
+                                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="8,0,8,8">
+                                        <Button Content="Reset Weights" Style="{StaticResource SmallButton}" Click="ResetExpectedWeights_Click" Margin="0,0,8,0"/>
+                                        <TextBlock x:Name="WeightSumText" Text="Sum: 1.00" FontSize="10" VerticalAlignment="Center"
+                                                   Foreground="#059669" FontWeight="SemiBold"/>
+                                    </StackPanel>
                                 </Grid>
                             </Border>
                         </TabItem>

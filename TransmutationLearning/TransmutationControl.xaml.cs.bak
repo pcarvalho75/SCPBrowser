@@ -32,7 +32,6 @@ namespace TransmutationLearning
         private KnnDistillationService _distillationService = new KnnDistillationService();
         private IterativeDistillationService _iterativeDistillationService = new IterativeDistillationService();
         private List<ExpectedCellTypeItem> _expectedDistributionItems = new List<ExpectedCellTypeItem>();
-        private Point _dragStartPoint;
 
         // PPI Service (Biological Gravity)
         private PPIService _ppiService = new PPIService();
@@ -1141,6 +1140,7 @@ namespace TransmutationLearning
         {
             public int Rank { get; set; }
             public string CellType { get; set; }
+            public double Weight { get; set; } = 0.0;
         }
 
         /// <summary>
@@ -1199,7 +1199,27 @@ namespace TransmutationLearning
                     .ToList();
             }
 
+            // Assign default weights (will be overwritten if saved weights exist)
+            AssignDefaultWeights();
+
+            // Try to load saved weights
+            var savedWeights = _settingsService.LoadExpectedWeights(ParquetPathTextBox?.Text);
+            if (savedWeights != null && savedWeights.Count > 0)
+            {
+                foreach (var item in _expectedDistributionItems)
+                {
+                    if (savedWeights.TryGetValue(item.CellType, out double weight))
+                        item.Weight = weight;
+                }
+                // Re-sort by weight after loading
+                _expectedDistributionItems = _expectedDistributionItems
+                    .OrderByDescending(x => x.Weight)
+                    .ToList();
+                UpdateExpectedRanks();
+            }
+
             ExpectedDistributionListBox.ItemsSource = _expectedDistributionItems;
+            UpdateWeightSumText();
 
             // Reset distillation state
             DistilledData = null;
@@ -1226,12 +1246,16 @@ namespace TransmutationLearning
         }
 
         /// <summary>
-        /// Saves the current expected distribution order to a JSON file in the same directory as the parquet file
+        /// Saves the current expected distribution order and weights to JSON files
         /// </summary>
         private void SaveExpectedOrder()
         {
             _savedExpectedOrder = _expectedDistributionItems.Select(x => x.CellType).ToList();
             _settingsService.SaveExpectedOrder(ParquetPathTextBox?.Text, _savedExpectedOrder);
+
+            // Also save weights
+            var weights = _expectedDistributionItems.ToDictionary(x => x.CellType, x => x.Weight);
+            _settingsService.SaveExpectedWeights(ParquetPathTextBox?.Text, weights);
         }
 
         private void SensitivitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -1412,12 +1436,23 @@ namespace TransmutationLearning
             int idx = _expectedDistributionItems.IndexOf(selected);
             if (idx > 0)
             {
+                // In auto mode, swap weights; in manual mode, just move position
+                if (ManualWeightsCheckBox?.IsChecked != true)
+                {
+                    var other = _expectedDistributionItems[idx - 1];
+                    double tempWeight = selected.Weight;
+                    selected.Weight = other.Weight;
+                    other.Weight = tempWeight;
+                }
+
+                // Swap positions
                 _expectedDistributionItems.RemoveAt(idx);
                 _expectedDistributionItems.Insert(idx - 1, selected);
                 UpdateExpectedRanks();
                 ExpectedDistributionListBox.ItemsSource = null;
                 ExpectedDistributionListBox.ItemsSource = _expectedDistributionItems;
                 ExpectedDistributionListBox.SelectedItem = selected;
+                UpdateWeightSumText();
                 UpdateProtectionHint();
                 SaveExpectedOrder();
             }
@@ -1431,28 +1466,136 @@ namespace TransmutationLearning
             int idx = _expectedDistributionItems.IndexOf(selected);
             if (idx < _expectedDistributionItems.Count - 1)
             {
+                // In auto mode, swap weights; in manual mode, just move position
+                if (ManualWeightsCheckBox?.IsChecked != true)
+                {
+                    var other = _expectedDistributionItems[idx + 1];
+                    double tempWeight = selected.Weight;
+                    selected.Weight = other.Weight;
+                    other.Weight = tempWeight;
+                }
+
+                // Swap positions
                 _expectedDistributionItems.RemoveAt(idx);
                 _expectedDistributionItems.Insert(idx + 1, selected);
                 UpdateExpectedRanks();
                 ExpectedDistributionListBox.ItemsSource = null;
                 ExpectedDistributionListBox.ItemsSource = _expectedDistributionItems;
                 ExpectedDistributionListBox.SelectedItem = selected;
+                UpdateWeightSumText();
                 UpdateProtectionHint();
                 SaveExpectedOrder();
             }
         }
 
-        private void ResetExpectedOrder_Click(object sender, RoutedEventArgs e)
+        private void ResetExpectedWeights_Click(object sender, RoutedEventArgs e)
+        {
+            AssignDefaultWeights();
+            SortByWeightAndRefresh();
+            SaveExpectedOrder();
+        }
+
+        private void PriorWeight_ValueChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        {
+            if (_expectedDistributionItems == null || _expectedDistributionItems.Count == 0) return;
+
+            // In manual mode, just update the sum display without normalizing
+            if (ManualWeightsCheckBox?.IsChecked == true)
+            {
+                UpdateWeightSumText();
+                SaveExpectedOrder();
+                return;
+            }
+
+            NormalizeWeights();
+            SortByWeightAndRefresh();
+            SaveExpectedOrder();
+        }
+
+        private void ManualWeightsCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            // When switching from manual to auto mode, normalize and sort
+            if (ManualWeightsCheckBox?.IsChecked == false && _expectedDistributionItems?.Count > 0)
+            {
+                NormalizeWeights();
+                SortByWeightAndRefresh();
+                SaveExpectedOrder();
+            }
+        }
+
+        private void AssignDefaultWeights()
+        {
+            // Use exponential decay: 0.5^0, 0.5^1, 0.5^2, ... then normalize
+            double decayFactor = 0.5;
+            double total = 0;
+
+            for (int i = 0; i < _expectedDistributionItems.Count; i++)
+            {
+                double weight = Math.Pow(decayFactor, i);
+                _expectedDistributionItems[i].Weight = weight;
+                total += weight;
+            }
+
+            // Normalize to sum to 1
+            foreach (var item in _expectedDistributionItems)
+            {
+                item.Weight = Math.Round(item.Weight / total, 2);
+            }
+
+            // Fix rounding errors - adjust first item
+            double sum = _expectedDistributionItems.Sum(x => x.Weight);
+            if (Math.Abs(sum - 1.0) > 0.001)
+            {
+                _expectedDistributionItems[0].Weight += (1.0 - sum);
+                _expectedDistributionItems[0].Weight = Math.Round(_expectedDistributionItems[0].Weight, 2);
+            }
+        }
+
+        private void NormalizeWeights()
+        {
+            double sum = _expectedDistributionItems.Sum(x => x.Weight);
+            if (sum <= 0)
+            {
+                AssignDefaultWeights();
+                return;
+            }
+
+            foreach (var item in _expectedDistributionItems)
+            {
+                item.Weight = Math.Round(item.Weight / sum, 2);
+            }
+
+            // Fix rounding errors
+            sum = _expectedDistributionItems.Sum(x => x.Weight);
+            if (Math.Abs(sum - 1.0) > 0.001 && _expectedDistributionItems.Count > 0)
+            {
+                _expectedDistributionItems[0].Weight += (1.0 - sum);
+                _expectedDistributionItems[0].Weight = Math.Round(_expectedDistributionItems[0].Weight, 2);
+            }
+
+            UpdateWeightSumText();
+        }
+
+        private void SortByWeightAndRefresh()
         {
             _expectedDistributionItems = _expectedDistributionItems
-                .OrderBy(x => x.CellType)
-                .Select((x, idx) => new ExpectedCellTypeItem { Rank = idx + 1, CellType = x.CellType })
+                .OrderByDescending(x => x.Weight)
                 .ToList();
 
+            UpdateExpectedRanks();
             ExpectedDistributionListBox.ItemsSource = null;
             ExpectedDistributionListBox.ItemsSource = _expectedDistributionItems;
+            UpdateWeightSumText();
             UpdateProtectionHint();
-            SaveExpectedOrder();
+        }
+
+        private void UpdateWeightSumText()
+        {
+            double sum = _expectedDistributionItems.Sum(x => x.Weight);
+            WeightSumText.Text = $"Sum: {sum:F2}";
+            WeightSumText.Foreground = Math.Abs(sum - 1.0) < 0.01
+                ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(5, 150, 105))  // Green
+                : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 38, 38)); // Red
         }
 
         private void UpdateExpectedRanks()
@@ -1463,50 +1606,42 @@ namespace TransmutationLearning
             }
         }
 
-        private void ExpectedList_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-        {
-            _dragStartPoint = e.GetPosition(null);
-        }
-
-        private void ExpectedList_Drop(object sender, DragEventArgs e)
-        {
-            if (e.Data.GetDataPresent(typeof(ExpectedCellTypeItem)))
-            {
-                var droppedData = e.Data.GetData(typeof(ExpectedCellTypeItem)) as ExpectedCellTypeItem;
-                var target = GetItemAtPosition(e.GetPosition(ExpectedDistributionListBox));
-
-                if (droppedData != null && target != null && droppedData != target)
-                {
-                    int oldIdx = _expectedDistributionItems.IndexOf(droppedData);
-                    int newIdx = _expectedDistributionItems.IndexOf(target);
-
-                    _expectedDistributionItems.RemoveAt(oldIdx);
-                    _expectedDistributionItems.Insert(newIdx, droppedData);
-                    UpdateExpectedRanks();
-
-                    ExpectedDistributionListBox.ItemsSource = null;
-                    ExpectedDistributionListBox.ItemsSource = _expectedDistributionItems;
-                    UpdateProtectionHint();
-                    SaveExpectedOrder();
-                }
-            }
-        }
-
-        private ExpectedCellTypeItem GetItemAtPosition(Point position)
-        {
-            var element = ExpectedDistributionListBox.InputHitTest(position) as FrameworkElement;
-            while (element != null && !(element is ListBoxItem))
-            {
-                element = VisualTreeHelper.GetParent(element) as FrameworkElement;
-            }
-            return element?.DataContext as ExpectedCellTypeItem;
-        }
-
         private ExpectedDistribution BuildExpectedDistribution()
         {
+            // Normalize weights proportionally if they don't sum to 1
+            var weights = new Dictionary<string, double>();
+            double sum = _expectedDistributionItems.Sum(x => x.Weight);
+
+            if (sum > 0 && Math.Abs(sum - 1.0) > 0.001)
+            {
+                // Normalize proportionally
+                foreach (var item in _expectedDistributionItems)
+                {
+                    weights[item.CellType] = item.Weight / sum;
+                }
+            }
+            else if (sum > 0)
+            {
+                // Already sums to 1
+                foreach (var item in _expectedDistributionItems)
+                {
+                    weights[item.CellType] = item.Weight;
+                }
+            }
+            else
+            {
+                // All zeros - use equal weights
+                double equalWeight = 1.0 / _expectedDistributionItems.Count;
+                foreach (var item in _expectedDistributionItems)
+                {
+                    weights[item.CellType] = equalWeight;
+                }
+            }
+
             return new ExpectedDistribution
             {
-                RankedCellTypes = _expectedDistributionItems.Select(x => x.CellType).ToList()
+                RankedCellTypes = _expectedDistributionItems.Select(x => x.CellType).ToList(),
+                Proportions = weights
             };
         }
 
@@ -1787,7 +1922,9 @@ namespace TransmutationLearning
                     MinConfidence = GetMinConfidence(),
                     PriorInfluence = SensitivitySlider.Value,
                     ProtectionRank = GetProtectionRank(),
-                    DetectionPatternWeight = GetDetectionPatternWeight()
+                    DetectionPatternWeight = GetDetectionPatternWeight(),
+                    PPIService = GetPPIServiceIfEnabled(),
+                    PPIWeight = GetPPIWeight()
                 };
 
                 var expectedDist = BuildExpectedDistribution();

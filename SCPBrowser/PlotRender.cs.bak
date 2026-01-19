@@ -272,10 +272,9 @@ namespace SCPBrowser
                 {
                     Width = MarkerSize,
                     Height = MarkerSize,
-                    Fill = new SolidColorBrush(UnselectedGray),
-                    Stroke = new SolidColorBrush(UnselectedGray),
-                    StrokeThickness = 1,
-                    Opacity = UnselectedOpacity
+                    Fill = new SolidColorBrush(markerColor),
+                    Stroke = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
+                    StrokeThickness = 1
                 };
 
                 Canvas.SetLeft(ellipse, screenPos.X - MarkerSize / 2);

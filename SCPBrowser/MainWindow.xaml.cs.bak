@@ -411,6 +411,24 @@ namespace SCPBrowser
             }
         }
 
+        /// <summary>
+        /// Triggers a debounced BioTessera update. Multiple rapid calls will only result in one update.
+        /// </summary>
+        private void TriggerDebouncedBioTesseraUpdate()
+        {
+            _bioTesseraDebounceTimer?.Stop();
+            _bioTesseraDebounceTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(BioTesseraDebounceDelayMs)
+            };
+            _bioTesseraDebounceTimer.Tick += async (s, e) =>
+            {
+                _bioTesseraDebounceTimer.Stop();
+                await UpdateBioTesseraTabAsync();
+            };
+            _bioTesseraDebounceTimer.Start();
+        }
+
         private async void ClearCellTypeClassifications_Click(object sender, RoutedEventArgs e)
         {
             var result = MessageBox.Show(

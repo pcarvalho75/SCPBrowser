@@ -491,6 +491,94 @@ namespace TransmutationLearning
 
             return qValues.ToList();
         }
+
+        /// <summary>
+        /// Compute Spearman rank correlation between two arrays.
+        /// Uses pairwise complete observations (only positions where both have values).
+        /// </summary>
+        /// <param name="x">First array (NaN for missing)</param>
+        /// <param name="y">Second array (NaN for missing)</param>
+        /// <returns>Spearman correlation coefficient (-1 to 1), or 0 if insufficient data</returns>
+        public static double SpearmanCorrelation(double[] x, double[] y)
+        {
+            if (x.Length != y.Length || x.Length == 0)
+                return 0;
+
+            // Get pairwise complete observations
+            var pairs = new List<(double xVal, double yVal)>();
+            for (int i = 0; i < x.Length; i++)
+            {
+                if (!double.IsNaN(x[i]) && !double.IsNaN(y[i]))
+                    pairs.Add((x[i], y[i]));
+            }
+
+            // Need at least 3 pairs for meaningful correlation
+            if (pairs.Count < 3)
+                return 0;
+
+            // Compute ranks for x values
+            var xRanks = ComputeRanks(pairs.Select(p => p.xVal).ToArray());
+            var yRanks = ComputeRanks(pairs.Select(p => p.yVal).ToArray());
+
+            // Pearson correlation on ranks = Spearman correlation
+            return PearsonCorrelation(xRanks, yRanks);
+        }
+
+        /// <summary>
+        /// Compute ranks with average rank for ties
+        /// </summary>
+        private static double[] ComputeRanks(double[] values)
+        {
+            int n = values.Length;
+            var indexed = values
+                .Select((v, i) => (value: v, index: i))
+                .OrderBy(x => x.value)
+                .ToList();
+
+            var ranks = new double[n];
+            int i = 0;
+            while (i < n)
+            {
+                int j = i;
+                // Find all ties
+                while (j < n - 1 && Math.Abs(indexed[j + 1].value - indexed[i].value) < 1e-10)
+                    j++;
+
+                // Average rank for ties (1-based)
+                double avgRank = (i + j) / 2.0 + 1;
+                for (int k = i; k <= j; k++)
+                    ranks[indexed[k].index] = avgRank;
+
+                i = j + 1;
+            }
+
+            return ranks;
+        }
+
+        /// <summary>
+        /// Compute Pearson correlation coefficient
+        /// </summary>
+        private static double PearsonCorrelation(double[] x, double[] y)
+        {
+            int n = x.Length;
+            if (n == 0) return 0;
+
+            double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+            for (int i = 0; i < n; i++)
+            {
+                sumX += x[i];
+                sumY += y[i];
+                sumXY += x[i] * y[i];
+                sumX2 += x[i] * x[i];
+                sumY2 += y[i] * y[i];
+            }
+
+            double denom = Math.Sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+            if (denom < 1e-10)
+                return 0;
+
+            return (n * sumXY - sumX * sumY) / denom;
+        }
     }
 
     #region Distillation Models
@@ -686,8 +774,10 @@ namespace TransmutationLearning
         public double BestCellTypeDetection { get; set; }
         public string SecondBestCellType { get; set; }
         public double SecondBestCellTypeExpression { get; set; }
-        public double SpecificityDelta { get; set; }   // Gap between best and second-best
-        public double WeightedSpecificityScore { get; set; }  // SpecificityDelta * BestCellTypeDetection
+        public double SecondBestCellTypeDetection { get; set; }
+        public double SpecificityDelta { get; set; }   // Gap between best and second-best median intensity
+        public double DetectionDelta { get; set; }     // Gap between best and second-best detection rate
+        public double WeightedSpecificityScore { get; set; }  // Composite score combining intensity and detection
 
         // Robustness flags
         public bool IsRobust { get; set; }             // Passes minimum cell count
@@ -721,6 +811,8 @@ namespace TransmutationLearning
         public double MaxMissingRate { get; set; } = 0.70;        // Exclude if >70% missing overall
         public bool RequireRobustness { get; set; } = true;
         public bool UseFDR { get; set; } = true;                  // Use q-value instead of p-value
+        public bool UseRedundancyFilter { get; set; } = true;     // Apply correlation-based redundancy filtering
+        public double MaxCorrelation { get; set; } = 0.70;        // Max Spearman correlation for redundancy filtering
     }
 
     /// <summary>
@@ -739,9 +831,14 @@ namespace TransmutationLearning
         // Summary stats
         public int TotalProteinsAnalyzed => AllProteinStats.Count;
         public int TotalMarkersSelected => SelectedMarkers.Count;
+        public int TotalNonRedundantMarkers => NonRedundantMarkers?.Count ?? SelectedMarkers.Count;
+        public int RedundantMarkersFiltered => TotalMarkersSelected - TotalNonRedundantMarkers;
         public double MedianSpecificityDelta => SelectedMarkers.Count > 0
             ? StatisticsHelper.Median(SelectedMarkers.Select(m => m.SpecificityDelta))
             : 0;
+
+        // Non-redundant markers after correlation filtering
+        public List<ProteinStatistics> NonRedundantMarkers { get; set; }
 
         public DateTime GeneratedAt { get; set; } = DateTime.Now;
     }

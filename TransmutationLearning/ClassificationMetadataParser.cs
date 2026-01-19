@@ -24,6 +24,20 @@ namespace TransmutationLearning
                 .Select(h => h.Trim().Trim('"'))
                 .ToArray();
 
+            // Check for R row-names quirk: data has one more column than headers
+            // In this case, first data column is the run identifier with no header
+            int columnOffset = 0;
+            if (lines.Length > 1)
+            {
+                var firstDataRow = lines[1].Split('\t');
+                if (firstDataRow.Length == header.Length + 1)
+                {
+                    // R row-names format: prepend empty header for the run column
+                    header = new[] { "" }.Concat(header).ToArray();
+                    columnOffset = 0; // Header array now matches data columns
+                }
+            }
+
             // Find special columns
             int runIndex = -1;
             int labelsIndex = -1;

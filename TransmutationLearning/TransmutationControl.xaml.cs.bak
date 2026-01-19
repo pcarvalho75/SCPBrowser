@@ -1436,14 +1436,11 @@ namespace TransmutationLearning
             int idx = _expectedDistributionItems.IndexOf(selected);
             if (idx > 0)
             {
-                // In auto mode, swap weights; in manual mode, just move position
-                if (ManualWeightsCheckBox?.IsChecked != true)
-                {
-                    var other = _expectedDistributionItems[idx - 1];
-                    double tempWeight = selected.Weight;
-                    selected.Weight = other.Weight;
-                    other.Weight = tempWeight;
-                }
+                // Swap weights between the two items
+                var other = _expectedDistributionItems[idx - 1];
+                double tempWeight = selected.Weight;
+                selected.Weight = other.Weight;
+                other.Weight = tempWeight;
 
                 // Swap positions
                 _expectedDistributionItems.RemoveAt(idx);
@@ -1466,14 +1463,11 @@ namespace TransmutationLearning
             int idx = _expectedDistributionItems.IndexOf(selected);
             if (idx < _expectedDistributionItems.Count - 1)
             {
-                // In auto mode, swap weights; in manual mode, just move position
-                if (ManualWeightsCheckBox?.IsChecked != true)
-                {
-                    var other = _expectedDistributionItems[idx + 1];
-                    double tempWeight = selected.Weight;
-                    selected.Weight = other.Weight;
-                    other.Weight = tempWeight;
-                }
+                // Swap weights between the two items
+                var other = _expectedDistributionItems[idx + 1];
+                double tempWeight = selected.Weight;
+                selected.Weight = other.Weight;
+                other.Weight = tempWeight;
 
                 // Swap positions
                 _expectedDistributionItems.RemoveAt(idx);

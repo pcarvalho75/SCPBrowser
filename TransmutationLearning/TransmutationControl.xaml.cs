@@ -1795,6 +1795,20 @@ namespace TransmutationLearning
                 var ppiService = GetPPIServiceIfEnabled();
                 double ppiWeight = GetPPIWeight();
 
+                // Get protein subset for similarity computation
+                // This is especially important when PPI is enabled - computing PPI on all detected
+                // proteins biases toward housekeeping/cytoskeletal proteins with dense interaction networks
+                // Using selected markers (if available) gives more biologically meaningful results
+                HashSet<string> proteinSubset = null;
+                if (_featureResult?.SelectedMarkers?.Count > 0)
+                {
+                    proteinSubset = new HashSet<string>(_featureResult.SelectedMarkers.Select(m => m.ProteinName));
+                }
+                else if (_autoSelectedMarkers?.Count > 0)
+                {
+                    proteinSubset = new HashSet<string>(_autoSelectedMarkers.Select(m => m.ProteinName));
+                }
+
                 await System.Threading.Tasks.Task.Run(() =>
                 {
                     DistilledData = _distillationService.RunKnnDistillation(
@@ -1805,7 +1819,7 @@ namespace TransmutationLearning
                         sensitivity,
                         minConfidence,
                         protectionRank,
-                        null, // no protein subset
+                        proteinSubset,
                         detectionWeight,
                         ppiService,
                         ppiWeight);

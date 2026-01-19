@@ -73,6 +73,11 @@ namespace TransmutationLearning
         public PPIService PPIService { get; set; } = null;
         // Weight for PPI boost (0 = no effect, higher = more biological gravity)
         public double PPIWeight { get; set; } = 0.0;
+
+        // Redundancy filter: removes correlated markers (GSFA-lite)
+        // Greedy forward selection keeps markers with correlation below threshold
+        public bool UseRedundancyFilter { get; set; } = true;
+        public double MaxMarkerCorrelation { get; set; } = 0.70;
     }
 
     /// <summary>
@@ -399,21 +404,30 @@ namespace TransmutationLearning
                 .Where(p => p.detectionRate >= minDetection)
                 .ToList();
 
-            // If too few pass, relax threshold
-            if (detectionFiltered.Count < 100 && minDetection > 0.15)
+            // If too few pass, progressively relax threshold
+            // (only relax to thresholds lower than current setting)
+            if (detectionFiltered.Count < 100 && minDetection > 0.20)
             {
                 minDetection = 0.20;
                 detectionFiltered = proteinStats
                     .Where(p => p.detectionRate >= minDetection)
                     .ToList();
+            }
 
-                if (detectionFiltered.Count < 100)
-                {
-                    minDetection = 0.10;
-                    detectionFiltered = proteinStats
-                        .Where(p => p.detectionRate >= minDetection)
-                        .ToList();
-                }
+            if (detectionFiltered.Count < 100 && minDetection > 0.10)
+            {
+                minDetection = 0.10;
+                detectionFiltered = proteinStats
+                    .Where(p => p.detectionRate >= minDetection)
+                    .ToList();
+            }
+
+            if (detectionFiltered.Count < 100 && minDetection > 0.05)
+            {
+                minDetection = 0.05;
+                detectionFiltered = proteinStats
+                    .Where(p => p.detectionRate >= minDetection)
+                    .ToList();
             }
 
             // Step 2: Filter by variance - keep top N% most variable
@@ -422,11 +436,14 @@ namespace TransmutationLearning
                 return new HashSet<string>(proteinMatrix.Keys);
             }
 
+            // Sort by variance * detectionRate to avoid dropout-driven bias
+            // Pure variance favors proteins detected in few cells with high intensity variation
+            // Weighting by detection rate prioritizes consistently detected, variable proteins
             var sortedByVariance = detectionFiltered
-                .OrderByDescending(p => p.variance)
+                .OrderByDescending(p => p.variance * p.detectionRate)
                 .ToList();
 
-            int keepCount = (int)(sortedByVariance.Count * (1.0 - settings.VariancePercentile));
+            int keepCount = (int)(sortedByVariance.Count * settings.VariancePercentile);
             keepCount = Math.Max(keepCount, 50);  // Keep at least 50
             keepCount = Math.Min(keepCount, sortedByVariance.Count);
 
@@ -519,6 +536,25 @@ namespace TransmutationLearning
                     // Third relaxation: loosen detection
                     minDetection = 0.15;
                     notes.Add("Relaxed det≥15%");
+                }
+            }
+
+            // Apply redundancy filter if enabled (GSFA-lite: greedy forward selection)
+            if (settings.UseRedundancyFilter && selectedMarkers != null && selectedMarkers.Count > 0)
+            {
+                var retainedRuns = new HashSet<string>(cells.Select(c => c.Run));
+                int beforeCount = selectedMarkers.Count;
+
+                selectedMarkers = _featureService.ApplyRedundancyFilter(
+                    selectedMarkers,
+                    proteinMatrix,
+                    retainedRuns,
+                    settings.MaxMarkerCorrelation);
+
+                int filtered = beforeCount - selectedMarkers.Count;
+                if (filtered > 0)
+                {
+                    notes.Add($"Filtered {filtered} redundant (r>{settings.MaxMarkerCorrelation:F2})");
                 }
             }
 

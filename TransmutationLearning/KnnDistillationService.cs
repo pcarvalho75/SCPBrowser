@@ -329,39 +329,73 @@ namespace TransmutationLearning
             // Weight by how sparse the data is - sparser data benefits more from missing pattern
             double sparsity = 1.0 - (detectionCounts[i] + detectionCounts[j]) / (2.0 * nProteins);
 
-            // At high sparsity (few detections), shared missing patterns matter more
-            // At low sparsity (many detections), focus on detected overlap
-            double combinedJaccard = (1.0 - sparsity * 0.5) * jaccardDetected + (sparsity * 0.5) * jaccardMissing;
+            // CAP missingness contribution to prevent batch/depth artifacts from dominating
+            // Problem: Two low-depth cells can appear similar just because they're both missing
+            // the same proteins (technical artifact, not biology). This creates neighborhoods
+            // that cluster by depth rather than cell identity.
+            // 
+            // Old behavior: At sparsity=0.8, missingness got 40% weight (sparsity * 0.5)
+            // New behavior: Cap missingness weight at 15% regardless of sparsity
+            // 
+            // This preserves the "shared silence" signal for genuinely informative patterns
+            // while preventing technical artifacts from dominating the similarity metric.
+            const double maxMissingnessWeight = 0.15;
+            double missingnessWeight = Math.Min(maxMissingnessWeight, sparsity * 0.5);
+            double combinedJaccard = (1.0 - missingnessWeight) * jaccardDetected + missingnessWeight * jaccardMissing;
 
             return combinedJaccard;
         }
 
         /// <summary>
-        /// Find k nearest neighbors for each cell based on similarity matrix
+        /// Find k nearest neighbors for each cell based on similarity matrix.
+        /// Only includes neighbors with similarity above threshold to prevent noise-driven votes.
+        /// Returns both neighbor indices and their similarities for quality-weighted voting.
         /// </summary>
-        private List<int>[] FindKNearestNeighbors(double[,] similarityMatrix, int k)
+        private List<(int index, double similarity)>[] FindKNearestNeighbors(double[,] similarityMatrix, int k)
         {
             int nCells = similarityMatrix.GetLength(0);
-            var neighbors = new List<int>[nCells];
+            var neighbors = new List<(int index, double similarity)>[nCells];
+
+            // Minimum similarity threshold to be considered a valid neighbor
+            // Problem: Taking k neighbors regardless of similarity can manufacture votes from noise
+            // when cosine is gated out (few shared proteins) and Jaccard doesn't separate well.
+            // Solution: Only include neighbors with meaningful similarity (> 0.1)
+            // If fewer than minNeighbors pass, return empty list → cell keeps original label
+            const double minSimilarity = 0.10;
+            const int minNeighbors = 3;
 
             for (int i = 0; i < nCells; i++)
             {
-                // Get similarities to all other cells
+                // Get similarities to all other cells, filtered by minimum threshold
                 var similarities = new List<(int index, double sim)>();
                 for (int j = 0; j < nCells; j++)
                 {
                     if (i != j)
                     {
-                        similarities.Add((j, similarityMatrix[i, j]));
+                        double sim = similarityMatrix[i, j];
+                        if (sim >= minSimilarity)
+                        {
+                            similarities.Add((j, sim));
+                        }
                     }
                 }
 
                 // Sort by similarity descending and take top k
-                neighbors[i] = similarities
+                var topK = similarities
                     .OrderByDescending(x => x.sim)
                     .Take(k)
-                    .Select(x => x.index)
                     .ToList();
+
+                // If too few meaningful neighbors, return empty list
+                // This cell will keep its original label (handled by EvaluateCellWithKnn)
+                if (topK.Count < minNeighbors)
+                {
+                    neighbors[i] = new List<(int index, double similarity)>();
+                }
+                else
+                {
+                    neighbors[i] = topK.Select(x => (x.index, x.sim)).ToList();
+                }
             }
 
             return neighbors;
@@ -384,11 +418,12 @@ namespace TransmutationLearning
         }
 
         /// <summary>
-        /// Evaluate a single cell using kNN weighted voting
+        /// Evaluate a single cell using kNN weighted voting.
+        /// Uses similarity-weighted voting and scales priors by neighborhood quality.
         /// </summary>
         private ReclassificationRecord EvaluateCellWithKnn(
             CellClassification cell,
-            List<int> neighborIndices,
+            List<(int index, double similarity)> neighborData,
             List<string> runOrder,
             Dictionary<string, string> runToLabel,
             Dictionary<string, double> priorWeights,
@@ -412,16 +447,31 @@ namespace TransmutationLearning
             int originalRank = expectedDistribution.GetRank(cell.Labels);
             bool isProtected = protectionRank > 0 && originalRank <= protectionRank;
 
-            // Count neighbor votes
+            // No neighbors → keep original
+            if (neighborData.Count == 0)
+            {
+                record.Reason = "No neighbor votes";
+                return record;
+            }
+
+            // Compute neighborhood quality (mean similarity)
+            // High quality (0.7+) → neighbors are reliable → trust the data
+            // Low quality (0.2-0.4) → neighbors are weak → apply more prior regularization
+            double neighborhoodQuality = neighborData.Average(n => n.similarity);
+
+            // Count neighbor votes weighted by similarity
+            // More similar neighbors have more influence on the vote
             var votes = new Dictionary<string, double>();
-            foreach (int neighborIdx in neighborIndices)
+            foreach (var (neighborIdx, similarity) in neighborData)
             {
                 string neighborRun = runOrder[neighborIdx];
                 string neighborLabel = runToLabel[neighborRun];
 
                 if (!votes.ContainsKey(neighborLabel))
                     votes[neighborLabel] = 0;
-                votes[neighborLabel] += 1;
+                
+                // Similarity-weighted voting: closer neighbors count more
+                votes[neighborLabel] += similarity;
             }
 
             if (votes.Count == 0)
@@ -430,27 +480,36 @@ namespace TransmutationLearning
                 return record;
             }
 
-            // Apply prior weighting with virtual votes
-            // At high sensitivity, expected types get "virtual votes" even if no neighbors voted for them
-            // This ensures the prior can actually dominate when sensitivity = 1
+            // Apply prior weighting with virtual votes, SCALED BY NEIGHBORHOOD QUALITY
+            // 
+            // Old behavior: priors applied uniformly regardless of neighborhood strength
+            //   → could force distribution even when data was clear
+            // 
+            // New behavior: priors scale inversely with neighborhood quality
+            //   → strong neighborhoods (high similarity) → trust data, reduce prior
+            //   → weak neighborhoods (low similarity) → apply more prior regularization
+            // 
+            // Formula: effectiveSensitivity = sensitivity * (1 - neighborhoodQuality)
+            //   At quality=0.8, sensitivity=1.0 → effectiveSensitivity = 0.2 (prior mostly ignored)
+            //   At quality=0.2, sensitivity=1.0 → effectiveSensitivity = 0.8 (prior dominates)
+            double effectiveSensitivity = sensitivity * (1.0 - neighborhoodQuality);
+
             var weightedVotes = new Dictionary<string, double>();
             double maxPrior = priorWeights.Values.Max();
-            int totalNeighbors = neighborIndices.Count;
+            double totalNeighborWeight = neighborData.Sum(n => n.similarity);
 
-            // Add virtual votes for ALL expected types based on sensitivity
-            // At sensitivity=1: top type gets k virtual votes (same as if all neighbors voted for it)
-            // At sensitivity=0: no virtual votes (pure kNN)
+            // Add virtual votes for ALL expected types based on effective sensitivity
             foreach (var kvp in priorWeights)
             {
                 string label = kvp.Key;
                 double priorScore = kvp.Value / maxPrior; // 0 to 1
 
-                // Virtual votes: at sensitivity=1, top type gets k votes, lower types get proportionally fewer
-                double virtualVotes = sensitivity * priorScore * totalNeighbors;
+                // Virtual votes scaled by effective sensitivity and total neighbor weight
+                double virtualVotes = effectiveSensitivity * priorScore * totalNeighborWeight;
                 weightedVotes[label] = virtualVotes;
             }
 
-            // Add actual neighbor votes (these are added on top of virtual votes)
+            // Add actual neighbor votes (similarity-weighted)
             foreach (var kvp in votes)
             {
                 string label = kvp.Key;
@@ -459,10 +518,8 @@ namespace TransmutationLearning
                 if (!weightedVotes.ContainsKey(label))
                     weightedVotes[label] = 0;
 
-                // Actual votes are weighted by (1 - sensitivity) so they matter less at high sensitivity
-                // At sensitivity=0: only actual votes count
-                // At sensitivity=1: actual votes are halved (still matter, but prior dominates)
-                double actualWeight = 1.0 - (0.5 * sensitivity);
+                // Actual votes weighted by (1 - effectiveSensitivity/2) 
+                double actualWeight = 1.0 - (0.5 * effectiveSensitivity);
                 weightedVotes[label] += actualVotes * actualWeight;
             }
 
@@ -473,21 +530,19 @@ namespace TransmutationLearning
             double runnerUpVotes = sortedVotes.Count > 1 ? sortedVotes[1].Value : 0;
 
             // Calculate confidence as winner's margin over runner-up
-            // This ensures high prior influence can actually cause reclassification
-            // confidence = winner / (winner + runner-up), ranges from 0.5 (tie) to 1.0 (dominant)
             double confidence = (winnerVotes + runnerUpVotes) > 0
                 ? winnerVotes / (winnerVotes + runnerUpVotes)
                 : 0.5;
 
             // Record vote details
-            int rawWinnerVotes = votes.TryGetValue(winnerLabel, out var rv) ? (int)rv : 0;
+            double rawWinnerVotes = votes.TryGetValue(winnerLabel, out var rv) ? rv : 0;
             record.ScoreGap = confidence;
 
             // Decision logic
             if (winnerLabel == cell.Labels)
             {
                 // Neighbors agree with original - keep it
-                record.Reason = $"Neighbors confirm ({rawWinnerVotes}/{neighborIndices.Count}, conf={confidence:F2})";
+                record.Reason = $"Neighbors confirm (sim={rawWinnerVotes:F2}, qual={neighborhoodQuality:F2}, conf={confidence:F2})";
                 return record;
             }
 
@@ -524,7 +579,7 @@ namespace TransmutationLearning
             // Reclassify
             record.DistilledLabel = winnerLabel;
             record.DistilledScore = confidence;
-            record.Reason = $"kNN vote: {winnerLabel} ({rawWinnerVotes}/{neighborIndices.Count}, conf={confidence:F2})";
+            record.Reason = $"kNN vote: {winnerLabel} (sim={rawWinnerVotes:F2}, qual={neighborhoodQuality:F2}, conf={confidence:F2})";
 
             return record;
         }

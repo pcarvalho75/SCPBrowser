@@ -73,6 +73,11 @@ namespace TransmutationLearning
         public PPIService PPIService { get; set; } = null;
         // Weight for PPI boost (0 = no effect, higher = more biological gravity)
         public double PPIWeight { get; set; } = 0.0;
+
+        // Redundancy filter: removes correlated markers (GSFA-lite)
+        // Greedy forward selection keeps markers with correlation below threshold
+        public bool UseRedundancyFilter { get; set; } = true;
+        public double MaxMarkerCorrelation { get; set; } = 0.70;
     }
 
     /// <summary>
@@ -194,6 +199,7 @@ namespace TransmutationLearning
             // ═══════════════════════════════════════════════════════════════
             Dictionary<string, string> previousLabelMap = null;
             List<ProteinStatistics> selectedMarkers = null;
+            double previousCVAccuracy = 0;
 
             for (int iter = 1; iter <= settings.MaxIterations; iter++)
             {
@@ -256,6 +262,45 @@ namespace TransmutationLearning
                 int changed = CountLabelChanges(previousLabelMap, currentLabels.DistilledLabels);
                 double changePercent = (double)changed / retainedCells.Count;
 
+                // Run cross-validation to check if we're overfitting
+                double cvAccuracy = 0;
+                bool cvDropped = false;
+
+                if (settings.UseCVEarlyStopping && selectedMarkers.Count >= 10)
+                {
+                    progress?.Report(new IterationProgress
+                    {
+                        Current = iter,
+                        Total = settings.MaxIterations + 1,
+                        Status = $"Iteration {iter}: Running {settings.CVFolds}-fold CV..."
+                    });
+
+                    var cvResult = _validationService.RunCrossValidation(
+                        retainedCells,
+                        proteinMatrix,
+                        selectedMarkers,
+                        currentLabels.DistilledLabels,
+                        settings.CVFolds);
+
+                    if (cvResult.IsValid)
+                    {
+                        cvAccuracy = cvResult.MeanAccuracy;
+
+                        // Check if CV accuracy dropped significantly from previous iteration
+                        if (iter > 1 && previousCVAccuracy > 0)
+                        {
+                            double drop = previousCVAccuracy - cvAccuracy;
+                            if (drop > settings.MinCVAccuracyDrop)
+                            {
+                                cvDropped = true;
+                                selectionNotes += $", CV dropped {drop:P1}";
+                            }
+                        }
+
+                        previousCVAccuracy = cvAccuracy;
+                    }
+                }
+
                 result.History.Add(new IterationSummary
                 {
                     Iteration = iter,
@@ -263,8 +308,17 @@ namespace TransmutationLearning
                     MarkersSelected = selectedMarkers.Count,
                     LabelsChanged = changed,
                     ChangePercent = changePercent * 100,
+                    CVAccuracy = cvAccuracy,
                     Notes = selectionNotes
                 });
+
+                // Stop if CV accuracy dropped (overfitting signal)
+                if (cvDropped)
+                {
+                    result.History.Last().Notes += " - STOPPED (CV accuracy dropped)";
+                    result.IterationsRun = iter;
+                    break;
+                }
 
                 if (changePercent < settings.ConvergenceThreshold)
                 {
@@ -377,7 +431,7 @@ namespace TransmutationLearning
                 .OrderByDescending(p => p.variance)
                 .ToList();
 
-            int keepCount = (int)(sortedByVariance.Count * (1.0 - settings.VariancePercentile));
+            int keepCount = (int)(sortedByVariance.Count * settings.VariancePercentile);
             keepCount = Math.Max(keepCount, 50);  // Keep at least 50
             keepCount = Math.Min(keepCount, sortedByVariance.Count);
 
@@ -470,6 +524,25 @@ namespace TransmutationLearning
                     // Third relaxation: loosen detection
                     minDetection = 0.15;
                     notes.Add("Relaxed det≥15%");
+                }
+            }
+
+            // Apply redundancy filter if enabled (GSFA-lite: greedy forward selection)
+            if (settings.UseRedundancyFilter && selectedMarkers != null && selectedMarkers.Count > 0)
+            {
+                var retainedRuns = new HashSet<string>(cells.Select(c => c.Run));
+                int beforeCount = selectedMarkers.Count;
+
+                selectedMarkers = _featureService.ApplyRedundancyFilter(
+                    selectedMarkers,
+                    proteinMatrix,
+                    retainedRuns,
+                    settings.MaxMarkerCorrelation);
+
+                int filtered = beforeCount - selectedMarkers.Count;
+                if (filtered > 0)
+                {
+                    notes.Add($"Filtered {filtered} redundant (r>{settings.MaxMarkerCorrelation:F2})");
                 }
             }
 

@@ -104,7 +104,16 @@ namespace TransmutationLearning
             // Get expression values for this protein across retained runs
             if (!dataset.ProteinMatrix.TryGetValue(protein, out var proteinData))
             {
-                // Protein not in matrix - shouldn't happen but handle gracefully
+                // Protein not in matrix: force non-significant and non-selectable defaults
+                // Without this, KruskalWallisPValue defaults to 0 = maximally significant (BUG)
+                stats.KruskalWallisH = 0;
+                stats.KruskalWallisPValue = 1;
+                stats.QValue = 1;
+                stats.SpecificityDelta = 0;
+                stats.WeightedSpecificityScore = 0;
+                stats.OverallDetectionRate = 0;
+                stats.BestCellType = "-";
+                stats.SecondBestCellType = "-";
                 return stats;
             }
 
@@ -175,18 +184,35 @@ namespace TransmutationLearning
                     var second = rankedTypes[1];
                     stats.SecondBestCellType = second.CellType;
                     stats.SecondBestCellTypeExpression = second.MedianExpression;
+                    stats.SecondBestCellTypeDetection = second.DetectionRate;
                     stats.SpecificityDelta = best.MedianExpression - second.MedianExpression;
+                    stats.DetectionDelta = best.DetectionRate - second.DetectionRate;
                 }
                 else
                 {
                     stats.SecondBestCellType = "-";
+                    stats.SecondBestCellTypeDetection = 0;
                     stats.SpecificityDelta = best.MedianExpression; // No second type means very specific
+                    stats.DetectionDelta = best.DetectionRate;      // Full detection difference
                 }
 
-                // Weighted score: prioritize proteins with high specificity AND high detection rate
-                // A protein detected in 80% of T-Cells with good delta is better than
-                // one with same delta but only 20% detection
-                stats.WeightedSpecificityScore = stats.SpecificityDelta * stats.BestCellTypeDetection;
+                // Composite score combining intensity separation and detection separation
+                // 
+                // Old formula: SpecificityDelta × BestCellTypeDetection
+                //   - Only rewards intensity difference, weighted by how often detected
+                //   - Problem: Proteins detected in few cells can have inflated delta
+                //
+                // New formula: (SpecificityDelta × BestCellTypeDetection) + w × DetectionDelta
+                //   - First term: intensity separation weighted by detection (as before)
+                //   - Second term: bonus for proteins detected MORE in target vs others
+                //   - This deprioritizes "specific only because rarely detected" proteins
+                //   - Helps filter out dropout-driven cytoskeletal markers
+                //
+                // w = 0.5 is a moderate weight; increase to favor detection-specific markers
+                const double detectionWeight = 0.5;
+                stats.WeightedSpecificityScore = 
+                    (stats.SpecificityDelta * stats.BestCellTypeDetection) + 
+                    (detectionWeight * stats.DetectionDelta);
             }
 
             // Kruskal-Wallis test for differential expression across cell types
@@ -250,19 +276,130 @@ namespace TransmutationLearning
             if (stats.OverallDetectionRate < (1 - criteria.MaxMissingRate))
                 return false;
 
+            // Minimum cell fraction - protein must be detected in at least this fraction of all cells
+            // (This is similar to MaxMissingRate but more intuitive from UI perspective)
+            if (stats.OverallDetectionRate < criteria.MinCellFraction)
+                return false;
+
             return true;
         }
 
         /// <summary>
-        /// Select all proteins that pass the filter
+        /// Select all proteins that pass the filter, then apply redundancy filtering
         /// </summary>
-        public void SelectAllPassing(FeatureSelectionResult result)
+        public void SelectAllPassing(FeatureSelectionResult result, 
+            Dictionary<string, Dictionary<string, double>> proteinMatrix = null,
+            HashSet<string> retainedRuns = null)
         {
+            // First, mark all passing proteins
             foreach (var protein in result.AllProteinStats)
             {
                 protein.IsSelected = protein.PassesFilter;
             }
+
+            // Apply redundancy filtering if we have the data
+            if (proteinMatrix != null && retainedRuns != null && result.Criteria != null)
+            {
+                var passingProteins = result.AllProteinStats
+                    .Where(p => p.PassesFilter)
+                    .OrderByDescending(p => p.WeightedSpecificityScore)
+                    .ToList();
+
+                var nonRedundant = SelectNonRedundantMarkers(
+                    passingProteins, 
+                    proteinMatrix, 
+                    retainedRuns, 
+                    result.Criteria.MaxCorrelation);
+
+                // Update selection: only non-redundant proteins stay selected
+                var nonRedundantNames = new HashSet<string>(nonRedundant.Select(p => p.ProteinName));
+                foreach (var protein in result.AllProteinStats)
+                {
+                    protein.IsSelected = nonRedundantNames.Contains(protein.ProteinName);
+                }
+            }
+
             UpdateSelectedMarkers(result);
+        }
+
+        /// <summary>
+        /// Greedy forward selection to remove redundant markers.
+        /// Iterates through ranked proteins, only keeps those with max correlation 
+        /// below threshold to already-selected markers.
+        /// </summary>
+        /// <param name="rankedProteins">Proteins sorted by WeightedSpecificityScore descending</param>
+        /// <param name="proteinMatrix">Protein -> Run -> Intensity</param>
+        /// <param name="retainedRuns">Set of runs to use for correlation</param>
+        /// <param name="maxCorrelation">Maximum allowed Spearman correlation (default 0.7)</param>
+        /// <returns>Non-redundant subset of proteins</returns>
+        private List<ProteinStatistics> SelectNonRedundantMarkers(
+            List<ProteinStatistics> rankedProteins,
+            Dictionary<string, Dictionary<string, double>> proteinMatrix,
+            HashSet<string> retainedRuns,
+            double maxCorrelation = 0.70)
+        {
+            if (rankedProteins.Count == 0)
+                return new List<ProteinStatistics>();
+
+            var runList = retainedRuns.ToList();
+            var selected = new List<ProteinStatistics>();
+            var selectedVectors = new List<double[]>();
+
+            foreach (var candidate in rankedProteins)
+            {
+                // Build expression vector for candidate
+                var candidateVector = BuildExpressionVector(candidate.ProteinName, proteinMatrix, runList);
+
+                // Check correlation with all already-selected proteins
+                bool isRedundant = false;
+                foreach (var selectedVector in selectedVectors)
+                {
+                    double corr = Math.Abs(StatisticsHelper.SpearmanCorrelation(candidateVector, selectedVector));
+                    if (corr > maxCorrelation)
+                    {
+                        isRedundant = true;
+                        break;
+                    }
+                }
+
+                if (!isRedundant)
+                {
+                    selected.Add(candidate);
+                    selectedVectors.Add(candidateVector);
+                }
+            }
+
+            return selected;
+        }
+
+        /// <summary>
+        /// Build log2 expression vector for a protein across retained runs.
+        /// Missing values are NaN.
+        /// </summary>
+        private double[] BuildExpressionVector(
+            string protein,
+            Dictionary<string, Dictionary<string, double>> proteinMatrix,
+            List<string> runs)
+        {
+            var vector = new double[runs.Count];
+
+            if (!proteinMatrix.TryGetValue(protein, out var proteinData))
+            {
+                // Protein not found - return all NaN
+                for (int i = 0; i < runs.Count; i++)
+                    vector[i] = double.NaN;
+                return vector;
+            }
+
+            for (int i = 0; i < runs.Count; i++)
+            {
+                if (proteinData.TryGetValue(runs[i], out var intensity) && intensity > 0)
+                    vector[i] = Math.Log2(intensity);
+                else
+                    vector[i] = double.NaN;
+            }
+
+            return vector;
         }
 
         /// <summary>
@@ -293,6 +430,152 @@ namespace TransmutationLearning
                 .ToDictionary(
                     g => g.Key,
                     g => g.OrderByDescending(p => p.WeightedSpecificityScore).ToList());
+        }
+
+        /// <summary>
+        /// Compute Spearman correlation between two proteins using pairwise complete observations.
+        /// Returns correlation coefficient in range [-1, 1], or 0 if insufficient shared observations.
+        /// </summary>
+        private double ComputeSpearmanCorrelation(
+            string proteinA,
+            string proteinB,
+            Dictionary<string, Dictionary<string, double>> proteinMatrix,
+            HashSet<string> retainedRuns)
+        {
+            if (!proteinMatrix.TryGetValue(proteinA, out var dataA) ||
+                !proteinMatrix.TryGetValue(proteinB, out var dataB))
+                return 0;
+
+            // Collect pairwise complete observations
+            var pairs = new List<(double a, double b)>();
+            foreach (var run in retainedRuns)
+            {
+                if (dataA.TryGetValue(run, out double intensityA) && intensityA > 0 &&
+                    dataB.TryGetValue(run, out double intensityB) && intensityB > 0)
+                {
+                    pairs.Add((Math.Log2(intensityA), Math.Log2(intensityB)));
+                }
+            }
+
+            // Need at least 5 observations for meaningful correlation
+            if (pairs.Count < 5)
+                return 0;
+
+            // Convert to ranks for Spearman
+            var ranksA = ComputeRanks(pairs.Select(p => p.a).ToList());
+            var ranksB = ComputeRanks(pairs.Select(p => p.b).ToList());
+
+            // Pearson correlation on ranks = Spearman correlation
+            double meanA = ranksA.Average();
+            double meanB = ranksB.Average();
+
+            double numerator = 0;
+            double sumSqA = 0;
+            double sumSqB = 0;
+
+            for (int i = 0; i < ranksA.Count; i++)
+            {
+                double devA = ranksA[i] - meanA;
+                double devB = ranksB[i] - meanB;
+                numerator += devA * devB;
+                sumSqA += devA * devA;
+                sumSqB += devB * devB;
+            }
+
+            if (sumSqA == 0 || sumSqB == 0)
+                return 0;
+
+            return numerator / (Math.Sqrt(sumSqA) * Math.Sqrt(sumSqB));
+        }
+
+        /// <summary>
+        /// Compute ranks for a list of values (handles ties by averaging)
+        /// </summary>
+        private List<double> ComputeRanks(List<double> values)
+        {
+            int n = values.Count;
+            var indexed = values.Select((v, i) => (value: v, index: i)).OrderBy(x => x.value).ToList();
+            var ranks = new double[n];
+
+            int i = 0;
+            while (i < n)
+            {
+                int j = i;
+                // Find all ties
+                while (j < n - 1 && indexed[j + 1].value == indexed[i].value)
+                    j++;
+
+                // Average rank for ties (ranks are 1-based)
+                double avgRank = (i + j) / 2.0 + 1.0;
+                for (int k = i; k <= j; k++)
+                    ranks[indexed[k].index] = avgRank;
+
+                i = j + 1;
+            }
+
+            return ranks.ToList();
+        }
+
+        /// <summary>
+        /// Apply greedy forward selection to remove redundant markers.
+        /// Iterates through ranked proteins and only keeps those with correlation below threshold
+        /// to all previously selected markers.
+        /// 
+        /// This achieves ~80% of GSFA's "joint optimization" benefit:
+        /// - Sequential Kruskal-Wallis might select CD3E, CD3D, CD3G (all redundant, same signal)
+        /// - Greedy forward selection keeps CD3E, skips CD3D/CD3G, adds CD14 (different signal)
+        /// </summary>
+        /// <param name="rankedProteins">Proteins sorted by WeightedSpecificityScore descending</param>
+        /// <param name="proteinMatrix">Expression matrix</param>
+        /// <param name="retainedRuns">Cells to use for correlation</param>
+        /// <param name="maxCorrelation">Maximum allowed correlation with existing markers (e.g., 0.7)</param>
+        /// <param name="maxMarkers">Optional cap on number of markers (0 = no cap)</param>
+        /// <returns>Non-redundant marker list preserving rank order</returns>
+        public List<ProteinStatistics> ApplyRedundancyFilter(
+            List<ProteinStatistics> rankedProteins,
+            Dictionary<string, Dictionary<string, double>> proteinMatrix,
+            HashSet<string> retainedRuns,
+            double maxCorrelation = 0.7,
+            int maxMarkers = 0)
+        {
+            if (rankedProteins == null || rankedProteins.Count == 0)
+                return new List<ProteinStatistics>();
+
+            var selected = new List<ProteinStatistics>();
+            var selectedNames = new HashSet<string>();
+
+            foreach (var candidate in rankedProteins)
+            {
+                // Check correlation with all already-selected markers
+                bool isRedundant = false;
+                foreach (var existing in selected)
+                {
+                    double corr = ComputeSpearmanCorrelation(
+                        candidate.ProteinName,
+                        existing.ProteinName,
+                        proteinMatrix,
+                        retainedRuns);
+
+                    // Use absolute correlation (negative correlation is also redundant)
+                    if (Math.Abs(corr) >= maxCorrelation)
+                    {
+                        isRedundant = true;
+                        break;
+                    }
+                }
+
+                if (!isRedundant)
+                {
+                    selected.Add(candidate);
+                    selectedNames.Add(candidate.ProteinName);
+
+                    // Check cap
+                    if (maxMarkers > 0 && selected.Count >= maxMarkers)
+                        break;
+                }
+            }
+
+            return selected;
         }
 
         /// <summary>

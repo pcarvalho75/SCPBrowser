@@ -699,13 +699,6 @@ namespace SCPBrowser
             if (hasNoFilters && !userInteraction)
                 return;
 
-            // Debug: log first point's PlateName
-            if (_dataPoints.Count > 0)
-            {
-                var firstPoint = _dataPoints[0];
-                Console.WriteLine($"[DEBUG] UpdateSelectionWithFilters: First point PlateName='{firstPoint.PlateName}', BioCond='{firstPoint.BiologicalCondition}'");
-            }
-
             var selectedPoints = new List<DataPoint>();
             bool hasPolygonSelection = _selectionManager.PolygonPointsScreen.Count >= 3;
 

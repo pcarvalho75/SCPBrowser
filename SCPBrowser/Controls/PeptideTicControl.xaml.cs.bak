@@ -362,7 +362,12 @@ namespace SCPBrowser
 
                     if (s is CheckBox cb && cb.Tag is string key)
                     {
+                        Console.WriteLine($"[DEBUG] Plate Unchecked: {key}");
+                        Console.WriteLine($"[DEBUG] _checkedPlates before: {string.Join(", ", _checkedPlates)}");
+                        Console.WriteLine($"[DEBUG] _checkedBioConditions: {string.Join(", ", _checkedBioConditions)}");
+                        Console.WriteLine($"[DEBUG] _checkedCellTypes: {string.Join(", ", _checkedCellTypes)}");
                         _checkedPlates.Remove(key);
+                        Console.WriteLine($"[DEBUG] _checkedPlates after: {string.Join(", ", _checkedPlates)}");
                         ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates, userInteraction: true);
                     }
                 };

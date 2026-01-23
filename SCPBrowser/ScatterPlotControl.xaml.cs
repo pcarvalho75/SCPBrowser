@@ -35,6 +35,7 @@ namespace SCPBrowser
         // Checkbox filter sets for persistent selection
         public HashSet<string> CheckedCellTypes { get; set; }
         public HashSet<string> CheckedBioConditions { get; set; }
+        public HashSet<string> CheckedPlates { get; set; }
 
         // Add field near other private fields:
         private bool _previousApplyBatchCorrection = false;
@@ -211,11 +212,12 @@ namespace SCPBrowser
                 }
 
                 // Apply checkbox selections at the very end
-                if (options.CheckedCellTypes != null || options.CheckedBioConditions != null)
+                if (options.CheckedCellTypes != null || options.CheckedBioConditions != null || options.CheckedPlates != null)
                 {
                     UpdateSelectionWithFilters(
                         options.CheckedCellTypes ?? new HashSet<string>(),
-                        options.CheckedBioConditions ?? new HashSet<string>());
+                        options.CheckedBioConditions ?? new HashSet<string>(),
+                        options.CheckedPlates ?? new HashSet<string>());
                 }
             }
             finally
@@ -682,10 +684,27 @@ namespace SCPBrowser
         /// </summary>
         /// <param name="checkedCellTypes">Set of checked cell types</param>
         /// <param name="checkedBioConditions">Set of checked biological conditions</param>
-        public void UpdateSelectionWithFilters(HashSet<string> checkedCellTypes, HashSet<string> checkedBioConditions)
+        /// <param name="userInteraction">If true, always apply filters even if all are empty</param>
+        public void UpdateSelectionWithFilters(HashSet<string> checkedCellTypes, HashSet<string> checkedBioConditions, HashSet<string> checkedPlates = null, bool userInteraction = false)
         {
             if (_dataPoints == null || _dataPoints.Count == 0)
                 return;
+
+            // If all filter sets are empty and this isn't a user interaction, keep all points selected
+            bool hasNoFilters = (checkedCellTypes == null || checkedCellTypes.Count == 0) &&
+                               (checkedBioConditions == null || checkedBioConditions.Count == 0) &&
+                               (checkedPlates == null || checkedPlates.Count == 0) &&
+                               _selectionManager.PolygonPointsScreen.Count < 3;
+
+            if (hasNoFilters && !userInteraction)
+                return;
+
+            // Debug: log first point's PlateName
+            if (_dataPoints.Count > 0)
+            {
+                var firstPoint = _dataPoints[0];
+                Console.WriteLine($"[DEBUG] UpdateSelectionWithFilters: First point PlateName='{firstPoint.PlateName}', BioCond='{firstPoint.BiologicalCondition}'");
+            }
 
             var selectedPoints = new List<DataPoint>();
             bool hasPolygonSelection = _selectionManager.PolygonPointsScreen.Count >= 3;
@@ -709,7 +728,12 @@ namespace SCPBrowser
                                            !string.IsNullOrEmpty(point.BiologicalCondition) &&
                                            checkedBioConditions.Contains(point.BiologicalCondition);
 
-                bool shouldBeSelected = isInPolygon || matchesCellType || matchesBioCondition;
+                bool matchesPlate = checkedPlates != null &&
+                                    checkedPlates.Count > 0 &&
+                                    !string.IsNullOrEmpty(point.PlateName) &&
+                                    checkedPlates.Contains(point.PlateName);
+
+                bool shouldBeSelected = isInPolygon || matchesCellType || matchesBioCondition || matchesPlate;
 
                 point.IsSelected = shouldBeSelected;
 
@@ -1077,10 +1101,10 @@ namespace SCPBrowser
                 {
                     Width = MarkerSize,
                     Height = MarkerSize,
-                    Fill = new SolidColorBrush(UnselectedGray),
-                    Stroke = new SolidColorBrush(UnselectedGray),
+                    Fill = new SolidColorBrush(markerColor),
+                    Stroke = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
                     StrokeThickness = 1,
-                    Opacity = UnselectedOpacity
+                    Opacity = 1.0
                 };
 
                 Canvas.SetLeft(ellipse, screenPos.X - MarkerSize / 2);
@@ -1098,7 +1122,7 @@ namespace SCPBrowser
                     YScreen = screenPos.Y,
                     Visual = ellipse,
                     BaseColor = markerColor,
-                    IsSelected = false,
+                    IsSelected = true,
                     PredictedCellType = cellType,
                     PredictionScore = predictionScore,
                     BiologicalCondition = condition
@@ -1155,10 +1179,10 @@ namespace SCPBrowser
                 {
                     Width = MarkerSize,
                     Height = MarkerSize,
-                    Fill = new SolidColorBrush(UnselectedGray),
-                    Stroke = new SolidColorBrush(UnselectedGray),
+                    Fill = new SolidColorBrush(markerColor),
+                    Stroke = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
                     StrokeThickness = 1,
-                    Opacity = UnselectedOpacity
+                    Opacity = 1.0
                 };
 
                 Canvas.SetLeft(ellipse, screenPos.X - MarkerSize / 2);
@@ -1176,7 +1200,7 @@ namespace SCPBrowser
                     YScreen = screenPos.Y,
                     Visual = ellipse,
                     BaseColor = markerColor,
-                    IsSelected = false,
+                    IsSelected = true,
                     PredictedCellType = cellType,
                     PredictionScore = predictionScore,
                     BiologicalCondition = bioCondition,
@@ -1228,10 +1252,10 @@ namespace SCPBrowser
                 {
                     Width = MarkerSize,
                     Height = MarkerSize,
-                    Fill = new SolidColorBrush(UnselectedGray),
-                    Stroke = new SolidColorBrush(UnselectedGray),
+                    Fill = new SolidColorBrush(markerColor),
+                    Stroke = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
                     StrokeThickness = 1,
-                    Opacity = UnselectedOpacity
+                    Opacity = 1.0
                 };
 
                 Canvas.SetLeft(ellipse, screenPos.X - MarkerSize / 2);
@@ -1249,7 +1273,7 @@ namespace SCPBrowser
                     YScreen = screenPos.Y,
                     Visual = ellipse,
                     BaseColor = markerColor,
-                    IsSelected = false,
+                    IsSelected = true,
                     PredictedCellType = cellType,
                     PredictionScore = predictionScore,
                     BiologicalCondition = condition

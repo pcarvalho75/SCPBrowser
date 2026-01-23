@@ -1,4 +1,4 @@
-<!--
+﻿<!--
 ProjectBrowser2.xaml
 Mother control that hosts three child browser controls.
 Location: SCPBrowser/Controls/ProjectBrowser2.xaml
@@ -45,8 +45,8 @@ Location: SCPBrowser/Controls/ProjectBrowser2.xaml
                     x:Name="MainTabControl"
                     Margin="0">
 
-            <!-- Omic Data Tab -->
-            <TabItem Header="Omic Data">
+            <!-- Transcriptomic Data Tab -->
+            <TabItem Header="Transcriptomic Data">
                 <local:OmicBrowserControl x:Name="OmicBrowser"/>
             </TabItem>
 

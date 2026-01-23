@@ -1,5 +1,4 @@
-using System.Collections.Generic;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Media;
 using System.Windows.Shapes;
 
@@ -22,12 +21,7 @@ namespace SCPBrowser
         public string PredictedCellType { get; set; }
         public CellTypeScore PredictionScore { get; set; }
         public string BiologicalCondition { get; set; }
-        public string PlateName { get; set; }
-        
-        /// <summary>
-        /// Full prediction result containing scores for all cell types (for detailed tooltip)
-        /// </summary>
-        public CellTypePredictionResult FullPrediction { get; set; }
+        public string PlateName { get; set; }  // <-- Add this line
     }
 
     public class SelectedPointData

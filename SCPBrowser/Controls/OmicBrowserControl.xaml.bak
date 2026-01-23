@@ -152,39 +152,22 @@ Location: SCPBrowser/Controls/OmicBrowserControl.xaml
                              ScrollViewer.IsDeferredScrollingEnabled="True">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Border x:Name="ItemBorder"
-                                        Background="White"
+                                <Border Background="White"
                                         BorderBrush="#e2e8f0"
                                         BorderThickness="1"
                                         CornerRadius="4"
                                         Padding="10"
                                         Margin="0,2">
                                     <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
-                                        
-                                        <!-- Enable/Disable checkbox -->
-                                        <CheckBox Grid.Column="0" Grid.RowSpan="2"
-                                                  x:Name="EnabledCheckBox"
-                                                  IsChecked="True"
-                                                  VerticalAlignment="Center"
-                                                  Margin="0,0,8,0"
-                                                  ToolTip="Uncheck to exclude from classification"
-                                                  Checked="CellTypeEnabled_Changed"
-                                                  Unchecked="CellTypeEnabled_Changed"
-                                                  Tag="{Binding CellType}"/>
-                                        
-                                        <TextBlock Grid.Row="0" Grid.Column="1"
+                                        <TextBlock Grid.Row="0"
                                                    Text="{Binding CellType}" 
                                                    FontWeight="SemiBold"
                                                    FontSize="13"/>
-                                        <TextBlock Grid.Row="1" Grid.Column="1"
+                                        <TextBlock Grid.Row="1"
                                                    FontSize="11"
                                                    Foreground="#64748b">
                                             <Run Text="{Binding CellCount, StringFormat='{}{0:N0} cells'}"/>

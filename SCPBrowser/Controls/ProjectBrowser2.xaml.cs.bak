@@ -121,14 +121,6 @@ namespace SCPBrowser
         }
 
         /// <summary>
-        /// Gets the excluded cell types (not considered in classification)
-        /// </summary>
-        public System.Collections.Generic.HashSet<string> GetExcludedCellTypes()
-        {
-            return OmicBrowser.GetExcludedCellTypes();
-        }
-
-        /// <summary>
         /// Close button handler - simply hides the control
         /// </summary>
         private void CloseButton_Click(object sender, RoutedEventArgs e)

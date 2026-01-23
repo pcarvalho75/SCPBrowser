@@ -565,7 +565,8 @@ namespace SCPBrowser
                     PredictedCellType = cellType,
                     PredictionScore = predictionScore,
                     BiologicalCondition = bioCondition,
-                    PlateName = plateName
+                    PlateName = plateName,
+                    FullPrediction = options.CellTypePredictions?.GetValueOrDefault(rawFiles[i])
                 };
 
                 _dataPoints.Add(dataPoint);
@@ -726,7 +727,23 @@ namespace SCPBrowser
                                     !string.IsNullOrEmpty(point.PlateName) &&
                                     checkedPlates.Contains(point.PlateName);
 
-                bool shouldBeSelected = isInPolygon || matchesCellType || matchesBioCondition || matchesPlate;
+                // For each category: determine if filter is "active" (data exists for this category)
+                // If filter is active but checked set is empty, nothing passes (user unchecked all)
+                // If filter is not active (no data), it passes by default
+                bool hasCellTypeData = !string.IsNullOrEmpty(point.PredictedCellType);
+                bool hasBioConditionData = !string.IsNullOrEmpty(point.BiologicalCondition);
+                bool hasPlateData = !string.IsNullOrEmpty(point.PlateName);
+
+                // Pass filter if: no data for category, OR data exists and is in checked set
+                bool passesCellTypeFilter = !hasCellTypeData || matchesCellType;
+                bool passesBioConditionFilter = !hasBioConditionData || matchesBioCondition;
+                bool passesPlateFilter = !hasPlateData || matchesPlate;
+
+                // Point must pass ALL checkbox filters (AND logic)
+                bool passesAllFilters = passesCellTypeFilter && passesBioConditionFilter && passesPlateFilter;
+
+                // Combine with polygon selection if present
+                bool shouldBeSelected = hasPolygonSelection ? (isInPolygon && passesAllFilters) : passesAllFilters;
 
                 point.IsSelected = shouldBeSelected;
 
@@ -1044,7 +1061,8 @@ namespace SCPBrowser
                     PredictedCellType = cellType,
                     PredictionScore = predictionScore,
                     BiologicalCondition = bioCondition,
-                    PlateName = plateName
+                    PlateName = plateName,
+                    FullPrediction = options.CellTypePredictions?.GetValueOrDefault(rawFiles[i])
                 };
 
                 _dataPoints.Add(dataPoint);
@@ -1118,7 +1136,8 @@ namespace SCPBrowser
                     IsSelected = true,
                     PredictedCellType = cellType,
                     PredictionScore = predictionScore,
-                    BiologicalCondition = condition
+                    BiologicalCondition = condition,
+                    FullPrediction = predictions?.GetValueOrDefault(rawFiles[i])
                 });
             }
 
@@ -1197,7 +1216,8 @@ namespace SCPBrowser
                     PredictedCellType = cellType,
                     PredictionScore = predictionScore,
                     BiologicalCondition = bioCondition,
-                    PlateName = plateName
+                    PlateName = plateName,
+                    FullPrediction = predictions?.GetValueOrDefault(rawFiles[i])
                 });
             }
 
@@ -1269,7 +1289,8 @@ namespace SCPBrowser
                     IsSelected = true,
                     PredictedCellType = cellType,
                     PredictionScore = predictionScore,
-                    BiologicalCondition = condition
+                    BiologicalCondition = condition,
+                    FullPrediction = predictions?.GetValueOrDefault(rawFiles[i])
                 });
             }
 
@@ -1463,6 +1484,42 @@ namespace SCPBrowser
             if (!string.IsNullOrEmpty(point.PredictedCellType))
             {
                 tooltipText += $"\nCell Type: {point.PredictedCellType}";
+                
+                // Show scores and marker details for all cell types if available
+                if (point.FullPrediction?.Scores != null)
+                {
+                    tooltipText += "\n\n─── Classification Scores ───";
+                    foreach (var kvp in point.FullPrediction.Scores.OrderByDescending(s => s.Value.CompositeScore))
+                    {
+                        var score = kvp.Value;
+                        string indicator = kvp.Key == point.PredictedCellType ? "★" : "○";
+                        
+                        // Show composite score with marker adjustment
+                        string markerAdj = score.KeyMarkerAdjustment != 0 
+                            ? $" (marker: {score.KeyMarkerAdjustment:+0.0;-0.0})" 
+                            : "";
+                        tooltipText += $"\n{indicator} {kvp.Key}: {score.CompositeScore:F2}{markerAdj}";
+                        
+                        // Show individual score components
+                        tooltipText += $"\n   Spearman: {score.SpearmanCorrelation:F3}, Spec: {score.SpecificityScore:F2}, -log(p): {-Math.Log10(Math.Max(score.HypergeometricPValue, 1e-300)):F1}";
+                        
+                        // Show markers if defined for this cell type
+                        if (score.MarkersFound.Count > 0 || score.MarkersMissing.Count > 0)
+                        {
+                            tooltipText += "\n   ";
+                            if (score.MarkersFound.Count > 0)
+                            {
+                                var foundList = string.Join(", ", score.MarkersFound.Keys);
+                                tooltipText += $"✓{foundList} ";
+                            }
+                            if (score.MarkersMissing.Count > 0)
+                            {
+                                var missingList = string.Join(", ", score.MarkersMissing);
+                                tooltipText += $"✗{missingList}";
+                            }
+                        }
+                    }
+                }
             }
 
             if (!string.IsNullOrEmpty(point.PlateName))

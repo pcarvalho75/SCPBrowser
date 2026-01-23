@@ -120,8 +120,7 @@ namespace SCPBrowser
         public Dictionary<string, CellTypePredictionResult> PredictCellTypesForAllRuns(
             ProteomicsData proteomicsData,
             IProgressReporter progressReporter = null,
-            Dictionary<string, HashSet<string>> keyMarkers = null,
-            HashSet<string> excludedCellTypes = null)
+            Dictionary<string, HashSet<string>> keyMarkers = null)
         {
             if (!IsLoaded)
                 throw new InvalidOperationException("Transcriptomic database not loaded");
@@ -141,7 +140,7 @@ namespace SCPBrowser
                 currentRun++;
                 progressReporter?.ReportProgress($"Classifying run {currentRun} of {totalRuns}: {runName}");
 
-                var prediction = PredictCellTypeForRun(proteomicsData, runName, keyMarkers, excludedCellTypes);
+                var prediction = PredictCellTypeForRun(proteomicsData, runName, keyMarkers);
                 predictions[runName] = prediction;
             }
 

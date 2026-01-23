@@ -634,25 +634,52 @@ namespace SCPBrowser
             var selectedColorItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
             string colorMode = selectedColorItem?.Tag?.ToString() ?? "TargetRatio";
 
-            // Ensure legend is populated for the current color mode (fixes initial load)
-            if (colorMode == "BioCondition" && BioConditionCheckboxes.Children.Count == 0)
+            // Initialize ALL checked sets with all available values if they're empty
+            // This ensures filters work correctly even before user opens that category's panel
+            if (_checkedBioConditions.Count == 0 && _currentData.BiologicalConditionPerFile != null)
+            {
+                var uniqueConditions = _currentData.BiologicalConditionPerFile.Values
+                    .Where(c => !string.IsNullOrEmpty(c))
+                    .Distinct();
+                foreach (var condition in uniqueConditions)
+                    _checkedBioConditions.Add(condition);
+            }
+
+            if (_checkedPlates.Count == 0 && _plateMappingPerFile != null)
+            {
+                var plateColorMap = GeneratePlateColorMap();
+                foreach (var plateName in plateColorMap.Keys)
+                    _checkedPlates.Add(plateName);
+            }
+
+            if (_checkedCellTypes.Count == 0 && _cellTypeColorMap != null)
+            {
+                foreach (var cellType in _cellTypeColorMap.Keys)
+                    _checkedCellTypes.Add(cellType);
+            }
+
+            // Ensure legend and pie chart are populated for the current color mode
+            if (colorMode == "BioCondition")
             {
                 LegendPanelTitle.Text = "Biological Conditions";
-                PopulateBioConditionCheckboxes();
+                if (BioConditionCheckboxes.Children.Count == 0)
+                    PopulateBioConditionCheckboxes();
                 UpdatePieChart("BioCondition");
                 BioConditionPanel.Visibility = Visibility.Visible;
             }
-            else if (colorMode == "CellType" && BioConditionCheckboxes.Children.Count == 0 && _cellTypeColorMap != null)
+            else if (colorMode == "CellType" && _cellTypeColorMap != null)
             {
                 LegendPanelTitle.Text = "Cell Types";
-                PopulateCellTypeCheckboxes();
+                if (BioConditionCheckboxes.Children.Count == 0)
+                    PopulateCellTypeCheckboxes();
                 UpdatePieChart("CellType");
                 BioConditionPanel.Visibility = Visibility.Visible;
             }
-            else if (colorMode == "Plate" && BioConditionCheckboxes.Children.Count == 0)
+            else if (colorMode == "Plate")
             {
                 LegendPanelTitle.Text = "Plates";
-                PopulatePlateCheckboxes();
+                if (BioConditionCheckboxes.Children.Count == 0)
+                    PopulatePlateCheckboxes();
                 UpdatePieChart("Plate");
                 BioConditionPanel.Visibility = Visibility.Visible;
             }

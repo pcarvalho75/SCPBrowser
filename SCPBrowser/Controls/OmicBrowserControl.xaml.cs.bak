@@ -1144,9 +1144,4 @@ namespace SCPBrowser
     {
         public bool ApplyKeyMarkers { get; set; }
     }
-
-    public class CellTypeExclusionsChangedEventArgs : EventArgs
-    {
-        public HashSet<string> ExcludedCellTypes { get; set; }
-    }
 }

@@ -1,4 +1,4 @@
-<UserControl x:Class="SCPBrowser.PeptideTicControl"
+﻿<UserControl x:Class="SCPBrowser.PeptideTicControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
@@ -111,16 +111,16 @@
            FontWeight="SemiBold"/>
 
             <ComboBox x:Name="ColorModeComboBox"
-            Style="{StaticResource ToolbarComboBox}"
-            ItemContainerStyle="{StaticResource ToolbarComboBoxItem}"
-            SelectedIndex="1"
-            SelectionChanged="ColorModeComboBox_SelectionChanged"
-            ToolTip="Select coloring mode for data points"
-            Margin="0,0,15,0">
-                  <ComboBoxItem Content="Target Protein Ratio" Tag="TargetRatio"/>
-                  <ComboBoxItem x:Name="ColorByBioConditionItem" Content="Biological Condition" Tag="BioCondition" IsEnabled="False" IsSelected="True"/>
-                  <ComboBoxItem x:Name="ColorByPlateItem" Content="Plate" Tag="Plate"/>
-                  <ComboBoxItem x:Name="ColorByCellTypeItem" Content="Cell Type" Tag="CellType" IsEnabled="False"/>
+          Style="{StaticResource ToolbarComboBox}"
+          ItemContainerStyle="{StaticResource ToolbarComboBoxItem}"
+          SelectedIndex="0"
+          SelectionChanged="ColorModeComboBox_SelectionChanged"
+          ToolTip="Select coloring mode for data points"
+          Margin="0,0,15,0">
+                <ComboBoxItem Content="Target Protein Ratio" Tag="TargetRatio"/>
+                <ComboBoxItem x:Name="ColorByBioConditionItem" Content="Biological Condition" Tag="BioCondition" IsEnabled="False" IsSelected="True"/>
+                <ComboBoxItem x:Name="ColorByPlateItem" Content="Plate" Tag="Plate"/>
+                <ComboBoxItem x:Name="ColorByCellTypeItem" Content="Cell Type" Tag="CellType" IsEnabled="False"/>
             </ComboBox>
             <Button x:Name="ClearSelectionButton"
                     Content="Clear Selection"

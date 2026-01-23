@@ -48,6 +48,9 @@ namespace SCPBrowser
             PeptideTicTab.RunInclusionChanged += PeptideTicTab_RunInclusionChanged;
             PeptideTicTab.ClearAllExclusionsRequested += PeptideTicTab_ClearAllExclusionsRequested;
 
+            // Subscribe to ProjectBrowser reclassify request
+            ProjectBrowserDialog.ReclassifyRequested += ProjectBrowserDialog_ReclassifyRequested;
+
             _goTermResolver = new GoTermResolver(9606); // Human default
             UpdateWindowTitle();
 
@@ -857,11 +860,14 @@ namespace SCPBrowser
                 var progressReporter = new SilentProgressReporter();
 
                 // Get predictions from MainControl (which uses CellTypeClassificationManager)
+                // Pass key markers from ProjectBrowser for classification
+                var keyMarkers = ProjectBrowserDialog.GetKeyMarkers();
                 var predictions = await MainControlTab.GetCellTypePredictionsAsync(
                     proteomicsData,
                     _projectReferenceDatabasePath,
                     importId.Value,
-                    progressReporter);
+                    progressReporter,
+                    keyMarkers);
 
                 if (predictions == null || predictions.Count == 0)
                 {
@@ -931,11 +937,14 @@ namespace SCPBrowser
                 var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
 
                 // Get predictions from MainControl (which uses CellTypeClassificationManager)
+                // Pass key markers from ProjectBrowser for classification
+                var keyMarkers = ProjectBrowserDialog.GetKeyMarkers();
                 var predictions = await MainControlTab.GetCellTypePredictionsAsync(
                     proteomicsData,
                     _projectReferenceDatabasePath,
                     importId.Value,
-                    progressReporter);
+                    progressReporter,
+                    keyMarkers);
 
                 // Get color map
                 var colorMap = MainControlTab.GetCellTypeColorMap();
@@ -951,6 +960,85 @@ namespace SCPBrowser
             {
                 LoadingOverlay.Hide();
                 MessageBox.Show($"Error computing cell type predictions:\n\n{ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void ProjectBrowserDialog_ReclassifyRequested(object sender, ReclassifyRequestedEventArgs e)
+        {
+            try
+            {
+                bool applyMarkers = e.ApplyKeyMarkers;
+                Console.WriteLine($"Reclassification requested (apply key markers: {applyMarkers})");
+
+                if (applyMarkers)
+                {
+                    LoadingOverlay.SetMessage("Reclassifying Cells with Key Markers");
+                    LoadingOverlay.SetProgress("Applying key marker adjustments...");
+                }
+                else
+                {
+                    LoadingOverlay.SetMessage("Reclassifying Cells (Baseline)");
+                    LoadingOverlay.SetProgress("Computing baseline scores without marker adjustments...");
+                }
+                LoadingOverlay.Show();
+
+                var proteomicsData = MainControlTab.GetCurrentData();
+                if (proteomicsData == null)
+                {
+                    LoadingOverlay.Hide();
+                    MessageBox.Show("No data loaded.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Get the most recent import ID
+                int? importId = await _parquetService.GetMostRecentImportIdAsync();
+                if (!importId.HasValue)
+                {
+                    LoadingOverlay.Hide();
+                    MessageBox.Show("No import data found.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Create progress reporter
+                var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
+
+                // Get key markers only if applying them, and get excluded cell types
+                var keyMarkers = applyMarkers ? ProjectBrowserDialog.GetKeyMarkers() : null;
+                var excludedCellTypes = ProjectBrowserDialog.GetExcludedCellTypes();
+                
+                var predictions = await MainControlTab.GetCellTypePredictionsAsync(
+                    proteomicsData,
+                    _projectReferenceDatabasePath,
+                    importId.Value,
+                    progressReporter,
+                    keyMarkers,
+                    forceRecompute: true,
+                    excludedCellTypes); // Pass excluded cell types
+
+                // Get color map
+                var colorMap = MainControlTab.GetCellTypeColorMap();
+
+                // Pass predictions to PeptideTicTab
+                PeptideTicTab.SetCellTypePredictions(predictions, colorMap);
+
+                LoadingOverlay.Hide();
+
+                // Show summary
+                int totalMarkers = keyMarkers?.Values.Sum(m => m.Count) ?? 0;
+                int excludedCount = excludedCellTypes?.Count ?? 0;
+                string excludedNote = excludedCount > 0 ? $"\n{excludedCount} cell type(s) excluded." : "";
+                string message = applyMarkers
+                    ? $"Reclassification complete!\n\n{predictions.Count} cells reclassified using {totalMarkers} key marker(s).{excludedNote}"
+                    : $"Baseline reclassification complete!\n\n{predictions.Count} cells reclassified without key marker adjustments.{excludedNote}";
+                
+                Console.WriteLine($"Reclassification complete: {predictions.Count} runs, markers applied: {applyMarkers}, excluded: {excludedCount}");
+                MessageBox.Show(message, "Reclassification Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                LoadingOverlay.Hide();
+                MessageBox.Show($"Error during reclassification:\n\n{ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }

@@ -143,7 +143,7 @@ namespace SCPBrowser
         /// </summary>
         public CellTypePredictionResult PredictCellType(Dictionary<string, double> proteinAbundances)
         {
-            return PredictCellType(proteinAbundances, null, null);
+            return PredictCellType(proteinAbundances, null);
         }
 
         /// <summary>
@@ -151,11 +151,7 @@ namespace SCPBrowser
         /// </summary>
         /// <param name="proteinAbundances">Protein abundances from proteomics data</param>
         /// <param name="userKeyMarkers">User-defined key markers per cell type (can be null)</param>
-        /// <param name="excludedCellTypes">Cell types to exclude from classification (can be null)</param>
-        public CellTypePredictionResult PredictCellType(
-            Dictionary<string, double> proteinAbundances, 
-            Dictionary<string, HashSet<string>> userKeyMarkers,
-            HashSet<string> excludedCellTypes = null)
+        public CellTypePredictionResult PredictCellType(Dictionary<string, double> proteinAbundances, Dictionary<string, HashSet<string>> userKeyMarkers)
         {
             if (proteinAbundances == null || proteinAbundances.Count == 0)
                 return new CellTypePredictionResult();
@@ -163,17 +159,9 @@ namespace SCPBrowser
             // Calculate median abundance for determining "high" vs "low" abundance
             double medianAbundance = proteinAbundances.Values.OrderBy(x => x).ElementAt(proteinAbundances.Count / 2);
 
-            // Get cell types to consider (exclude those in exclusion list)
-            var cellTypesToConsider = _database.CellTypeProfiles.Keys
-                .Where(ct => excludedCellTypes == null || !excludedCellTypes.Contains(ct))
-                .ToList();
-
-            if (cellTypesToConsider.Count == 0)
-                return new CellTypePredictionResult();
-
-            // 1. First Pass: Calculate Raw Metrics for considered cell types
+            // 1. First Pass: Calculate Raw Metrics for ALL cell types
             var results = new Dictionary<string, CellTypeScore>();
-            foreach (var cellType in cellTypesToConsider)
+            foreach (var cellType in _database.CellTypeProfiles.Keys)
             {
                 // We use the helper method to get raw values (CompositeScore starts at 0)
                 results[cellType] = CalculateRawMetrics(proteinAbundances, cellType);

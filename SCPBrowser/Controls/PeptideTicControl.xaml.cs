@@ -31,6 +31,7 @@ namespace SCPBrowser
         public event EventHandler SelectionChangedForBioTessera;
         public event EventHandler<RunInclusionChangedEventArgs> RunInclusionChanged;
         public event EventHandler ClearAllExclusionsRequested;
+        public event EventHandler ExportDiagnosticsRequested;
         private bool _isLassoActive = false;
         private List<HvpResult> _hvpResults;
         private int _hvpCount = 500;
@@ -209,6 +210,11 @@ namespace SCPBrowser
             _cellTypePredictions = predictions;
             _cellTypeColorMap = colorMap;
             ColorByCellTypeItem.IsEnabled = predictions != null && predictions.Count > 0;
+            
+            // Show/hide the export diagnostics button
+            ExportDiagnosticsButton.Visibility = (predictions != null && predictions.Count > 0) 
+                ? Visibility.Visible 
+                : Visibility.Collapsed;
 
             if (_currentData != null)
             {
@@ -1153,6 +1159,27 @@ namespace SCPBrowser
             {
                 RefreshChart();
             }
+        }
+
+        private void ExportDiagnosticsButton_Click(object sender, RoutedEventArgs e)
+        {
+            ExportDiagnosticsRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Gets the current cell type predictions for export
+        /// </summary>
+        public Dictionary<string, CellTypePredictionResult> GetCellTypePredictions()
+        {
+            return _cellTypePredictions;
+        }
+
+        /// <summary>
+        /// Gets the current proteomics data
+        /// </summary>
+        public ProteomicsData GetCurrentData()
+        {
+            return _currentData;
         }
     }
 }

@@ -532,5 +532,143 @@ namespace SCPBrowser
             Console.WriteLine($"========================================");
             Console.WriteLine($"");
         }
+
+        /// <summary>
+        /// Exports detailed classification diagnostics to a TSV file for analysis
+        /// </summary>
+        public async Task ExportClassificationDiagnosticsAsync(
+            string outputPath,
+            Dictionary<string, CellTypePredictionResult> predictions,
+            ProteomicsData proteomicsData,
+            IProgressReporter progress = null)
+        {
+            if (predictions == null || predictions.Count == 0)
+            {
+                throw new InvalidOperationException("No predictions available to export");
+            }
+
+            if (!IsLoaded || _predictor == null)
+            {
+                throw new InvalidOperationException("Transcriptomic database not loaded");
+            }
+
+            progress?.ReportMessage("Preparing classification diagnostics export...");
+
+            // Collect all unique markers across all cell types
+            var allMarkers = new HashSet<string>();
+            foreach (var markers in _predictor.CellTypeMarkers.Values)
+            {
+                foreach (var marker in markers)
+                {
+                    allMarkers.Add(marker);
+                }
+            }
+            var sortedMarkers = allMarkers.OrderBy(m => m).ToList();
+
+            // Get all cell types
+            var cellTypes = _database.CellTypeProfiles.Keys.OrderBy(ct => ct).ToList();
+
+            // Build header
+            var headerParts = new List<string>
+            {
+                "RawFile",
+                "PredictedCellType",
+                "CompositeScore",
+                "SpearmanCorr",
+                "SpecificityScore",
+                "HypergeometricPValue",
+                "KeyMarkerAdjustment",
+                "ProteinsDetected",
+                "GenesMatched"
+            };
+
+            // Add score columns for each cell type
+            foreach (var ct in cellTypes)
+            {
+                headerParts.Add($"Score_{ct}");
+            }
+
+            // Add marker columns
+            foreach (var marker in sortedMarkers)
+            {
+                headerParts.Add($"Marker_{marker}");
+            }
+
+            var lines = new List<string> { string.Join("\t", headerParts) };
+
+            int processed = 0;
+            int total = predictions.Count;
+
+            foreach (var kvp in predictions.OrderBy(p => p.Key))
+            {
+                var runName = kvp.Key;
+                var result = kvp.Value;
+
+                processed++;
+                if (processed % 50 == 0)
+                {
+                    progress?.ReportProgress($"Processing {processed}/{total}...");
+                }
+
+                // Extract protein abundances for this run to check marker presence
+                var proteinAbundances = ExtractProteinAbundances(proteomicsData, runName);
+
+                var rowParts = new List<string>
+                {
+                    runName,
+                    result.TopCellType ?? "Unknown",
+                    result.TopScore?.CompositeScore.ToString("F4") ?? "",
+                    result.TopScore?.SpearmanCorrelation.ToString("F4") ?? "",
+                    result.TopScore?.SpecificityScore.ToString("F4") ?? "",
+                    result.TopScore?.HypergeometricPValue.ToString("E3") ?? "",
+                    result.TopScore?.KeyMarkerAdjustment.ToString("F3") ?? "",
+                    proteinAbundances.Count.ToString(),
+                    CountGenesMatchingDatabase(proteinAbundances).ToString()
+                };
+
+                // Add scores for each cell type
+                foreach (var ct in cellTypes)
+                {
+                    if (result.Scores != null && result.Scores.TryGetValue(ct, out var score))
+                    {
+                        rowParts.Add(score.CompositeScore.ToString("F4"));
+                    }
+                    else
+                    {
+                        rowParts.Add("");
+                    }
+                }
+
+                // Add marker detection (X if found, empty if not)
+                foreach (var marker in sortedMarkers)
+                {
+                    rowParts.Add(proteinAbundances.ContainsKey(marker) ? "X" : "");
+                }
+
+                lines.Add(string.Join("\t", rowParts));
+            }
+
+            progress?.ReportMessage($"Writing {lines.Count} rows to file...");
+
+            await Task.Run(() => File.WriteAllLines(outputPath, lines));
+
+            progress?.ReportProgress($"Exported diagnostics to {outputPath}");
+        }
+
+        private int CountGenesMatchingDatabase(Dictionary<string, double> proteinAbundances)
+        {
+            if (!IsLoaded) return 0;
+
+            var allDbGenes = new HashSet<string>();
+            foreach (var profile in _database.CellTypeProfiles.Values)
+            {
+                foreach (var gene in profile.MedianExpression.Keys)
+                {
+                    allDbGenes.Add(gene);
+                }
+            }
+
+            return proteinAbundances.Keys.Count(g => allDbGenes.Contains(g));
+        }
     }
 }

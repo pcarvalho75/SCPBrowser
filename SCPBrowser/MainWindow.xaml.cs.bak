@@ -47,6 +47,7 @@ namespace SCPBrowser
             PeptideTicTab.SelectionChangedForBioTessera += PeptideTicTab_SelectionChangedForBioTessera;
             PeptideTicTab.RunInclusionChanged += PeptideTicTab_RunInclusionChanged;
             PeptideTicTab.ClearAllExclusionsRequested += PeptideTicTab_ClearAllExclusionsRequested;
+            PeptideTicTab.ExportDiagnosticsRequested += PeptideTicTab_ExportDiagnosticsRequested;
 
             // Subscribe to ProjectBrowser reclassify request
             ProjectBrowserDialog.ReclassifyRequested += ProjectBrowserDialog_ReclassifyRequested;
@@ -1003,15 +1004,18 @@ namespace SCPBrowser
                 // Create progress reporter
                 var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
 
-                // Get key markers only if applying them
+                // Get key markers only if applying them, and get excluded cell types
                 var keyMarkers = applyMarkers ? ProjectBrowserDialog.GetKeyMarkers() : null;
+                var excludedCellTypes = ProjectBrowserDialog.GetExcludedCellTypes();
+                
                 var predictions = await MainControlTab.GetCellTypePredictionsAsync(
                     proteomicsData,
                     _projectReferenceDatabasePath,
                     importId.Value,
                     progressReporter,
                     keyMarkers,
-                    forceRecompute: true); // Force recompute
+                    forceRecompute: true,
+                    excludedCellTypes); // Pass excluded cell types
 
                 // Get color map
                 var colorMap = MainControlTab.GetCellTypeColorMap();
@@ -1023,11 +1027,13 @@ namespace SCPBrowser
 
                 // Show summary
                 int totalMarkers = keyMarkers?.Values.Sum(m => m.Count) ?? 0;
+                int excludedCount = excludedCellTypes?.Count ?? 0;
+                string excludedNote = excludedCount > 0 ? $"\n{excludedCount} cell type(s) excluded." : "";
                 string message = applyMarkers
-                    ? $"Reclassification complete!\n\n{predictions.Count} cells reclassified using {totalMarkers} key marker(s)."
-                    : $"Baseline reclassification complete!\n\n{predictions.Count} cells reclassified without key marker adjustments.";
+                    ? $"Reclassification complete!\n\n{predictions.Count} cells reclassified using {totalMarkers} key marker(s).{excludedNote}"
+                    : $"Baseline reclassification complete!\n\n{predictions.Count} cells reclassified without key marker adjustments.{excludedNote}";
                 
-                Console.WriteLine($"Reclassification complete: {predictions.Count} runs, markers applied: {applyMarkers}");
+                Console.WriteLine($"Reclassification complete: {predictions.Count} runs, markers applied: {applyMarkers}, excluded: {excludedCount}");
                 MessageBox.Show(message, "Reclassification Complete", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)

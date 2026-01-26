@@ -161,13 +161,23 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Dynamic Title -->
-                    <TextBlock x:Name="LegendPanelTitle"
-                   Grid.Row="0"
-                   Text="Biological Conditions"
-                   FontWeight="SemiBold"
-                   FontSize="11"
-                   Margin="0,0,0,8"/>
+                    <!-- Dynamic Title with Export Button -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock x:Name="LegendPanelTitle"
+                           Text="Biological Conditions"
+                           FontWeight="SemiBold"
+                           FontSize="11"
+                           VerticalAlignment="Center"/>
+                        <Button x:Name="ExportDiagnosticsButton"
+                                Content="📊"
+                                ToolTip="Export classification diagnostics to TSV"
+                                Click="ExportDiagnosticsButton_Click"
+                                Padding="4,1"
+                                Margin="8,0,0,0"
+                                FontSize="10"
+                                Visibility="Collapsed"
+                                VerticalAlignment="Center"/>
+                    </StackPanel>
 
                     <!-- Checkboxes -->
                     <ScrollViewer Grid.Row="1" 

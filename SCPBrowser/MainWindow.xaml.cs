@@ -47,6 +47,7 @@ namespace SCPBrowser
             PeptideTicTab.SelectionChangedForBioTessera += PeptideTicTab_SelectionChangedForBioTessera;
             PeptideTicTab.RunInclusionChanged += PeptideTicTab_RunInclusionChanged;
             PeptideTicTab.ClearAllExclusionsRequested += PeptideTicTab_ClearAllExclusionsRequested;
+            PeptideTicTab.ExportDiagnosticsRequested += PeptideTicTab_ExportDiagnosticsRequested;
 
             // Subscribe to ProjectBrowser reclassify request
             ProjectBrowserDialog.ReclassifyRequested += ProjectBrowserDialog_ReclassifyRequested;
@@ -960,6 +961,63 @@ namespace SCPBrowser
             {
                 LoadingOverlay.Hide();
                 MessageBox.Show($"Error computing cell type predictions:\n\n{ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void PeptideTicTab_ExportDiagnosticsRequested(object sender, EventArgs e)
+        {
+            try
+            {
+                var predictions = PeptideTicTab.GetCellTypePredictions();
+                var proteomicsData = PeptideTicTab.GetCurrentData();
+
+                if (predictions == null || predictions.Count == 0)
+                {
+                    MessageBox.Show("No cell type predictions available to export.", 
+                        "Export Diagnostics", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                if (proteomicsData == null)
+                {
+                    MessageBox.Show("No proteomics data loaded.", 
+                        "Export Diagnostics", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Show save dialog
+                var saveDialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Filter = "Tab-separated values (*.tsv)|*.tsv|All files (*.*)|*.*",
+                    DefaultExt = ".tsv",
+                    FileName = "CellType_Diagnostics"
+                };
+
+                if (saveDialog.ShowDialog() != true)
+                    return;
+
+                LoadingOverlay.SetMessage("Exporting Classification Diagnostics");
+                LoadingOverlay.SetProgress("Preparing data...");
+                LoadingOverlay.Show();
+
+                var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
+
+                await MainControlTab.ExportClassificationDiagnosticsAsync(
+                    saveDialog.FileName,
+                    predictions,
+                    proteomicsData,
+                    progressReporter);
+
+                LoadingOverlay.Hide();
+
+                MessageBox.Show($"Diagnostics exported successfully to:\n{saveDialog.FileName}",
+                    "Export Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                LoadingOverlay.Hide();
+                MessageBox.Show($"Error exporting diagnostics:\n\n{ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }

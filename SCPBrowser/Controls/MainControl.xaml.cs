@@ -456,5 +456,15 @@ namespace SCPBrowser
                 ? _goEnrichmentManager.GenerateGoTermColorMap(_goEnrichmentResults)
                 : new Dictionary<string, System.Windows.Media.Color>();
         }
+
+        public async Task ExportClassificationDiagnosticsAsync(
+            string outputPath,
+            Dictionary<string, CellTypePredictionResult> predictions,
+            ProteomicsData proteomicsData,
+            IProgressReporter progress = null)
+        {
+            await _cellTypeClassificationManager.ExportClassificationDiagnosticsAsync(
+                outputPath, predictions, proteomicsData, progress);
+        }
     }
 }

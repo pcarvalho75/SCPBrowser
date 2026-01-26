@@ -388,7 +388,8 @@ namespace SCPBrowser
             int importId,
             IProgressReporter progressReporter,
             Dictionary<string, HashSet<string>> keyMarkers = null,
-            bool forceRecompute = false)
+            bool forceRecompute = false,
+            HashSet<string> excludedCellTypes = null)
         {
             var predictions = await _cellTypeClassificationManager.GetOrComputePredictionsAsync(
                 proteomicsData,
@@ -396,7 +397,8 @@ namespace SCPBrowser
                 importId,
                 progressReporter,
                 keyMarkers,
-                forceRecompute);
+                forceRecompute,
+                excludedCellTypes);
 
             // Store in memory for future use
             _cellTypePredictions = predictions;

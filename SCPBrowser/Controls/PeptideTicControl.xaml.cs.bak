@@ -31,6 +31,7 @@ namespace SCPBrowser
         public event EventHandler SelectionChangedForBioTessera;
         public event EventHandler<RunInclusionChangedEventArgs> RunInclusionChanged;
         public event EventHandler ClearAllExclusionsRequested;
+        public event EventHandler ExportDiagnosticsRequested;
         private bool _isLassoActive = false;
         private List<HvpResult> _hvpResults;
         private int _hvpCount = 500;
@@ -209,6 +210,11 @@ namespace SCPBrowser
             _cellTypePredictions = predictions;
             _cellTypeColorMap = colorMap;
             ColorByCellTypeItem.IsEnabled = predictions != null && predictions.Count > 0;
+            
+            // Show/hide the export diagnostics button
+            ExportDiagnosticsButton.Visibility = (predictions != null && predictions.Count > 0) 
+                ? Visibility.Visible 
+                : Visibility.Collapsed;
 
             if (_currentData != null)
             {
@@ -633,6 +639,30 @@ namespace SCPBrowser
 
             var selectedColorItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
             string colorMode = selectedColorItem?.Tag?.ToString() ?? "TargetRatio";
+
+            // Initialize ALL checked sets with all available values if they're empty
+            // This ensures filters work correctly even before user opens that category's panel
+            if (_checkedBioConditions.Count == 0 && _currentData.BiologicalConditionPerFile != null)
+            {
+                var uniqueConditions = _currentData.BiologicalConditionPerFile.Values
+                    .Where(c => !string.IsNullOrEmpty(c))
+                    .Distinct();
+                foreach (var condition in uniqueConditions)
+                    _checkedBioConditions.Add(condition);
+            }
+
+            if (_checkedPlates.Count == 0 && _plateMappingPerFile != null)
+            {
+                var plateColorMap = GeneratePlateColorMap();
+                foreach (var plateName in plateColorMap.Keys)
+                    _checkedPlates.Add(plateName);
+            }
+
+            if (_checkedCellTypes.Count == 0 && _cellTypeColorMap != null)
+            {
+                foreach (var cellType in _cellTypeColorMap.Keys)
+                    _checkedCellTypes.Add(cellType);
+            }
 
             // Ensure legend and pie chart are populated for the current color mode
             if (colorMode == "BioCondition")

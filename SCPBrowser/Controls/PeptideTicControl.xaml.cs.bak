@@ -1160,5 +1160,26 @@ namespace SCPBrowser
                 RefreshChart();
             }
         }
+
+        private void ExportDiagnosticsButton_Click(object sender, RoutedEventArgs e)
+        {
+            ExportDiagnosticsRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Gets the current cell type predictions for export
+        /// </summary>
+        public Dictionary<string, CellTypePredictionResult> GetCellTypePredictions()
+        {
+            return _cellTypePredictions;
+        }
+
+        /// <summary>
+        /// Gets the current proteomics data
+        /// </summary>
+        public ProteomicsData GetCurrentData()
+        {
+            return _currentData;
+        }
     }
 }

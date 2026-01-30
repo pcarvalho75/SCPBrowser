@@ -117,6 +117,7 @@ namespace SCPBrowser
                 point.Visual.Stroke = new SolidColorBrush(Color.FromRgb(50, 50, 50));
                 point.Visual.StrokeThickness = 1;
                 point.Visual.Opacity = 1.0;
+                point.Visual.Visibility = Visibility.Visible;
             }
             else
             {
@@ -124,6 +125,26 @@ namespace SCPBrowser
                 point.Visual.Stroke = new SolidColorBrush(UnselectedGray);
                 point.Visual.StrokeThickness = 1;
                 point.Visual.Opacity = UnselectedOpacity;
+                point.Visual.Visibility = _hideUnselected ? Visibility.Collapsed : Visibility.Visible;
+            }
+        }
+
+        private bool _hideUnselected = false;
+
+        /// <summary>
+        /// Shows or hides unselected (grey) data points.
+        /// </summary>
+        public void SetHideUnselected(bool hide)
+        {
+            _hideUnselected = hide;
+            foreach (var point in _dataPoints)
+            {
+                if (point?.Visual == null) continue;
+                bool isSelected = point.IsSelected;
+                if (!isSelected)
+                {
+                    point.Visual.Visibility = hide ? Visibility.Collapsed : Visibility.Visible;
+                }
             }
         }
 

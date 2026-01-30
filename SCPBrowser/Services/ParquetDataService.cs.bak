@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -934,6 +934,7 @@ namespace SCPBrowser.Services
                 return;
 
             var connectionString = $"Data Source={_projectDbPath}";
+            const int batchSize = 500; // SQLite performs well with batches of 500
 
             using (var connection = new SqliteConnection(connectionString))
             {
@@ -961,6 +962,7 @@ namespace SCPBrowser.Services
 
                             command.Prepare(); // Pre-compile the statement for faster execution
 
+                            int count = 0;
                             foreach (var stat in proteinStats)
                             {
                                 proteinIdParam.Value = stat.ProteinId;
@@ -970,6 +972,14 @@ namespace SCPBrowser.Services
                                 countParam.Value = stat.DetectionCount;
 
                                 await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+
+                                // Periodic commit for very large datasets to avoid memory pressure
+                                if (++count % batchSize == 0)
+                                {
+                                    await transaction.CommitAsync().ConfigureAwait(false);
+                                    transaction.Dispose();
+                                    using var newTransaction = connection.BeginTransaction();
+                                }
                             }
                         }
 

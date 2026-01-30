@@ -867,6 +867,11 @@ namespace SCPBrowser
             }
         }
 
+        private void HideGreyDotsCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            ScatterPlot.SetHideUnselected(HideGreyDotsCheckBox.IsChecked == true);
+        }
+
         private void ScatterPlot_SelectionChanged(object sender, PlotSelectionChangedEventArgs e)
         {
             _currentSelectedPoints = e.SelectedPoints;

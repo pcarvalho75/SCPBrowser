@@ -805,6 +805,10 @@ namespace SCPBrowser
                 // Load protein annotations for tooltips
                 await ProteinMatrixTab.LoadProteinAnnotationsAsync(_currentProjectPath);
 
+                // Subscribe to contaminant changes (unsubscribe first to avoid duplicates)
+                ProteinMatrixTab.ContaminantsUpdated -= ProteinMatrixTab_ContaminantsUpdated;
+                ProteinMatrixTab.ContaminantsUpdated += ProteinMatrixTab_ContaminantsUpdated;
+
                 // Set image base directory
                 PeptideTicTab.SetImageBaseDirectory(MainControlTab.GetCurrentFileDirectory());
 
@@ -833,6 +837,22 @@ namespace SCPBrowser
         private void PeptideTicTab_SelectionChangedForBioTessera(object sender, EventArgs e)
         {
             _bioTesseraNeedsUpdate = true;
+        }
+
+        private async void ProteinMatrixTab_ContaminantsUpdated(object sender, EventArgs e)
+        {
+            // Propagate contaminant IDs to original data so DataFilterService can exclude them
+            var contaminantIds = ProteinMatrixTab.ContaminantIds;
+            if (_dataFilterService.OriginalData != null)
+            {
+                _dataFilterService.OriginalData.ContaminantIds = new HashSet<string>(contaminantIds, StringComparer.OrdinalIgnoreCase);
+            }
+
+            // Re-apply filters so PCA/UMAP/classification/HVP exclude contaminants
+            await _dataFilterService.ApplyFiltersAsync(_parquetService);
+
+            // Refresh the Explorer chart with updated ratios
+            PeptideTicTab.UpdateChart(_dataFilterService.FilteredData);
         }
 
         /// <summary>

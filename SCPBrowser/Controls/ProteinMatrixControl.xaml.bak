@@ -51,7 +51,7 @@
         <DataGrid x:Name="ProteinMatrixGrid"
                   Grid.Row="1"
                   AutoGenerateColumns="True"
-                  IsReadOnly="False"
+                  IsReadOnly="True"
                   CanUserAddRows="False"
                   CanUserDeleteRows="False"
                   CanUserReorderColumns="True"

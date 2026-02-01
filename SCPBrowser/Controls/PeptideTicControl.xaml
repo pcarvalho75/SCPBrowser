@@ -144,7 +144,7 @@
             <GroupBox Grid.Column="0">
                 <GroupBox.Header>
                     <TextBlock x:Name="PlotGroupBoxHeader" 
-                       Text="Peptides vs Total Ion Current per Raw File"
+                       Text="Peptides vs TIC"
                        FontWeight="SemiBold"/>
                 </GroupBox.Header>
                 <local:ScatterPlotControl x:Name="ScatterPlot"/>

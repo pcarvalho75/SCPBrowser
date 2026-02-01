@@ -429,13 +429,6 @@ namespace SCPBrowser
             }
 
             RecalculateContaminantRatios();
-
-            // Propagate contaminant IDs to ProteomicsData so DataFilterService can exclude them
-            if (_currentData != null)
-            {
-                _currentData.ContaminantIds = new HashSet<string>(_contaminantIds, StringComparer.OrdinalIgnoreCase);
-            }
-
             RefreshMatrix();
             ContaminantsUpdated?.Invoke(this, EventArgs.Empty);
         }

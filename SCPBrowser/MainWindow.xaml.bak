@@ -109,7 +109,7 @@ This adds the PlateFilterControl above the TabControl
                 <TabItem Header="Protein Matrix">
                     <local:ProteinMatrixControl x:Name="ProteinMatrixTab"/>
                 </TabItem>
-                <TabItem Header="Explorer">
+                <TabItem Header="Peptides vs TIC">
                     <local:PeptideTicControl x:Name="PeptideTicTab"/>
                 </TabItem>
                 <TabItem Header="BioTessera">

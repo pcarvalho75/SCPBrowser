@@ -137,13 +137,39 @@ namespace SCPBrowser.Services
             // Step 2: Filter by protein cutoff
             _filteredData = FilterByProteinCutoff(_plateFilteredData, _proteinCutoff);
 
-            // Step 3: Compute HVP on filtered data
+            // Step 3: Remove contaminant proteins from analyses
+            ExcludeContaminants();
+
+            // Step 4: Compute HVP on filtered data
             ComputeHvpResults();
 
             Console.WriteLine($"DataFilterService: Filters applied - {_filteredData.TotalRawFiles} raw files pass all filters");
 
             // Notify listeners
             FilteredDataChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Removes contaminant proteins from the filtered ProteinQuantMatrix.
+        /// Contaminants are still used for ratio calculations but excluded from PCA, UMAP, classification, etc.
+        /// </summary>
+        private void ExcludeContaminants()
+        {
+            if (_filteredData == null || _originalData.ContaminantIds == null || _originalData.ContaminantIds.Count == 0)
+                return;
+
+            int removed = 0;
+            foreach (var contaminantId in _originalData.ContaminantIds)
+            {
+                if (_filteredData.ProteinQuantMatrix.Remove(contaminantId))
+                    removed++;
+            }
+
+            if (removed > 0)
+            {
+                _filteredData.TotalProteinGroups = _filteredData.ProteinQuantMatrix.Count;
+                Console.WriteLine($"DataFilterService: Excluded {removed} contaminant proteins from analysis");
+            }
         }
 
         /// <summary>
@@ -253,7 +279,8 @@ namespace SCPBrowser.Services
                     .Where(kvp => allowedRawFiles.Contains(kvp.Key))
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
                 ProteinToGeneMap = new Dictionary<string, string>(source.ProteinToGeneMap),
-                ProteinQuantMatrix = new Dictionary<string, Dictionary<string, double>>()
+                ProteinQuantMatrix = new Dictionary<string, Dictionary<string, double>>(),
+                ContaminantIds = new HashSet<string>(source.ContaminantIds, StringComparer.OrdinalIgnoreCase)
             };
 
             // Filter protein quant matrix
@@ -294,7 +321,8 @@ namespace SCPBrowser.Services
                 ProteinToGeneMap = new Dictionary<string, string>(),
                 TotalRawFiles = 0,
                 TotalProteinGroups = 0,
-                TotalPeptides = 0
+                TotalPeptides = 0,
+                ContaminantIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             };
         }
 

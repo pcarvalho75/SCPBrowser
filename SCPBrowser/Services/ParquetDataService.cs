@@ -79,6 +79,12 @@ namespace SCPBrowser.Services
 
         public Dictionary<string, string> BiologicalConditionPerFile { get; set; } = new();
         public HashSet<string> AllPeptideSequences { get; set; } = new();
+
+        /// <summary>
+        /// Protein groups marked as contaminants. Used to exclude from analyses (PCA, UMAP, classification, etc.)
+        /// while still allowing contaminant ratio calculations.
+        /// </summary>
+        public HashSet<string> ContaminantIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
 

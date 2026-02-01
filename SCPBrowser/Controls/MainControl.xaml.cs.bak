@@ -223,7 +223,6 @@ namespace SCPBrowser
                 TotalPeptidesText.Text = "0";
                 TotalPlatesText.Text = "0";
                 StatusText.Text = "Project open. Please import a Parquet file to see data.";
-                ReloadButton.IsEnabled = false;
 
                 MessageBox.Show(
                     "No data found in this project.\n\n" +
@@ -251,14 +250,6 @@ namespace SCPBrowser
 
 
 
-        private async void ReloadButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(_currentFilePath))
-                return;
-
-            await LoadDataAsync();
-        }
-
         private async System.Threading.Tasks.Task LoadDataAsync()
         {
             try
@@ -273,15 +264,6 @@ namespace SCPBrowser
                 }
 
                 StatusText.Text = "Loading data...";
-                ReloadButton.IsEnabled = false;
-
-                var targetIdsText = TargetProteinIdsTextBox.Text.Trim();
-                var targetIds = string.IsNullOrWhiteSpace(targetIdsText)
-                    ? new System.Collections.Generic.List<string>()
-                    : targetIdsText.Split(',')
-                        .Select(id => id.Trim())
-                        .Where(id => !string.IsNullOrWhiteSpace(id))
-                        .ToList();
 
                 var mapping = new ColumnMapping
                 {
@@ -289,7 +271,7 @@ namespace SCPBrowser
                     ProteinGroupColumn = "Protein.Group",
                     PeptideColumn = "Modified.Sequence",
                     TotalIonCurrentColumn = "Ms1.Area",
-                    TargetProteinIdentifiers = targetIds
+                    TargetProteinIdentifiers = new List<string>()
                 };
 
                 if (mainWindow != null)
@@ -350,10 +332,7 @@ namespace SCPBrowser
                 await LoadTranscriptomicReferenceAsync();
                 await LoadGoEnrichmentAsync();
 
-                var targetInfo = targetIds.Count > 0
-                    ? $" (tracking {targetIds.Count} target protein(s))"
-                    : "";
-                StatusText.Text = $"Loaded successfully: {_currentData.TotalRawFiles} runs{targetInfo}";
+                StatusText.Text = $"Loaded successfully: {_currentData.TotalRawFiles} runs";
 
                 if (mainWindow != null)
                 {
@@ -378,7 +357,6 @@ namespace SCPBrowser
             }
             finally
             {
-                ReloadButton.IsEnabled = !string.IsNullOrEmpty(_currentFilePath);
             }
         }
 
@@ -455,6 +433,16 @@ namespace SCPBrowser
             return _goEnrichmentManager.IsLoaded && _goEnrichmentResults != null
                 ? _goEnrichmentManager.GenerateGoTermColorMap(_goEnrichmentResults)
                 : new Dictionary<string, System.Windows.Media.Color>();
+        }
+
+        public async Task ExportClassificationDiagnosticsAsync(
+            string outputPath,
+            Dictionary<string, CellTypePredictionResult> predictions,
+            ProteomicsData proteomicsData,
+            IProgressReporter progress = null)
+        {
+            await _cellTypeClassificationManager.ExportClassificationDiagnosticsAsync(
+                outputPath, predictions, proteomicsData, progress);
         }
     }
 }

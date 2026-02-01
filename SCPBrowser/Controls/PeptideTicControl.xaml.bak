@@ -127,6 +127,12 @@
                     Click="ClearSelectionButton_Click"
                     Padding="10,5"
                     IsEnabled="False"/>
+            <CheckBox x:Name="HideGreyDotsCheckBox"
+                      Content="Hide Grey Dots"
+                      VerticalAlignment="Center"
+                      Margin="15,0,0,0"
+                      Checked="HideGreyDotsCheckBox_Changed"
+                      Unchecked="HideGreyDotsCheckBox_Changed"/>
         </StackPanel>
 
         <Grid Grid.Row="1">

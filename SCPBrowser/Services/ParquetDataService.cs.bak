@@ -281,7 +281,7 @@ namespace SCPBrowser.Services
             // Recalculate totals
             mergedData.TotalRawFiles = mergedData.RawFileNames.Count;
             mergedData.TotalProteinGroups = mergedData.ProteinQuantMatrix.Count;
-            mergedData.TotalPeptides = mergedData.PeptideCountPerFile.Values.Sum();
+            mergedData.TotalPeptides = mergedData.AllPeptideSequences.Count;
 
             return mergedData;
         }

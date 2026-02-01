@@ -102,7 +102,7 @@ namespace SCPBrowser
             }
             else
             {
-                PlotGroupBoxHeader.Text = "Peptides vs Total Ion Current per Raw File";
+                PlotGroupBoxHeader.Text = "Peptides vs TIC";
             }
 
             if (_currentData != null)
@@ -803,17 +803,17 @@ namespace SCPBrowser
             if (options.UseCellTypeColoring && _cellTypePredictions != null)
             {
                 int predictedCount = _cellTypePredictions.Count(p => p.Value.TopCellType != null);
-                PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({fileCount} files, {predictedCount} with cell type predictions)";
+                PlotGroupBoxHeader.Text = $"Peptides vs TIC ({fileCount} files, {predictedCount} with cell type predictions)";
             }
             else if (options.UseBioConditionColoring && _currentData.BiologicalConditionPerFile.Count > 0)
             {
                 int conditionCount = _currentData.BiologicalConditionPerFile.Values.Where(c => !string.IsNullOrEmpty(c)).Distinct().Count();
-                PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({fileCount} files, {conditionCount} biological conditions)";
+                PlotGroupBoxHeader.Text = $"Peptides vs TIC ({fileCount} files, {conditionCount} biological conditions)";
             }
             else if (options.UsePlateColoring && options.PlateColorMap != null && options.PlateColorMap.Count > 0)
             {
                 int plateCount = options.PlateColorMap.Count;
-                PlotGroupBoxHeader.Text = $"Peptides vs Total Ion Current per Raw File ({fileCount} files, {plateCount} plates)";
+                PlotGroupBoxHeader.Text = $"Peptides vs TIC ({fileCount} files, {plateCount} plates)";
             }
             else
             {
@@ -865,6 +865,11 @@ namespace SCPBrowser
             {
                 _suppressCheckboxEvents = false;
             }
+        }
+
+        private void HideGreyDotsCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            ScatterPlot.SetHideUnselected(HideGreyDotsCheckBox.IsChecked == true);
         }
 
         private void ScatterPlot_SelectionChanged(object sender, PlotSelectionChangedEventArgs e)

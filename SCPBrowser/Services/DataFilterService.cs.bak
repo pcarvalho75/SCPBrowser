@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -272,7 +272,7 @@ namespace SCPBrowser.Services
             // Update totals
             filtered.TotalRawFiles = filtered.RawFileNames.Count;
             filtered.TotalProteinGroups = filtered.ProteinQuantMatrix.Count;
-            filtered.TotalPeptides = source.AllPeptideSequences.Count; // Use unique sequences from source
+            filtered.TotalPeptides = source.TotalPeptides; // Keep original
 
             return filtered;
         }

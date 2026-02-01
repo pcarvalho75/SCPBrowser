@@ -78,6 +78,7 @@ namespace SCPBrowser.Services
         public List<string> RawFileNames { get; set; } = new();
 
         public Dictionary<string, string> BiologicalConditionPerFile { get; set; } = new();
+        public HashSet<string> AllPeptideSequences { get; set; } = new();
     }
 
 
@@ -272,12 +273,15 @@ namespace SCPBrowser.Services
                 {
                     mergedData.ProteinToGeneMap[kvp.Key] = kvp.Value;
                 }
+
+                // Merge unique peptide sequences
+                mergedData.AllPeptideSequences.UnionWith(additionalData.AllPeptideSequences);
             }
 
             // Recalculate totals
             mergedData.TotalRawFiles = mergedData.RawFileNames.Count;
             mergedData.TotalProteinGroups = mergedData.ProteinQuantMatrix.Count;
-            mergedData.TotalPeptides = mergedData.PeptideCountPerFile.Values.Sum();
+            mergedData.TotalPeptides = mergedData.AllPeptideSequences.Count;
 
             return mergedData;
         }
@@ -472,6 +476,7 @@ namespace SCPBrowser.Services
 
             data.TotalRawFiles = rawFiles.Count;
             data.TotalProteinGroups = proteinGroups.Count;
+            data.AllPeptideSequences = peptides;
             data.TotalPeptides = peptides.Count;
             data.RawFileNames = rawFiles.OrderBy(rf => rf).ToList();
             data.ProteinQuantMatrix = proteinQuantMatrix;

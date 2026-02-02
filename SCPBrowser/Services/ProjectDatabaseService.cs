@@ -207,7 +207,8 @@ namespace SCPBrowser.Services
                 protein_name TEXT,
                 gene_name TEXT,
                 organism TEXT,
-                full_header TEXT
+                full_header TEXT,
+                source TEXT
             );
 
             -- ==================== REFERENCE DATA TABLES ====================
@@ -264,6 +265,14 @@ namespace SCPBrowser.Services
                 added_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (cell_type, gene_name)
             ) WITHOUT ROWID;
+
+            -- ==================== PROTEIN CONTAMINANTS ====================
+            
+            -- Proteins marked as contaminants by the user
+            CREATE TABLE IF NOT EXISTS protein_contaminants (
+                protein_group TEXT PRIMARY KEY,
+                marked_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
 
             -- ==================== INDICES ====================
             
@@ -394,10 +403,51 @@ namespace SCPBrowser.Services
                     protein_name TEXT,
                     gene_name TEXT,
                     organism TEXT,
-                    full_header TEXT
+                    full_header TEXT,
+                    source TEXT
                 );
             ";
                     await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Adds the source column to existing protein_annotations table (migration for existing databases)
+        /// </summary>
+        public async Task MigrateProteinAnnotationsAddSourceColumnAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    // Check if source column already exists
+                    command.CommandText = "PRAGMA table_info(protein_annotations)";
+                    bool sourceExists = false;
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var columnName = reader.GetString(1); // column name is at index 1
+                            if (columnName.Equals("source", StringComparison.OrdinalIgnoreCase))
+                            {
+                                sourceExists = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Add column if it doesn't exist
+                    if (!sourceExists)
+                    {
+                        command.CommandText = "ALTER TABLE protein_annotations ADD COLUMN source TEXT";
+                        await command.ExecuteNonQueryAsync();
+                    }
                 }
             }
         }
@@ -527,6 +577,108 @@ namespace SCPBrowser.Services
                 {
                     command.CommandText = "SELECT gene_name FROM cell_type_key_markers WHERE cell_type = @cellType";
                     command.Parameters.AddWithValue("@cellType", cellType);
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            result.Add(reader.GetString(0));
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        // ==================== PROTEIN CONTAMINANTS ====================
+
+        /// <summary>
+        /// Ensures the protein_contaminants table exists (migration for existing databases)
+        /// </summary>
+        public async Task EnsureProteinContaminantsTableExistsAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS protein_contaminants (
+                    protein_group TEXT PRIMARY KEY,
+                    marked_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+            ";
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Saves the current set of contaminant protein groups to the database (replaces all).
+        /// </summary>
+        public async Task SaveContaminantsAsync(HashSet<string> contaminantIds)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        using (var clearCmd = connection.CreateCommand())
+                        {
+                            clearCmd.CommandText = "DELETE FROM protein_contaminants";
+                            await clearCmd.ExecuteNonQueryAsync();
+                        }
+
+                        if (contaminantIds != null && contaminantIds.Count > 0)
+                        {
+                            using (var insertCmd = connection.CreateCommand())
+                            {
+                                insertCmd.CommandText = "INSERT INTO protein_contaminants (protein_group) VALUES (@pg)";
+                                var param = insertCmd.Parameters.Add("@pg", SqliteType.Text);
+
+                                foreach (var pg in contaminantIds)
+                                {
+                                    param.Value = pg;
+                                    await insertCmd.ExecuteNonQueryAsync();
+                                }
+                            }
+                        }
+
+                        await transaction.CommitAsync();
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync();
+                        throw;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Loads all contaminant protein groups from the database.
+        /// </summary>
+        public async Task<HashSet<string>> LoadContaminantsAsync()
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "SELECT protein_group FROM protein_contaminants";
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {

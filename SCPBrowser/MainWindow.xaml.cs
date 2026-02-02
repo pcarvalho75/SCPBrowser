@@ -800,10 +800,10 @@ namespace SCPBrowser
                 PeptideTicTab.SetExcludedRuns(excludedRunNames);
                 Console.WriteLine($"Loaded {excludedRunNames.Count} excluded runs from database");
 
-                ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
-
-                // Load protein annotations for tooltips
+                // Load protein annotations BEFORE updating matrix so descriptions are available
                 await ProteinMatrixTab.LoadProteinAnnotationsAsync(_currentProjectPath);
+
+                ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
 
                 // Subscribe to contaminant changes (unsubscribe first to avoid duplicates)
                 ProteinMatrixTab.ContaminantsUpdated -= ProteinMatrixTab_ContaminantsUpdated;
@@ -1394,6 +1394,7 @@ namespace SCPBrowser
                 LoadingOverlay.Show();
 
                 await _projectDatabaseService.EnsureProteinAnnotationsTableExistsAsync();
+                await _projectDatabaseService.MigrateProteinAnnotationsAddSourceColumnAsync();
 
                 var fastaService = new FastaParserService(_currentProjectPath);
 
@@ -1403,6 +1404,13 @@ namespace SCPBrowser
                 });
 
                 int count = await fastaService.ImportFastaAsync(dialog.FileName, progress);
+
+                // Reload annotations into memory and refresh the matrix
+                await ProteinMatrixTab.LoadProteinAnnotationsAsync(_currentProjectPath);
+                if (_dataFilterService?.FilteredData != null)
+                {
+                    ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
+                }
 
                 LoadingOverlay.Hide();
 

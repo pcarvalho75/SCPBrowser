@@ -23,6 +23,7 @@ namespace SCPBrowser
         private DataTable _filteredDataTable;
         private Dictionary<string, FastaParserService.ProteinAnnotation> _proteinAnnotations;
         private HashSet<string> _contaminantIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private string _projectDbPath;
 
         /// <summary>
         /// Raised when contaminant IDs are applied and ratios recalculated.
@@ -55,6 +56,12 @@ namespace SCPBrowser
             _currentData = data;
             _hvpResults = hvpResults;
 
+            // Sync DB-loaded contaminants into ProteomicsData
+            if (_contaminantIds.Count > 0 && _currentData != null)
+            {
+                _currentData.ContaminantIds = new HashSet<string>(_contaminantIds, StringComparer.OrdinalIgnoreCase);
+            }
+
             // Build HVP lookup dictionary for fast access
             _hvpLookup = hvpResults?.ToDictionary(h => h.ProteinId, h => h.VarianceStandardized)
                          ?? new Dictionary<string, double>();
@@ -70,6 +77,8 @@ namespace SCPBrowser
         /// </summary>
         public async Task LoadProteinAnnotationsAsync(string projectDbPath)
         {
+            _projectDbPath = projectDbPath;
+
             try
             {
                 var fastaService = new FastaParserService(projectDbPath);
@@ -80,6 +89,18 @@ namespace SCPBrowser
             {
                 Console.WriteLine($"ProteinMatrixControl: Failed to load annotations - {ex.Message}");
                 _proteinAnnotations = new Dictionary<string, FastaParserService.ProteinAnnotation>();
+            }
+
+            try
+            {
+                var dbService = new ProjectDatabaseService(projectDbPath);
+                await dbService.EnsureProteinContaminantsTableExistsAsync();
+                _contaminantIds = await dbService.LoadContaminantsAsync();
+                Console.WriteLine($"ProteinMatrixControl: Loaded {_contaminantIds.Count} contaminants from DB");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ProteinMatrixControl: Failed to load contaminants - {ex.Message}");
             }
         }
 
@@ -131,22 +152,51 @@ namespace SCPBrowser
             );
         }
 
-        private string GetProteinDescription(string proteinGroup)
+        private FastaParserService.ProteinAnnotation GetBestAnnotation(string proteinGroup)
         {
             if (string.IsNullOrEmpty(proteinGroup) || _proteinAnnotations == null || _proteinAnnotations.Count == 0)
+                return null;
+
+            var accessions = proteinGroup.Split(';').Select(a => a.Trim()).Where(a => !string.IsNullOrEmpty(a)).ToArray();
+
+            FastaParserService.ProteinAnnotation bestAnnotation = null;
+
+            foreach (var accession in accessions)
+            {
+                if (_proteinAnnotations.TryGetValue(accession, out var annotation))
+                {
+                    if (string.Equals(annotation.Source, "sp", StringComparison.OrdinalIgnoreCase))
+                    {
+                        bestAnnotation = annotation;
+                        break;
+                    }
+
+                    if (bestAnnotation == null)
+                        bestAnnotation = annotation;
+                }
+            }
+
+            return bestAnnotation;
+        }
+
+        private string GetProteinDescription(string proteinGroup)
+        {
+            var best = GetBestAnnotation(proteinGroup);
+            if (best == null)
                 return "";
 
-            var firstAccession = proteinGroup.Split(';')[0].Trim();
-            if (_proteinAnnotations.TryGetValue(firstAccession, out var annotation))
-            {
-                var parts = new List<string>();
-                if (!string.IsNullOrEmpty(annotation.ProteinName))
-                    parts.Add(annotation.ProteinName);
-                if (!string.IsNullOrEmpty(annotation.GeneName))
-                    parts.Add($"GN={annotation.GeneName}");
-                return string.Join(" ", parts);
-            }
-            return "";
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(best.ProteinName))
+                parts.Add(best.ProteinName);
+            if (!string.IsNullOrEmpty(best.GeneName))
+                parts.Add($"GN={best.GeneName}");
+            return string.Join(" ", parts);
+        }
+
+        private string GetProteinGene(string proteinGroup)
+        {
+            var best = GetBestAnnotation(proteinGroup);
+            return best?.GeneName ?? "";
         }
 
         private void RefreshMatrix()
@@ -169,6 +219,9 @@ namespace SCPBrowser
             // Column 3: Description (from FASTA annotations)
             _fullDataTable.Columns.Add("Description", typeof(string));
 
+            // Column 4: Gene (from FASTA annotations, prioritizing SwissProt)
+            _fullDataTable.Columns.Add("Gene", typeof(string));
+
             // Column 3: Variance Standardized (HVP score) - only if we have HVP data
             // FIX: Changed "Var. Std." to "Var_Std" because dots in column names break WPF binding paths
             bool hasHvpData = _hvpLookup != null && _hvpLookup.Count > 0;
@@ -190,6 +243,7 @@ namespace SCPBrowser
                 row["Contaminant"] = _contaminantIds.Contains(protein);
                 row["Protein Group"] = protein;
                 row["Description"] = GetProteinDescription(protein);
+                row["Gene"] = GetProteinGene(protein);
 
                 // Add HVP score if available
                 if (hasHvpData)
@@ -271,14 +325,13 @@ namespace SCPBrowser
                     IsReadOnly = true
                 };
 
-                // Create the cell template with tooltip
+                // Create the cell template - use Loaded event to populate Inlines for bold sp entries
                 var template = new DataTemplate();
                 var textBlockFactory = new FrameworkElementFactory(typeof(TextBlock));
-                textBlockFactory.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Protein Group"));
                 textBlockFactory.SetValue(TextBlock.PaddingProperty, new Thickness(8, 5, 8, 5));
                 textBlockFactory.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
 
-                // Add tooltip factory
+                textBlockFactory.AddHandler(TextBlock.LoadedEvent, new RoutedEventHandler(ProteinCell_Loaded));
                 textBlockFactory.AddHandler(TextBlock.MouseEnterEvent, new MouseEventHandler(ProteinCell_MouseEnter));
 
                 template.VisualTree = textBlockFactory;
@@ -291,6 +344,11 @@ namespace SCPBrowser
             {
                 e.Column.IsReadOnly = true;
                 e.Column.Width = new DataGridLength(300, DataGridLengthUnitType.Pixel);
+            }
+            else if (e.PropertyName == "Gene")
+            {
+                e.Column.IsReadOnly = true;
+                e.Column.Width = new DataGridLength(100, DataGridLengthUnitType.Pixel);
             }
             else if (e.PropertyName == "Var_Std") // FIX: Matched new safe column name
             {
@@ -356,6 +414,40 @@ namespace SCPBrowser
             }
         }
 
+        private void ProteinCell_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is TextBlock textBlock && textBlock.DataContext is System.Data.DataRowView rowView)
+            {
+                string proteinGroup = rowView["Protein Group"]?.ToString() ?? "";
+                textBlock.Inlines.Clear();
+
+                if (string.IsNullOrEmpty(proteinGroup) || _proteinAnnotations == null || _proteinAnnotations.Count == 0)
+                {
+                    textBlock.Inlines.Add(new System.Windows.Documents.Run(proteinGroup));
+                    return;
+                }
+
+                var accessions = proteinGroup.Split(';');
+                for (int i = 0; i < accessions.Length; i++)
+                {
+                    var acc = accessions[i].Trim();
+                    if (string.IsNullOrEmpty(acc)) continue;
+
+                    bool isSp = _proteinAnnotations.TryGetValue(acc, out var annotation) &&
+                                string.Equals(annotation.Source, "sp", StringComparison.OrdinalIgnoreCase);
+
+                    var run = new System.Windows.Documents.Run(acc);
+                    if (isSp)
+                        run.FontWeight = FontWeights.Bold;
+
+                    textBlock.Inlines.Add(run);
+
+                    if (i < accessions.Length - 1)
+                        textBlock.Inlines.Add(new System.Windows.Documents.Run("; "));
+                }
+            }
+        }
+
         private void ProteinCell_MouseEnter(object sender, MouseEventArgs e)
         {
             if (sender is TextBlock textBlock && _proteinAnnotations != null && _proteinAnnotations.Count > 0)
@@ -413,7 +505,46 @@ namespace SCPBrowser
             return lines.Count > 0 ? string.Join("\n", lines) : null;
         }
 
-        private void ApplyContaminantsButton_Click(object sender, RoutedEventArgs e)
+        private void SelectAllVisibleButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetContaminantOnAllVisible(true);
+        }
+
+        private void DeselectAllVisibleButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetContaminantOnAllVisible(false);
+        }
+
+        private void SetContaminantOnAllVisible(bool mark)
+        {
+            if (_filteredDataTable == null) return;
+
+            foreach (DataRow row in _filteredDataTable.Rows)
+            {
+                string proteinGroup = row["Protein Group"].ToString();
+                row["Contaminant"] = mark;
+
+                if (mark)
+                    _contaminantIds.Add(proteinGroup);
+                else
+                    _contaminantIds.Remove(proteinGroup);
+
+                // Sync to full table
+                foreach (DataRow fullRow in _fullDataTable.Rows)
+                {
+                    if (fullRow["Protein Group"].ToString() == proteinGroup)
+                    {
+                        fullRow["Contaminant"] = mark;
+                        break;
+                    }
+                }
+            }
+
+            ProteinMatrixGrid.Items.Refresh();
+            UpdateContaminantStatusText();
+        }
+
+        private async void ApplyContaminantsButton_Click(object sender, RoutedEventArgs e)
         {
             // Sync _contaminantIds from the current DataTable checkbox state
             _contaminantIds.Clear();
@@ -434,6 +565,21 @@ namespace SCPBrowser
             if (_currentData != null)
             {
                 _currentData.ContaminantIds = new HashSet<string>(_contaminantIds, StringComparer.OrdinalIgnoreCase);
+            }
+
+            // Persist to database
+            if (!string.IsNullOrEmpty(_projectDbPath))
+            {
+                try
+                {
+                    var dbService = new ProjectDatabaseService(_projectDbPath);
+                    await dbService.SaveContaminantsAsync(_contaminantIds);
+                    Console.WriteLine($"ProteinMatrixControl: Saved {_contaminantIds.Count} contaminants to DB");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"ProteinMatrixControl: Failed to save contaminants - {ex.Message}");
+                }
             }
 
             RefreshMatrix();
@@ -593,14 +739,17 @@ namespace SCPBrowser
                 {
                     var proteinName = row["Protein Group"].ToString();
                     var description = row["Description"].ToString();
+                    var gene = row["Gene"].ToString();
                     if (proteinName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        description.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
+                        description.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        gene.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         _filteredDataTable.ImportRow(row);
                     }
                 }
             }
 
+            ProteinMatrixGrid.Columns.Clear();
             ProteinMatrixGrid.ItemsSource = _filteredDataTable.DefaultView;
             UpdateContaminantStatusText();
         }

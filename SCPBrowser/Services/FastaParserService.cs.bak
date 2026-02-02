@@ -111,7 +111,6 @@ namespace SCPBrowser.Services
             var simpleUniprotMatch = Regex.Match(header, @"^([A-Za-z0-9_-]+)\|([A-Za-z0-9_]+)\s+(.*)$");
             if (simpleUniprotMatch.Success)
             {
-                annotation.Source = "other";
                 annotation.Accession = simpleUniprotMatch.Groups[1].Value;
                 annotation.EntryName = simpleUniprotMatch.Groups[2].Value;
 
@@ -216,8 +215,8 @@ namespace SCPBrowser.Services
                         {
                             insertCmd.CommandText = @"
                                 INSERT OR REPLACE INTO protein_annotations 
-                                (accession, entry_name, protein_name, gene_name, organism, full_header, source)
-                                VALUES (@acc, @entry, @protein, @gene, @org, @header, @source)
+                                (accession, entry_name, protein_name, gene_name, organism, full_header)
+                                VALUES (@acc, @entry, @protein, @gene, @org, @header)
                             ";
 
                             var accParam = insertCmd.Parameters.Add("@acc", SqliteType.Text);
@@ -226,7 +225,6 @@ namespace SCPBrowser.Services
                             var geneParam = insertCmd.Parameters.Add("@gene", SqliteType.Text);
                             var orgParam = insertCmd.Parameters.Add("@org", SqliteType.Text);
                             var headerParam = insertCmd.Parameters.Add("@header", SqliteType.Text);
-                            var sourceParam = insertCmd.Parameters.Add("@source", SqliteType.Text);
 
                             int count = 0;
                             foreach (var ann in annotations)
@@ -237,7 +235,6 @@ namespace SCPBrowser.Services
                                 geneParam.Value = ann.GeneName ?? (object)DBNull.Value;
                                 orgParam.Value = ann.Organism ?? (object)DBNull.Value;
                                 headerParam.Value = ann.FullHeader ?? (object)DBNull.Value;
-                                sourceParam.Value = ann.Source ?? (object)DBNull.Value;
 
                                 await insertCmd.ExecuteNonQueryAsync();
 
@@ -280,7 +277,7 @@ namespace SCPBrowser.Services
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        SELECT accession, entry_name, protein_name, gene_name, organism, full_header, source
+                        SELECT accession, entry_name, protein_name, gene_name, organism, full_header
                         FROM protein_annotations
                         WHERE accession = @acc
                     ";
@@ -297,8 +294,7 @@ namespace SCPBrowser.Services
                                 ProteinName = reader.IsDBNull(2) ? null : reader.GetString(2),
                                 GeneName = reader.IsDBNull(3) ? null : reader.GetString(3),
                                 Organism = reader.IsDBNull(4) ? null : reader.GetString(4),
-                                FullHeader = reader.IsDBNull(5) ? null : reader.GetString(5),
-                                Source = reader.IsDBNull(6) ? null : reader.GetString(6)
+                                FullHeader = reader.IsDBNull(5) ? null : reader.GetString(5)
                             };
                         }
                     }
@@ -343,7 +339,7 @@ namespace SCPBrowser.Services
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                SELECT accession, entry_name, protein_name, gene_name, organism, full_header, source
+                SELECT accession, entry_name, protein_name, gene_name, organism, full_header
                 FROM protein_annotations
             ";
 
@@ -362,8 +358,7 @@ namespace SCPBrowser.Services
                                 ProteinName = reader.IsDBNull(2) ? null : reader.GetString(2),
                                 GeneName = reader.IsDBNull(3) ? null : reader.GetString(3),
                                 Organism = reader.IsDBNull(4) ? null : reader.GetString(4),
-                                FullHeader = reader.IsDBNull(5) ? null : reader.GetString(5),
-                                Source = reader.IsDBNull(6) ? null : reader.GetString(6)
+                                FullHeader = reader.IsDBNull(5) ? null : reader.GetString(5)
                             };
                         }
                     }

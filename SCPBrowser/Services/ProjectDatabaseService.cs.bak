@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using SCPBrowser.Models;
@@ -206,7 +207,8 @@ namespace SCPBrowser.Services
                 protein_name TEXT,
                 gene_name TEXT,
                 organism TEXT,
-                full_header TEXT
+                full_header TEXT,
+                source TEXT
             );
 
             -- ==================== REFERENCE DATA TABLES ====================
@@ -393,7 +395,8 @@ namespace SCPBrowser.Services
                     protein_name TEXT,
                     gene_name TEXT,
                     organism TEXT,
-                    full_header TEXT
+                    full_header TEXT,
+                    source TEXT
                 );
             ";
                     await command.ExecuteNonQueryAsync();

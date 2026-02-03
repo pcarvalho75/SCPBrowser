@@ -1,4 +1,4 @@
-﻿using SCPBrowser.GOTools;
+using SCPBrowser.GOTools;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -87,13 +87,13 @@ namespace SCPBrowser
             int avgPeptides = (int)selectedPoints.Average(p => p.PeptideCount);
             int avgProteins = (int)selectedPoints.Average(p => p.ProteinCount);
             double avgTic = selectedPoints.Average(p => p.TicValue);
-            double avgTrypsinRatio = selectedPoints.Average(p => p.TrypsinRatio);
+            double avgContaminantRatio = selectedPoints.Average(p => p.ContaminantRatio);
 
             string summaryText = $"Runs: {totalRuns}\n" +
                                 $"Avg Peptides: {avgPeptides:N0}\n" +
                                 $"Avg Proteins: {avgProteins:N0}\n" +
                                 $"Avg TIC: {avgTic:E2}\n" +
-                                $"Avg Target Ratio: {avgTrypsinRatio * 100:F2}%";
+                                $"Avg Contaminant Ratio: {avgContaminantRatio * 100:F2}%";
 
             // Add cell type distribution if available
             var cellTypeCounts = selectedPoints
@@ -156,7 +156,7 @@ namespace SCPBrowser
                                 $"Peptides: {dataPoint.PeptideCount:N0}\n" +
                                 $"Protein Groups: {dataPoint.ProteinCount:N0}\n" +
                                 $"Total Ion Current: {dataPoint.TicValue:E2}\n" +
-                                $"Trypsin Ratio: {dataPoint.TrypsinRatio * 100:F2}%";
+                                $"Contaminant Ratio: {dataPoint.ContaminantRatio * 100:F2}%";
 
             if (!string.IsNullOrEmpty(dataPoint.PredictedCellType))
             {

@@ -559,8 +559,6 @@ namespace SCPBrowser
                 }
             }
 
-            RecalculateContaminantRatios();
-
             // Propagate contaminant IDs to ProteomicsData so DataFilterService can exclude them
             if (_currentData != null)
             {
@@ -668,6 +666,7 @@ namespace SCPBrowser
                 // Defer visual refresh until after commit
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
+                    ProteinMatrixGrid.CommitEdit(DataGridEditingUnit.Row, true);
                     ProteinMatrixGrid.Items.Refresh();
                     UpdateContaminantStatusText();
                 }), System.Windows.Threading.DispatcherPriority.Background);
@@ -682,42 +681,6 @@ namespace SCPBrowser
             string hvpInfo = hasHvpData ? $" | {hvpCount} HVPs" : "";
             string contaminantInfo = contaminantCount > 0 ? $" | {contaminantCount} contaminants marked" : "";
             StatusText.Text = $"Displaying {_filteredDataTable.Rows.Count} proteins across {_currentData.RawFileNames.Count} raw files{hvpInfo}{contaminantInfo}";
-        }
-
-        /// <summary>
-        /// Recalculates TargetProteinRatioPerFile on the existing loaded data
-        /// using the current contaminant IDs list.
-        /// </summary>
-        private void RecalculateContaminantRatios()
-        {
-            if (_currentData == null)
-                return;
-
-            _currentData.TargetProteinRatioPerFile.Clear();
-
-            if (_contaminantIds.Count == 0)
-                return;
-
-            foreach (var rawFile in _currentData.RawFileNames)
-            {
-                double contaminantTic = 0;
-
-                foreach (var kvp in _currentData.ProteinQuantMatrix)
-                {
-                    if (_contaminantIds.Contains(kvp.Key) && kvp.Value.TryGetValue(rawFile, out double abundance))
-                    {
-                        contaminantTic += abundance;
-                    }
-                }
-
-                double totalTic = _currentData.TotalIonCurrentPerFile.ContainsKey(rawFile)
-                    ? _currentData.TotalIonCurrentPerFile[rawFile]
-                    : 0;
-
-                _currentData.TargetProteinRatioPerFile[rawFile] = totalTic > 0
-                    ? (contaminantTic / totalTic) * 100.0
-                    : 0;
-            }
         }
 
         private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)

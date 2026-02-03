@@ -117,7 +117,7 @@
             SelectionChanged="ColorModeComboBox_SelectionChanged"
             ToolTip="Select coloring mode for data points"
             Margin="0,0,15,0">
-                  <ComboBoxItem Content="Target Protein Ratio" Tag="TargetRatio"/>
+                  <ComboBoxItem Content="Contaminant Ratio" Tag="TargetRatio"/>
                   <ComboBoxItem x:Name="ColorByBioConditionItem" Content="Biological Condition" Tag="BioCondition" IsEnabled="False" IsSelected="True"/>
                   <ComboBoxItem x:Name="ColorByPlateItem" Content="Plate" Tag="Plate"/>
                   <ComboBoxItem x:Name="ColorByCellTypeItem" Content="Cell Type" Tag="CellType" IsEnabled="False"/>

@@ -907,7 +907,7 @@ namespace SCPBrowser
                     PeptideCount = p.PeptideCount,
                     TicValue = p.TicValue,
                     ProteinCount = p.ProteinCount,
-                    TrypsinRatioPercent = $"{p.TrypsinRatio * 100:F2}%",
+                    ContaminantRatioPercent = $"{p.ContaminantRatio * 100:F2}%",
                     CellType = p.PredictedCellType ?? "",
                     BiologicalCondition = p.BiologicalCondition ?? "",
                     CompositeScore = p.PredictionScore != null ? $"{p.PredictionScore.CompositeScore:F3}" : "",

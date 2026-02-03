@@ -546,7 +546,7 @@ namespace SCPBrowser
                 data.PeptideCountPerFile.TryGetValue(rawFiles[i], out int peptideCount);
                 data.TotalIonCurrentPerFile.TryGetValue(rawFiles[i], out double ticValue);
                 data.ProteinCountPerFile.TryGetValue(rawFiles[i], out int proteinCount);
-                data.TargetProteinRatioPerFile.TryGetValue(rawFiles[i], out double trypsinRatio);
+                data.TargetProteinRatioPerFile.TryGetValue(rawFiles[i], out double contaminantRatio);
 
                 // Get bio condition for tooltip if not coloring by it
                 if (bioCondition == null && options.BioConditionPerFile != null)
@@ -580,7 +580,7 @@ namespace SCPBrowser
                     PeptideCount = peptideCount,
                     TicValue = ticValue,
                     ProteinCount = proteinCount,
-                    TrypsinRatio = trypsinRatio,
+                    ContaminantRatio = contaminantRatio,
                     Visual = ellipse,
                     BaseColor = markerColor,
                     PredictedCellType = cellType,
@@ -836,41 +836,41 @@ namespace SCPBrowser
                 data.TotalIonCurrentPerFile[rf] : 0).ToList();
             var proteinCounts = rawFiles.Select(rf => data.ProteinCountPerFile.ContainsKey(rf) ?
                 data.ProteinCountPerFile[rf] : 0).ToList();
-            var trypsinRatios = rawFiles.Select(rf => data.TargetProteinRatioPerFile.ContainsKey(rf) ?
+            var contaminantRatios = rawFiles.Select(rf => data.TargetProteinRatioPerFile.ContainsKey(rf) ?
                 data.TargetProteinRatioPerFile[rf] : 0).ToList();
 
-            // Determine if we need space for internal legend (only for Target Protein Ratio mode)
+            // Determine if we need space for internal legend (only for Contaminant Ratio mode)
             bool showInternalLegend = !options.UseCellTypeColoring && !options.UseBioConditionColoring && !options.UsePlateColoring;
             _plotRenderer.SetShowInternalLegend(showInternalLegend);
 
             _plotRenderer.CalculateAxisRanges(peptideCounts, ticValues, options.UseLogLog);
             _plotRenderer.DrawAxesAndGrid(PlotCanvas, canvasWidth, canvasHeight);
 
-            double maxRatio = trypsinRatios.Any() ? trypsinRatios.Max() : 0.05;
+            double maxRatio = contaminantRatios.Any() ? contaminantRatios.Max() : 0.05;
             if (maxRatio < 0.01) maxRatio = 0.05;
 
             if (options.UseCellTypeColoring && options.CellTypePredictions != null)
             {
                 _dataPoints = DrawDataPointsWithCellTypes(PlotCanvas, rawFiles, peptideCounts, ticValues,
-                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.CellTypePredictions,
+                    proteinCounts, contaminantRatios, canvasWidth, canvasHeight, options.CellTypePredictions,
                     options.CellTypeColorMap, options.BioConditionPerFile);
             }
             else if (options.UseBioConditionColoring && options.BioConditionPerFile != null)
             {
                 _dataPoints = DrawDataPointsWithBioConditions(PlotCanvas, rawFiles, peptideCounts, ticValues,
-                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.BioConditionPerFile,
+                    proteinCounts, contaminantRatios, canvasWidth, canvasHeight, options.BioConditionPerFile,
                     options.BioConditionColorMap, options.CellTypePredictions);
             }
             else if (options.UsePlateColoring && options.PlatePerFile != null)
             {
                 _dataPoints = DrawDataPointsWithPlates(PlotCanvas, rawFiles, peptideCounts, ticValues,
-                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight, options.PlatePerFile,
+                    proteinCounts, contaminantRatios, canvasWidth, canvasHeight, options.PlatePerFile,
                     options.PlateColorMap, options.CellTypePredictions, options.BioConditionPerFile);
             }
-            else // Default: Color by Target Protein Ratio
+            else // Default: Color by Contaminant Ratio
             {
                 _dataPoints = _plotRenderer.DrawDataPoints(PlotCanvas, rawFiles, peptideCounts, ticValues,
-                    proteinCounts, trypsinRatios, canvasWidth, canvasHeight);
+                    proteinCounts, contaminantRatios, canvasWidth, canvasHeight);
                 _plotRenderer.DrawColorLegend(PlotCanvas, canvasWidth, canvasHeight, maxRatio);
             }
 
@@ -1042,7 +1042,7 @@ namespace SCPBrowser
                 data.PeptideCountPerFile.TryGetValue(rawFiles[i], out int peptideCount);
                 data.TotalIonCurrentPerFile.TryGetValue(rawFiles[i], out double ticValue);
                 data.ProteinCountPerFile.TryGetValue(rawFiles[i], out int proteinCount);
-                data.TargetProteinRatioPerFile.TryGetValue(rawFiles[i], out double trypsinRatio);
+                data.TargetProteinRatioPerFile.TryGetValue(rawFiles[i], out double contaminantRatio);
 
                 // Get bio condition for tooltip if not coloring by it
                 if (bioCondition == null && options.BioConditionPerFile != null)
@@ -1076,7 +1076,7 @@ namespace SCPBrowser
                     PeptideCount = peptideCount,
                     TicValue = ticValue,
                     ProteinCount = proteinCount,
-                    TrypsinRatio = trypsinRatio,
+                    ContaminantRatio = contaminantRatio,
                     Visual = ellipse,
                     BaseColor = markerColor,
                     PredictedCellType = cellType,
@@ -1093,7 +1093,7 @@ namespace SCPBrowser
 
 
         private List<DataPoint> DrawDataPointsWithCellTypes(Canvas canvas, List<string> rawFiles, List<int> peptideCounts,
-      List<double> ticValues, List<int> proteinCounts, List<double> trypsinRatios,
+      List<double> ticValues, List<int> proteinCounts, List<double> contaminantRatios,
       double canvasWidth, double canvasHeight, Dictionary<string, CellTypePredictionResult> predictions,
       Dictionary<string, Color> colorMap, Dictionary<string, string> bioConditions)
         {
@@ -1149,7 +1149,7 @@ namespace SCPBrowser
                     PeptideCount = peptideCounts[i],
                     TicValue = ticValues[i],
                     ProteinCount = proteinCounts[i],
-                    TrypsinRatio = trypsinRatios[i],
+                    ContaminantRatio = contaminantRatios[i],
                     XScreen = screenPos.X,
                     YScreen = screenPos.Y,
                     Visual = ellipse,
@@ -1166,7 +1166,7 @@ namespace SCPBrowser
         }
 
         private List<DataPoint> DrawDataPointsWithPlates(Canvas canvas, List<string> rawFiles, List<int> peptideCounts,
-    List<double> ticValues, List<int> proteinCounts, List<double> trypsinRatios,
+    List<double> ticValues, List<int> proteinCounts, List<double> contaminantRatios,
     double canvasWidth, double canvasHeight, Dictionary<string, string> platePerFile,
     Dictionary<string, Color> colorMap, Dictionary<string, CellTypePredictionResult> predictions,
     Dictionary<string, string> bioConditions)
@@ -1228,7 +1228,7 @@ namespace SCPBrowser
                     PeptideCount = peptideCounts[i],
                     TicValue = ticValues[i],
                     ProteinCount = proteinCounts[i],
-                    TrypsinRatio = trypsinRatios[i],
+                    ContaminantRatio = contaminantRatios[i],
                     XScreen = screenPos.X,
                     YScreen = screenPos.Y,
                     Visual = ellipse,
@@ -1247,7 +1247,7 @@ namespace SCPBrowser
     
 
         private List<DataPoint> DrawDataPointsWithBioConditions(Canvas canvas, List<string> rawFiles, List<int> peptideCounts,
-            List<double> ticValues, List<int> proteinCounts, List<double> trypsinRatios,
+            List<double> ticValues, List<int> proteinCounts, List<double> contaminantRatios,
             double canvasWidth, double canvasHeight, Dictionary<string, string> bioConditions,
             Dictionary<string, Color> colorMap, Dictionary<string, CellTypePredictionResult> predictions)
         {
@@ -1302,7 +1302,7 @@ namespace SCPBrowser
                     PeptideCount = peptideCounts[i],
                     TicValue = ticValues[i],
                     ProteinCount = proteinCounts[i],
-                    TrypsinRatio = trypsinRatios[i],
+                    ContaminantRatio = contaminantRatios[i],
                     XScreen = screenPos.X,
                     YScreen = screenPos.Y,
                     Visual = ellipse,
@@ -1495,7 +1495,7 @@ namespace SCPBrowser
                                 $"Peptides: {point.PeptideCount:N0}\n" +
                                 $"TIC: {point.TicValue:E2}\n" +
                                 $"Protein Groups: {point.ProteinCount:N0}\n" +
-                                $"Trypsin Ratio: {point.TrypsinRatio * 100:F2}%";
+                                $"Contaminant Ratio: {point.ContaminantRatio * 100:F2}%";
 
             if (!string.IsNullOrEmpty(point.BiologicalCondition))
             {

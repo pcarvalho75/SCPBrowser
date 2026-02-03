@@ -11,7 +11,7 @@ namespace SCPBrowser
         public int PeptideCount { get; set; }
         public double TicValue { get; set; }
         public int ProteinCount { get; set; }
-        public double TrypsinRatio { get; set; }
+        public double ContaminantRatio { get; set; }
         public double XScreen { get; set; }
         public double YScreen { get; set; }
         public double XData { get; set; }
@@ -37,7 +37,7 @@ namespace SCPBrowser
         public int PeptideCount { get; set; }
         public double TicValue { get; set; }
         public int ProteinCount { get; set; }
-        public string TrypsinRatioPercent { get; set; }
+        public string ContaminantRatioPercent { get; set; }
         public string CellType { get; set; }
         public string BiologicalCondition { get; set; }
         public string CompositeScore { get; set; }

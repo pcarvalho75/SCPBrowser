@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="SCPBrowser.SelectedPointsGridControl"
+<UserControl x:Class="SCPBrowser.SelectedPointsGridControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
@@ -85,7 +85,7 @@
                 <DataGridTextColumn Header="Peptides" Binding="{Binding PeptideCount, StringFormat=N0}" Width="80" IsReadOnly="True"/>
                 <DataGridTextColumn Header="TIC" Binding="{Binding TicValue, StringFormat=E2}" Width="100" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Proteins" Binding="{Binding ProteinCount, StringFormat=N0}" Width="80" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Target Ratio" Binding="{Binding TrypsinRatioPercent}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Contaminant Ratio" Binding="{Binding ContaminantRatioPercent}" Width="90" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Cell Type" Binding="{Binding CellType}" Width="120" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Score" Binding="{Binding CompositeScore}" Width="70" IsReadOnly="True"/>
             </DataGrid.Columns>

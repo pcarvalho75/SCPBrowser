@@ -805,7 +805,10 @@ namespace SCPBrowser
 
                 ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
 
-                // Subscribe to contaminant changes (unsubscribe first to avoid duplicates)
+            // Recalculate contaminant ratios on OriginalData (handles pre-loaded contaminants from DB)
+            ProteinMatrixTab_ContaminantsUpdated(this, EventArgs.Empty);
+
+            // Subscribe to contaminant changes (unsubscribe first to avoid duplicates)
                 ProteinMatrixTab.ContaminantsUpdated -= ProteinMatrixTab_ContaminantsUpdated;
                 ProteinMatrixTab.ContaminantsUpdated += ProteinMatrixTab_ContaminantsUpdated;
 
@@ -841,11 +844,34 @@ namespace SCPBrowser
 
         private async void ProteinMatrixTab_ContaminantsUpdated(object sender, EventArgs e)
         {
-            // Propagate contaminant IDs to original data so DataFilterService can exclude them
             var contaminantIds = ProteinMatrixTab.ContaminantIds;
-            if (_dataFilterService.OriginalData != null)
+            var originalData = _dataFilterService.OriginalData;
+            if (originalData == null) return;
+
+            originalData.ContaminantIds = new HashSet<string>(contaminantIds, StringComparer.OrdinalIgnoreCase);
+
+            // Recalculate TargetProteinRatioPerFile on OriginalData so it survives re-filtering
+            // Stored as fraction (0.0–1.0); display code multiplies by 100
+            originalData.TargetProteinRatioPerFile.Clear();
+            if (contaminantIds.Count > 0)
             {
-                _dataFilterService.OriginalData.ContaminantIds = new HashSet<string>(contaminantIds, StringComparer.OrdinalIgnoreCase);
+                foreach (var rawFile in originalData.RawFileNames)
+                {
+                    double contaminantAbundance = 0;
+
+                    foreach (var kvp in originalData.ProteinQuantMatrix)
+                    {
+                        if (contaminantIds.Contains(kvp.Key) && kvp.Value.TryGetValue(rawFile, out double abundance))
+                        {
+                            contaminantAbundance += abundance;
+                        }
+                    }
+
+                    double totalTic = originalData.TotalIonCurrentPerFile.TryGetValue(rawFile, out double tic) ? tic : 0;
+                    originalData.TargetProteinRatioPerFile[rawFile] = totalTic > 0
+                        ? contaminantAbundance / totalTic
+                        : 0;
+                }
             }
 
             // Re-apply filters so PCA/UMAP/classification/HVP exclude contaminants

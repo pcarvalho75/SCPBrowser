@@ -251,11 +251,11 @@ namespace SCPBrowser
         }
 
         public List<DataPoint> DrawDataPoints(Canvas canvas, List<string> rawFiles, List<int> peptideCounts,
-            List<double> ticValues, List<int> proteinCounts, List<double> trypsinRatios,
+            List<double> ticValues, List<int> proteinCounts, List<double> contaminantRatios,
             double canvasWidth, double canvasHeight)
         {
             var dataPoints = new List<DataPoint>();
-            double maxRatio = trypsinRatios.Max();
+            double maxRatio = contaminantRatios.Max();
             if (maxRatio < 0.01) maxRatio = 0.05;
 
             for (int i = 0; i < rawFiles.Count; i++)
@@ -265,7 +265,7 @@ namespace SCPBrowser
 
                 Point screenPos = DataToScreen(peptideCounts[i], ticValues[i], canvasWidth, canvasHeight);
 
-                double normalizedRatio = trypsinRatios[i] / maxRatio;
+                double normalizedRatio = contaminantRatios[i] / maxRatio;
                 Color markerColor = ColorMapper.GetViridisColor(normalizedRatio);
 
                 var ellipse = new Ellipse
@@ -288,7 +288,7 @@ namespace SCPBrowser
                     PeptideCount = peptideCounts[i],
                     TicValue = ticValues[i],
                     ProteinCount = proteinCounts[i],
-                    TrypsinRatio = trypsinRatios[i],
+                    ContaminantRatio = contaminantRatios[i],
                     XScreen = screenPos.X,
                     YScreen = screenPos.Y,
                     Visual = ellipse,
@@ -309,7 +309,7 @@ namespace SCPBrowser
 
             var titleText = new TextBlock
             {
-                Text = "Target Protein Ratio",
+                Text = "Contaminant Ratio",
                 FontSize = 11,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(Colors.Black)

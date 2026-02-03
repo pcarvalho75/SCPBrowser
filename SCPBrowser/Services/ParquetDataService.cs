@@ -497,7 +497,7 @@ namespace SCPBrowser.Services
                 {
                     double targetTic = targetProteinTicByFile.ContainsKey(rawFile) ? targetProteinTicByFile[rawFile] : 0;
                     double totalTic = ticByFile[rawFile];
-                    data.TargetProteinRatioPerFile[rawFile] = totalTic > 0 ? (targetTic / totalTic) * 100.0 : 0;
+                    data.TargetProteinRatioPerFile[rawFile] = totalTic > 0 ? targetTic / totalTic : 0;
                 }
             }
 

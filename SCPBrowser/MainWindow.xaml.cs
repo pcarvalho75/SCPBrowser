@@ -9,7 +9,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using SCPBrowser.Services;
 using BioTessera.Core.Models;
 
 namespace SCPBrowser
@@ -251,6 +250,7 @@ namespace SCPBrowser
                 AddToRecentProjects(projectDbPath);
 
                 ProjectBrowserMenuItem.IsEnabled = true;
+                ExportPLPMenuItem.IsEnabled = true;
             }
             catch (Exception ex)
             {
@@ -496,6 +496,8 @@ namespace SCPBrowser
             ClearCellTypeClassificationsMenuItem.IsEnabled = false;
 
             ProjectBrowserMenuItem.IsEnabled = false;
+            ExportPLPMenuItem.IsEnabled = false;
+            ExportPLPControl.Visibility = Visibility.Collapsed;
 
             PlateFilterControl.Visibility = Visibility.Collapsed;
 
@@ -628,6 +630,51 @@ namespace SCPBrowser
             {
                 Console.WriteLine($"Error opening project browser: {ex.Message}");
                 MessageBox.Show($"Error opening project browser:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void ExportPLP_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!_hasOpenProject)
+                    return;
+
+                var data = MainControlTab.GetCurrentData();
+                if (data == null)
+                {
+                    MessageBox.Show("No data loaded. Import omic data first.", "Export",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Gather all data needed by the export control
+                var excludedRuns = await _parquetService.GetExcludedRunNamesAsync();
+                var cellTypePredictions = MainControlTab.GetCellTypePredictions();
+                var rawFileToPlateId = _dataFilterService?.RawFileToPlateId;
+                var plateIdToName = _dataFilterService?.PlateIdToName;
+
+                // Load FASTA annotations
+                Dictionary<string, FastaParserService.ProteinAnnotation> fastaAnnotations = null;
+                try
+                {
+                    var fastaService = new FastaParserService(_currentProjectPath);
+                    fastaAnnotations = await fastaService.GetAllAnnotationsAsync();
+                }
+                catch
+                {
+                    fastaAnnotations = new Dictionary<string, FastaParserService.ProteinAnnotation>();
+                }
+
+                ExportPLPControl.Initialize(data, excludedRuns, cellTypePredictions,
+                    rawFileToPlateId, plateIdToName, fastaAnnotations);
+                ExportPLPControl.Show();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error opening PLP export: {ex.Message}");
+                MessageBox.Show($"Error opening PLP export:\n\n{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }

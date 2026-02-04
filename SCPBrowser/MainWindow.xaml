@@ -61,6 +61,11 @@
       Click="ProjectBrowser_Click"
       IsEnabled="False"/>
                 <Separator/>
+                <MenuItem Header="_Export to PatternLab (PLP)..." 
+      x:Name="ExportPLPMenuItem"
+      Click="ExportPLP_Click"
+      IsEnabled="False"/>
+                <Separator/>
                 <MenuItem Header="_Clear Cell Type Classifications" 
       x:Name="ClearCellTypeClassificationsMenuItem"
       Click="ClearCellTypeClassifications_Click"
@@ -362,6 +367,12 @@ This adds the PlateFilterControl above the TabControl
 
             <!-- Project Browser Dialog - NEW VERSION -->
             <local:ProjectBrowser2 x:Name="ProjectBrowserDialog"
+                           Grid.RowSpan="2"
+                           Visibility="Collapsed"
+                           Panel.ZIndex="2"/>
+
+            <!-- PLP Export Control -->
+            <local:ExportPLPControl x:Name="ExportPLPControl"
                            Grid.RowSpan="2"
                            Visibility="Collapsed"
                            Panel.ZIndex="2"/>

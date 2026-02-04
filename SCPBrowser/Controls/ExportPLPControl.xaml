@@ -1,0 +1,191 @@
+<!--
+ExportPLPControl.xaml
+Control for exporting selected single-cell data to PatternLab for Proteomics (PLP) format.
+Location: SCPBrowser/Controls/ExportPLPControl.xaml
+-->
+<UserControl x:Class="SCPBrowser.ExportPLPControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="500"
+             Background="White">
+    <UserControl.Resources>
+        <Style x:Key="SectionLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#334155"/>
+            <Setter Property="Margin" Value="0,0,0,5"/>
+        </Style>
+        <Style x:Key="ExportComboBox" TargetType="ComboBox">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="#2563eb"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="20,10"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#2563eb" Padding="15,10">
+            <Grid>
+                <TextBlock Text="Export to PatternLab for Proteomics"
+                           FontSize="18" FontWeight="SemiBold" Foreground="White"
+                           VerticalAlignment="Center"/>
+                <Button Content="✕ Close" Click="CloseButton_Click"
+                        HorizontalAlignment="Right"
+                        Background="#1e40af" Foreground="White"
+                        BorderThickness="0" Padding="15,5"
+                        Cursor="Hand" FontSize="14"/>
+            </Grid>
+        </Border>
+
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20">
+            <StackPanel>
+
+                <!-- PatternLab Branding -->
+                <Border Background="#f0f7ff" BorderBrush="#bfdbfe" BorderThickness="1"
+                        CornerRadius="6" Padding="15" Margin="0,0,0,20">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Image Source="/images/PLV.png" Height="50" Margin="0,0,15,0"
+                               VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="PatternLab for Proteomics" FontSize="16" FontWeight="Bold" Foreground="#1e3a5f"/>
+                            <TextBlock Foreground="#4b7bb5" FontSize="12" Cursor="Hand"
+                                       MouseLeftButtonUp="PatternLabLink_Click"
+                                       TextDecorations="Underline">
+                                http://patternlabforproteomics.org
+                            </TextBlock>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Description -->
+                <TextBlock Style="{StaticResource SectionLabel}" Text="Description"/>
+                <TextBox x:Name="DescriptionTextBox" Text="SCPBrowser Export"
+                         FontSize="13" Padding="8,6" Margin="0,0,0,15"/>
+
+                <!-- Primary Label -->
+                <TextBlock Style="{StaticResource SectionLabel}" Text="Primary Label (class assignment)"/>
+                <ComboBox x:Name="PrimaryLabelComboBox" Style="{StaticResource ExportComboBox}"
+                          SelectionChanged="LabelMode_SelectionChanged">
+                    <ComboBoxItem Content="Biological Condition" Tag="BioCondition" IsSelected="True"/>
+                    <ComboBoxItem Content="Cell Type" Tag="CellType"/>
+                    <ComboBoxItem Content="Plate" Tag="Plate"/>
+                </ComboBox>
+
+                <!-- Secondary Label -->
+                <TextBlock Style="{StaticResource SectionLabel}" Text="Secondary Label"/>
+                <ComboBox x:Name="SecondaryLabelComboBox" Style="{StaticResource ExportComboBox}"
+                          SelectionChanged="LabelMode_SelectionChanged">
+                    <ComboBoxItem Content="Cell Type" Tag="CellType" IsSelected="True"/>
+                    <ComboBoxItem Content="Biological Condition" Tag="BioCondition"/>
+                    <ComboBoxItem Content="Plate" Tag="Plate"/>
+                </ComboBox>
+
+                <!-- Summary Panel -->
+                <Border Background="#f8fafc" BorderBrush="#e2e8f0" BorderThickness="1"
+                        CornerRadius="6" Padding="15" Margin="0,0,0,15">
+                    <StackPanel>
+                        <TextBlock Text="Export Summary" FontSize="14" FontWeight="Bold"
+                                   Foreground="#1e293b" Margin="0,0,0,10"/>
+
+                        <Grid Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Selected Runs:" FontSize="13" Foreground="#475569"/>
+                            <TextBlock x:Name="TotalRunsText" Grid.Column="1" FontSize="13"
+                                       FontWeight="SemiBold" Foreground="#1e293b" Text="0"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Proteins:" FontSize="13" Foreground="#475569"/>
+                            <TextBlock x:Name="TotalProteinsText" Grid.Column="1" FontSize="13"
+                                       FontWeight="SemiBold" Foreground="#1e293b" Text="0"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Skipped Runs:" FontSize="13" Foreground="#475569"/>
+                            <TextBlock x:Name="SkippedRunsText" Grid.Column="1" FontSize="13"
+                                       FontWeight="SemiBold" Foreground="#94a3b8" Text="0"/>
+                        </Grid>
+
+                        <Separator Margin="0,8"/>
+
+                        <!-- Class Breakdown -->
+                        <TextBlock Text="Class Breakdown:" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#334155" Margin="0,5,0,5"/>
+                        <ItemsControl x:Name="ClassBreakdownList" Grid.IsSharedSizeScope="True">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="LabelCol"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="CountCol"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Label}" FontSize="12" Foreground="#1e293b"
+                                                   FontWeight="SemiBold" Margin="0,0,8,0"/>
+                                        <Border Grid.Column="1" Background="#e2e8f0" Height="4"
+                                                VerticalAlignment="Center" CornerRadius="2">
+                                            <Border Background="#2563eb" CornerRadius="2"
+                                                    HorizontalAlignment="Left"
+                                                    Width="{Binding BarWidth}"/>
+                                        </Border>
+                                        <TextBlock Grid.Column="2" Text="{Binding CountText}" FontSize="12"
+                                                   Foreground="#64748b" Margin="8,0,0,0"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock x:Name="NoClassesText" Text="No classes available for selected mode"
+                                   FontSize="12" Foreground="#94a3b8" FontStyle="Italic"
+                                   Visibility="Collapsed" Margin="0,5,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Status -->
+                <TextBlock x:Name="StatusText" FontSize="12" Foreground="#64748b"
+                           Margin="0,0,0,10" TextWrapping="Wrap"/>
+
+                <!-- Export Button -->
+                <Button x:Name="ExportButton" Content="💾  Export PLP File..."
+                        Style="{StaticResource PrimaryButton}"
+                        Click="ExportButton_Click"
+                        HorizontalAlignment="Stretch"
+                        IsEnabled="False"/>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

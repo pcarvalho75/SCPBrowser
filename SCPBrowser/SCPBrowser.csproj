@@ -10,10 +10,14 @@
 
   <ItemGroup>
     <None Remove="images\logo.png" />  
-    <None Remove="images\Logo2.png" /></ItemGroup>
+    <None Remove="images\Logo2.png" />  
+    <None Remove="images\PLV.png" /></ItemGroup>
 
   <ItemGroup>
     <Content Include="images\logo.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\PLV.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Resource Include="images\logo2.png">
@@ -49,6 +53,16 @@
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="DLLs\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="PatternTools">
+      <HintPath>DLLs\PatternTools.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

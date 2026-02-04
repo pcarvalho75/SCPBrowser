@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transmutation Learning – Breaking the Reference Database Barrier in Single-Cell Proteomics</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tlearning.css">
+</head>
+<body>
+
+<!-- ── Nav ── -->
+<nav class="nav">
+  <a href="#" class="nav-brand">
+    <div class="nav-logo">T</div>
+    <span class="nav-title">Transmutation Learning</span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#motivation">Motivation</a></li>
+    <li><a href="#concept">Concept</a></li>
+    <li><a href="#workflow">Workflow</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#limitations">Limitations</a></li>
+    <li><a href="#team">Team</a></li>
+  </ul>
+</nav>
+
+<!-- ── Hero ── -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-cells">
+    <div class="cell-particle" style="left:10%; width:6px; height:6px; background:rgba(59,130,246,0.3); animation-delay:0s; animation-duration:18s;"></div>
+    <div class="cell-particle" style="left:25%; width:4px; height:4px; background:rgba(139,92,246,0.3); animation-delay:3s; animation-duration:22s;"></div>
+    <div class="cell-particle" style="left:40%; width:8px; height:8px; background:rgba(16,185,129,0.2); animation-delay:6s; animation-duration:25s;"></div>
+    <div class="cell-particle" style="left:60%; width:5px; height:5px; background:rgba(245,158,11,0.3); animation-delay:2s; animation-duration:20s;"></div>
+    <div class="cell-particle" style="left:75%; width:7px; height:7px; background:rgba(59,130,246,0.25); animation-delay:8s; animation-duration:19s;"></div>
+    <div class="cell-particle" style="left:88%; width:4px; height:4px; background:rgba(139,92,246,0.25); animation-delay:5s; animation-duration:23s;"></div>
+    <div class="cell-particle" style="left:50%; width:6px; height:6px; background:rgba(16,185,129,0.25); animation-delay:10s; animation-duration:21s;"></div>
+    <div class="cell-particle" style="left:15%; width:5px; height:5px; background:rgba(245,158,11,0.2); animation-delay:12s; animation-duration:24s;"></div>
+    <div class="cell-particle" style="left:70%; width:3px; height:3px; background:rgba(59,130,246,0.35); animation-delay:7s; animation-duration:17s;"></div>
+    <div class="cell-particle" style="left:35%; width:5px; height:5px; background:rgba(139,92,246,0.2); animation-delay:14s; animation-duration:26s;"></div>
+  </div>
+  <div class="hero-content">
+    <div class="hero-badge">⚠ Active Development — Not Yet Validated</div>
+    <h1>
+      <span class="gradient-text">Transmutation</span> Learning
+    </h1>
+    <p class="hero-subtitle">Breaking the Reference Database Barrier in Single-Cell Proteomics</p>
+    <p class="hero-description">
+      A pragmatic framework for bootstrapping cell-type classification in single-cell proteomics
+      by leveraging transcriptomic references — bridging the gap from the napkin sketch to the real thing.
+    </p>
+    <div class="hero-actions">
+      <a href="#workflow" class="btn btn-primary">↓ Explore the Workflow</a>
+      <a href="#concept" class="btn btn-outline">Read the Concept</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── The Gap: Motivation ── -->
+<section class="section" id="motivation">
+  <div class="section-label">The Problem</div>
+  <h2 class="section-title">A Reference Database Barrier</h2>
+  <p class="section-desc">
+    Single-cell transcriptomics has built a vast reference infrastructure over the past decade.
+    Single-cell proteomics has no comparable ecosystem — and the gap is unlikely to close rapidly.
+  </p>
+
+  <div class="stats-bar">
+    <div class="stat-item">
+      <div class="stat-number">160M+</div>
+      <div class="stat-label">Cells indexed</div>
+      <div class="stat-source">CELLxGENE Discover</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number">11M</div>
+      <div class="stat-label">Brain cells integrated</div>
+      <div class="stat-source">Human Brain Atlas</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number">3,000+</div>
+      <div class="stat-label">Contributing scientists</div>
+      <div class="stat-source">Human Cell Atlas</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number">&lt;500</div>
+      <div class="stat-label">SCP datasets in PRIDE</div>
+      <div class="stat-source">vs. tens of thousands bulk</div>
+    </div>
+  </div>
+
+  <div class="problem-grid">
+    <div class="problem-card">
+      <div class="card-icon icon-rna">🧬</div>
+      <h3>Transcriptomics: Rich Infrastructure</h3>
+      <p>Pre-trained classifiers like CellTypist and SingleR, standardized cell ontologies,
+        and atlas-scale references built by thousands of scientists over a decade. Billions of dollars
+        and millions of researcher-hours invested.</p>
+    </div>
+    <div class="problem-card">
+      <div class="card-icon icon-protein">🔬</div>
+      <h3>Proteomics: Fragmented Landscape</h3>
+      <p>No standardized cell-type ontologies, no pre-trained classifiers for automated annotation,
+        and limited community-scale references. Researchers often rely on manual annotation or methodological improvisation.</p>
+    </div>
+    <div class="problem-card">
+      <div class="card-icon icon-gap">⏱</div>
+      <h3>The Throughput Gap</h3>
+      <p>Sequencing's inherent throughput advantages over mass spectrometry, combined with
+        transcriptomics' decade head start, mean proteomics cannot simply replicate this infrastructure
+        within a practical timeframe.</p>
+    </div>
+    <div class="problem-card">
+      <div class="card-icon icon-bridge">🌉</div>
+      <h3>The Bridge We Need</h3>
+      <p>Instead of waiting to build proteomic references from scratch, can we leverage the existing
+        transcriptomic knowledge to bootstrap proteomic classification? That's the question
+        Transmutation Learning aims to answer.</p>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── The Napkin Sketch ── -->
+<section class="analogy-section" id="concept">
+  <div class="analogy-content">
+    <div class="section-label">The Concept</div>
+    <h2 class="section-title">From the Napkin Sketch to the Real Thing</h2>
+    <p class="section-desc">
+      Imagine someone who has never seen a car. You sketch one on a napkin — four wheels, a body, windows —
+      and send them outside. They'll succeed most of the time, perhaps confusing a van for a sedan,
+      but the imperfect sketch is sufficient to bootstrap real-world learning.
+    </p>
+
+    <div class="analogy-grid">
+      <div class="analogy-card">
+        <span class="emoji">📝</span>
+        <h3>The Napkin Sketch</h3>
+        <p>Transcriptomic references provide an approximate representation of cell identity — not through the same
+          molecular features, but through a correlated proxy. mRNA profiles sketch what the protein landscape
+          should look like.</p>
+      </div>
+      <div class="analogy-arrow">→</div>
+      <div class="analogy-card">
+        <span class="emoji">🚗</span>
+        <h3>The Real Thing</h3>
+        <p>High-confidence assignments become reliable proteomic training examples, enabling construction of
+          proteomics-native classifiers that no longer depend on transcriptomic proxies. The sketch bootstraps
+          real-world knowledge.</p>
+      </div>
+    </div>
+
+    <!-- ── Paradigm distinction ── -->
+    <div style="margin-top:4rem;">
+      <h3 style="font-family:var(--serif);font-size:1.4rem;margin-bottom:0.6rem;">Where Does This Fit?</h3>
+      <p style="color:var(--text-secondary);font-size:0.92rem;margin-bottom:1.5rem;max-width:680px;">
+        Transmutation Learning is conceptually rooted in cross-domain pseudo-labeling, but names a specific
+        cross-modal workflow that existing paradigms don't capture. The cross-modal gap between mRNA and protein
+        is not merely a domain shift — it's a change in molecular layer.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Paradigm comparison table ── -->
+<section class="distinction-section">
+  <div class="distinction-content">
+    <div class="section-label">How It Differs</div>
+    <h2 class="section-title">Machine Learning Paradigm Comparison</h2>
+
+    <table class="distinction-table">
+      <thead>
+        <tr>
+          <th>Paradigm</th>
+          <th>Training Data</th>
+          <th>Label Source</th>
+          <th>Cross-Modal?</th>
+          <th>Proteomic Reference Needed?</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="paradigm-name">Supervised Learning</td>
+          <td>Labeled examples from target domain</td>
+          <td>Annotated proteomic references</td>
+          <td>No</td>
+          <td>Yes — currently unavailable</td>
+        </tr>
+        <tr>
+          <td class="paradigm-name">Semi-Supervised Learning</td>
+          <td>Sparse labels + unlabeled target data</td>
+          <td>Some proteomic ground truth</td>
+          <td>No</td>
+          <td>Partial — still assumes proteomic labels</td>
+        </tr>
+        <tr>
+          <td class="paradigm-name">Transfer Learning</td>
+          <td>Pre-trained model adapted to new domain</td>
+          <td>Shared feature space</td>
+          <td>No (same feature type)</td>
+          <td>Assumes shared representations</td>
+        </tr>
+        <tr>
+          <td class="paradigm-name">Label Transfer</td>
+          <td>Same modality, different datasets</td>
+          <td>Reference dataset of same type</td>
+          <td>No</td>
+          <td>Yes — same modality reference</td>
+        </tr>
+        <tr>
+          <td class="paradigm-name">Multi-Modal (e.g., CITE-seq)</td>
+          <td>Simultaneous RNA + protein measurement</td>
+          <td>Joint measurement in same cells</td>
+          <td>Yes (paired)</td>
+          <td>Requires specialized experiment</td>
+        </tr>
+        <tr class="highlight-row">
+          <td class="paradigm-name">Transmutation Learning</td>
+          <td>Transcriptomic proxy → confidence filter → proteomics-native training set</td>
+          <td>Cross-modal pseudo-labels from RNA references</td>
+          <td>Yes (unpaired, different molecular layer)</td>
+          <td>No — builds one from scratch</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── Workflow ── -->
+<section class="section" id="workflow">
+  <div class="section-label">The Workflow</div>
+  <h2 class="section-title">Two-Tier Bootstrap Architecture</h2>
+  <p class="section-desc">
+    Transmutation Learning operates in two tiers: first, it leverages transcriptomic knowledge to generate
+    provisional labels; then, it builds proteomics-native classifiers from the confidently assigned cells.
+  </p>
+
+  <div class="workflow-container">
+    <div class="workflow-step step-1">
+      <div class="step-indicator">
+        <div class="step-number">01</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-content">
+        <h3>🧬 Cross-Modal Classification</h3>
+        <p>Classify proteomic data against transcriptomic references using shared marker-based enrichment
+          scores mapped via gene-to-protein identifiers. The system leverages tools like SingleR to generate
+          provisional cell-type labels, accepting that mRNA–protein correlation is imperfect.</p>
+        <span class="step-tag">TIER 1 — TRANSCRIPTOMIC PROXY</span>
+      </div>
+    </div>
+
+    <div class="workflow-step step-2">
+      <div class="step-indicator">
+        <div class="step-number">02</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-content">
+        <h3>🔍 Confidence Filtering</h3>
+        <p>Apply configurable thresholds (delta scores, label pruning, expected distribution priors) to
+          retain only high-confidence assignments. This is the critical step — the subset passing stringent
+          filtering serves as a reliable anchor for downstream training. Cells that fail are excluded,
+          not forced into incorrect categories.</p>
+        <span class="step-tag">QUALITY GATE</span>
+      </div>
+    </div>
+
+    <div class="workflow-step step-3">
+      <div class="step-indicator">
+        <div class="step-number">03</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-content">
+        <h3>📊 Proteomics-Native Feature Selection</h3>
+        <p>Using the confidently classified cells as a proteomics-native training set, perform feature
+          selection directly on proteomic measurements. Kruskal-Wallis testing with Benjamini-Hochberg
+          FDR correction identifies discriminative protein markers. Redundancy filtering via Spearman
+          correlation removes correlated markers.</p>
+        <span class="step-tag">TIER 2 — PROTEOMICS-NATIVE</span>
+      </div>
+    </div>
+
+    <div class="workflow-step step-4">
+      <div class="step-indicator">
+        <div class="step-number">04</div>
+      </div>
+      <div class="step-content">
+        <h3>🎯 Iterative Distillation &amp; Export</h3>
+        <p>Iteratively refine labels through kNN-based distillation using dual-mode similarity
+          (intensity-based cosine + detection pattern Jaccard) with optional PPI-informed biological priors.
+          Cross-validation monitors for overfitting. The final classifier is exported as a proteomics
+          reference for downstream annotation.</p>
+        <span class="step-tag">REFINEMENT &amp; DEPLOYMENT</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── Software Features ── -->
+<section class="section" id="features">
+  <div class="section-label">Software</div>
+  <h2 class="section-title">Current Implementation</h2>
+  <p class="section-desc">
+    A standalone desktop application built in C# / WPF, currently under active development.
+    The tool implements the full Transmutation Learning workflow.
+  </p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <span class="feature-icon">🔀</span>
+      <h3>Dual-Mode Similarity</h3>
+      <p>Combines cosine similarity on shared protein intensities with Jaccard similarity on detection patterns — leveraging the "shared silence" of missing values in SCP data.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🧲</span>
+      <h3>Biological Gravity</h3>
+      <p>Optional PPI-informed similarity using STRING database. Cells expressing interacting proteins are pulled closer together, respecting the physical interactome.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🔄</span>
+      <h3>Iterative Distillation</h3>
+      <p>Self-adjusting iterative loop: auto-selects markers, refines labels via kNN voting, checks convergence, and uses cross-validation as an early stopping criterion.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📈</span>
+      <h3>Adaptive Marker Selection</h3>
+      <p>Kruskal-Wallis + Benjamini-Hochberg FDR correction with greedy forward selection to remove redundant markers. Auto-relaxes thresholds when too few markers pass.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🛡️</span>
+      <h3>Confidence Gating</h3>
+      <p>Otsu's method for automatic threshold selection on delta scores, valid label set filtering, and expected distribution priors with configurable sensitivity.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📦</span>
+      <h3>Reference Export</h3>
+      <p>Exports trained proteomics-native classifiers as .pref files containing expression matrices, detection matrices, and marker statistics for downstream annotation.</p>
+    </div>
+  </div>
+
+  <!-- ── Development Status ── -->
+  <div class="status-banner">
+    <div class="status-icon">🚧</div>
+    <div class="status-content">
+      <h3>Active Development — Not Yet Validated</h3>
+      <p>This software is under active construction and has <strong>not been independently validated</strong>.
+        The algorithms and thresholds may change significantly. It is released to facilitate community discussion
+        and early experimentation, not for production use or clinical decision-making.
+        We are actively seeking collaborators for benchmarking against FACS-sorted ground truth datasets.
+        You can download the latest build from <a href="Publish.html" style="color:var(--accent);text-decoration:underline;">the release page</a>.
+      </p>
+      <div class="status-tags">
+        <span class="status-tag tag-wip">Work in Progress</span>
+        <span class="status-tag tag-alpha">Pre-Release</span>
+        <span class="status-tag tag-research">Research Use Only</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── Known Limitations ── -->
+<section class="section" id="limitations">
+  <div class="section-label">Transparency</div>
+  <h2 class="section-title">Known Limitations &amp; Open Questions</h2>
+  <p class="section-desc">
+    Transmutation Learning does not claim all assignments are correct. We believe in transparent science
+    and want to be upfront about what this approach can and cannot do.
+  </p>
+
+  <div class="limitations-grid">
+    <div class="limitation-card">
+      <h3>⚠️ mRNA–Protein Discordance</h3>
+      <p>Post-transcriptional regulation, protein stability differences, and degradation dynamics mean
+        mRNA and protein levels show imperfect correlation. Some cell types will transfer poorly from
+        transcriptomic references.</p>
+    </div>
+    <div class="limitation-card">
+      <h3>⚠️ Detection Bias in SCP</h3>
+      <p>Mass spectrometry detection is abundance-biased. Low-abundance marker proteins critical for
+        distinguishing rare cell types may be systematically missed, reducing classifier performance
+        for those populations.</p>
+    </div>
+    <div class="limitation-card">
+      <h3>⚠️ Cell-Type Abundance Bias</h3>
+      <p>Rare cell types poorly represented in the transcriptomic reference may fail confidence filtering
+        entirely and become invisible to the proteomics classifier. The approach inherently favors
+        well-characterized, abundant cell types.</p>
+    </div>
+    <div class="limitation-card">
+      <h3>⚠️ Transcriptomic Bias Propagation</h3>
+      <p>If the transcriptomic reference contains systematic biases or misannotations, these errors can
+        propagate into the proteomics classifier. The confidence filtering mitigates but cannot eliminate
+        this risk.</p>
+    </div>
+    <div class="limitation-card">
+      <h3>⚠️ Centroid-Based Validation Limits</h3>
+      <p>The current cross-validation uses centroid classifiers that assume spherical clusters.
+        Developmental trajectories or complex non-spherical distributions may fail validation even when
+        the underlying classification is biologically meaningful.</p>
+    </div>
+    <div class="limitation-card">
+      <h3>⚠️ No Independent Benchmarking Yet</h3>
+      <p>The tool has not been validated against independent ground truth such as FACS-sorted datasets.
+        Until such benchmarking is completed, all results should be treated as preliminary and
+        interpreted with caution.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Open Questions for the Community ── -->
+<section class="questions-section">
+  <div class="questions-content">
+    <div class="section-label">Community Discussion</div>
+    <h2 class="section-title">Questions We Want to Debate</h2>
+    <p class="section-desc" style="margin:0 auto;">
+      We invite the proteomics community to engage with these open questions.
+    </p>
+
+    <div class="question-cards">
+      <div class="question-card">
+        <p>Is approximate knowledge from a related modality preferable to no reference at all?
+          Where is the line between useful bootstrapping and dangerous bias propagation?</p>
+      </div>
+      <div class="question-card">
+        <p>What confidence thresholds best balance coverage against accuracy? Should these be
+          tissue-specific, or can universal guidelines be established?</p>
+      </div>
+      <div class="question-card">
+        <p>Can Transmutation Learning accelerate the construction of proteomic reference atlases?
+          What collaborative infrastructure would the community need?</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Team ── -->
+<section class="section" id="team">
+  <div class="section-label">Team</div>
+  <h2 class="section-title">Contributors</h2>
+
+  <div class="team-grid">
+    <div class="team-card">
+      <div class="team-avatar">AM</div>
+      <h4>Aline A. M. Martins</h4>
+      <div class="affil">UCSD – ISSCOR</div>
+      <div class="role-tag">† Equal contribution</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">RM</div>
+      <h4>Reynaldo M. Melo</h4>
+      <div class="affil">Scripps Research</div>
+      <div class="role-tag">† Equal contribution</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">LS</div>
+      <h4>Lucas Sales</h4>
+      <div class="affil">Fiocruz Paraná</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">MS</div>
+      <h4>Marlon D. M. Santos</h4>
+      <div class="affil">Fiocruz Paraná / I. Pasteur</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">JY</div>
+      <h4>John R. Yates III</h4>
+      <div class="affil">Scripps Research</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">AM</div>
+      <h4>Alysson R. Muotri</h4>
+      <div class="affil">UCSD – ISSCOR</div>
+      <div class="role-tag">* Corresponding</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar" style="background:linear-gradient(135deg,#3b82f6,#10b981);">PC</div>
+      <h4>Paulo C. Carvalho</h4>
+      <div class="affil">UCSD · Fiocruz · I. Pasteur</div>
+      <div class="role-tag">* Corresponding</div>
+    </div>
+  </div>
+
+  <div class="affiliation-bar">
+    <div class="affiliation-item">
+      <span>ISSCOR, UC San Diego</span>
+    </div>
+    <div class="affiliation-item">
+      <span>The Scripps Research Institute</span>
+    </div>
+    <div class="affiliation-item">
+      <span>Carlos Chagas Institute – Fiocruz Paraná</span>
+    </div>
+    <div class="affiliation-item">
+      <span>Institut Pasteur de Montevideo</span>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer class="footer">
+  <div class="footer-logos">
+    <span class="footer-logo-item">PatternLab for Proteomics</span>
+    <span class="footer-logo-item">UCSD · ISSCOR</span>
+    <span class="footer-logo-item">Fiocruz Paraná</span>
+    <span class="footer-logo-item">Scripps Research</span>
+  </div>
+  <div class="footer-divider"></div>
+  <p>
+    Transmutation Learning is part of the
+    <a href="http://patternlabforproteomics.org" target="_blank">PatternLab for Proteomics</a> ecosystem.<br>
+    Software and tutorial datasets available at
+    <a href="http://patternlabforproteomics.org/tlearning" target="_blank">patternlabforproteomics.org/tlearning</a>
+  </p>
+  <p class="footer-note">
+    This project is under active development and is not yet validated for production use.
+    All results should be treated as preliminary. © 2025
+  </p>
+</footer>
+
+</body>
+</html>

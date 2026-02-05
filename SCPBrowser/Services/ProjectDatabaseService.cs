@@ -10,13 +10,10 @@ namespace SCPBrowser.Services
     /// Core database service responsible for project creation, schema management, and project metadata.
     /// This service owns the complete database schema - all table creation happens here.
     /// </summary>
-    public class ProjectDatabaseService
+    public class ProjectDatabaseService : DatabaseServiceBase
     {
-        private readonly string _projectDbPath;
-
-        public ProjectDatabaseService(string projectDbPath)
+        public ProjectDatabaseService(string projectDbPath) : base(projectDbPath)
         {
-            _projectDbPath = projectDbPath;
         }
 
         /// <summary>

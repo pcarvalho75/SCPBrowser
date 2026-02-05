@@ -692,20 +692,7 @@ namespace SCPBrowser
 
         private void ConfigureGoDatabase_Click(object sender, RoutedEventArgs e)
         {
-            var manager = new BioTessera.GoAnnotationManager();
-            var window = new Window
-            {
-                Title = "GO Database Manager",
-                Content = manager,
-                Width = 700,
-                Height = 550,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = this
-            };
-            window.ShowDialog();
-
-            // Refresh status after dialog closes
-            CheckGoStatus();
+            GoDatabase_Click(sender, e);
         }
 
         // ==================== IMPORT MENU ====================

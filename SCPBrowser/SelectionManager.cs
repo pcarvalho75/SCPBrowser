@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -143,11 +143,7 @@ namespace SCPBrowser
 
         public void StoreDataCoordinates(List<Point> dataPoints)
         {
-            _polygonPointsData.Clear();
-            if (dataPoints == null || dataPoints.Count == 0)
-                return;
-
-            _polygonPointsData.AddRange(dataPoints);
+            SetPolygonPointsData(dataPoints);
         }
 
         public void RedrawSelectionFromDataCoordinates(Func<Point, Point> dataToScreenConverter)

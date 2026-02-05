@@ -124,32 +124,10 @@ namespace SCPBrowser
             {
                 // Generate hue-based colors with HIGH lightness (pastel)
                 double hue = (double)i / uniqueConditions.Count * 360.0;
-                colorMap[uniqueConditions[i]] = HsvToRgb(hue, 0.25, 0.95); // Low saturation, high value = light pastel
+                colorMap[uniqueConditions[i]] = ColorMapper.HsvToRgb(hue, 0.25, 0.95); // Low saturation, high value = light pastel
             }
 
             return colorMap;
-        }
-
-        private Color HsvToRgb(double h, double s, double v)
-        {
-            double c = v * s;
-            double x = c * (1 - Math.Abs((h / 60.0) % 2 - 1));
-            double m = v - c;
-
-            double r, g, b;
-
-            if (h < 60) { r = c; g = x; b = 0; }
-            else if (h < 120) { r = x; g = c; b = 0; }
-            else if (h < 180) { r = 0; g = c; b = x; }
-            else if (h < 240) { r = 0; g = x; b = c; }
-            else if (h < 300) { r = x; g = 0; b = c; }
-            else { r = c; g = 0; b = x; }
-
-            return Color.FromRgb(
-                (byte)((r + m) * 255),
-                (byte)((g + m) * 255),
-                (byte)((b + m) * 255)
-            );
         }
 
         private FastaParserService.ProteinAnnotation GetBestAnnotation(string proteinGroup)

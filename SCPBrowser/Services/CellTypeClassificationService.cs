@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using SCPBrowser.Models;
@@ -9,13 +10,10 @@ namespace SCPBrowser.Services
     /// <summary>
     /// Service for managing cell type classification persistence
     /// </summary>
-    public class CellTypeClassificationService
+    public class CellTypeClassificationService : DatabaseServiceBase
     {
-        private readonly string _projectDbPath;
-
-        public CellTypeClassificationService(string projectDbPath)
+        public CellTypeClassificationService(string projectDbPath) : base(projectDbPath)
         {
-            _projectDbPath = projectDbPath;
         }
 
         /// <summary>
@@ -23,43 +21,30 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task SaveCellTypeClassificationsAsync(int importId, Dictionary<string, CellTypePredictionResult> predictions)
         {
-            using (var connection = new SqliteConnection($"Data Source={_projectDbPath}"))
+            await WithConnectionAsync(async connection =>
             {
-                await connection.OpenAsync();
-
                 using (var transaction = connection.BeginTransaction())
                 {
                     try
                     {
-                        // Get raw file ID mapping (all imports, since data may come from multiple parquet files)
                         var rawFileMap = new Dictionary<string, int>();
                         using (var command = connection.CreateCommand())
                         {
-                            command.CommandText = @"
-        SELECT raw_file_id, raw_file_name
-        FROM raw_files
-    ";
-
+                            command.CommandText = "SELECT raw_file_id, raw_file_name FROM raw_files";
                             using (var reader = await command.ExecuteReaderAsync())
                             {
                                 while (await reader.ReadAsync())
-                                {
-                                    int rawFileId = reader.GetInt32(0);
-                                    string rawFileName = reader.GetString(1);
-                                    rawFileMap[rawFileName] = rawFileId;
-                                }
+                                    rawFileMap[reader.GetString(1)] = reader.GetInt32(0);
                             }
                         }
 
-                        // Insert classifications
                         int savedCount = 0;
                         using (var insertCmd = connection.CreateCommand())
                         {
                             insertCmd.CommandText = @"
                                 INSERT OR REPLACE INTO raw_file_cell_type_classifications 
                                 (raw_file_id, predicted_cell_type, composite_score, spearman_correlation, specificity_score, hypergeometric_pvalue, classified_at)
-                                VALUES (@rawFileId, @cellType, @compositeScore, @spearman, @specificity, @pvalue, @timestamp)
-                            ";
+                                VALUES (@rawFileId, @cellType, @compositeScore, @spearman, @specificity, @pvalue, @timestamp)";
 
                             foreach (var kvp in predictions)
                             {
@@ -72,12 +57,8 @@ namespace SCPBrowser.Services
                                     continue;
                                 }
 
-                                // Use actual scores, or zeros for runs with no prediction
                                 string cellType = prediction.TopCellType ?? "Undetermined";
-                                double compositeScore = 0.0;
-                                double spearman = 0.0;
-                                double specificity = 0.0;
-                                double pvalue = 1.0;
+                                double compositeScore = 0.0, spearman = 0.0, specificity = 0.0, pvalue = 1.0;
 
                                 if (prediction.TopScore != null)
                                 {
@@ -96,13 +77,13 @@ namespace SCPBrowser.Services
                                 insertCmd.Parameters.AddWithValue("@pvalue", pvalue);
                                 insertCmd.Parameters.AddWithValue("@timestamp", DateTime.UtcNow.ToString("o"));
 
-                                        await insertCmd.ExecuteNonQueryAsync();
-                                        savedCount++;
-                                    }
-                                }
+                                await insertCmd.ExecuteNonQueryAsync();
+                                savedCount++;
+                            }
+                        }
 
-                                Console.WriteLine($"DB SAVE: {savedCount}/{predictions.Count} predictions saved ({rawFileMap.Count} raw files in DB map)");
-                                transaction.Commit();
+                        Console.WriteLine($"DB SAVE: {savedCount}/{predictions.Count} predictions saved ({rawFileMap.Count} raw files in DB map)");
+                        transaction.Commit();
                     }
                     catch (Exception ex)
                     {
@@ -110,7 +91,7 @@ namespace SCPBrowser.Services
                         throw new Exception($"Failed to save cell type classifications: {ex.Message}", ex);
                     }
                 }
-            }
+            });
         }
 
         /// <summary>
@@ -118,84 +99,47 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<Dictionary<string, CellTypePredictionResult>> LoadCellTypeClassificationsAsync(int importId)
         {
-            var predictions = new Dictionary<string, CellTypePredictionResult>();
-
-            using (var connection = new SqliteConnection($"Data Source={_projectDbPath}"))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
+            var rows = await QueryAsync(@"
+                SELECT rf.raw_file_name, c.predicted_cell_type, 
+                    c.composite_score, c.spearman_correlation, 
+                    c.specificity_score, c.hypergeometric_pvalue
+                FROM raw_file_cell_type_classifications c
+                JOIN raw_files rf ON c.raw_file_id = rf.raw_file_id",
+                reader =>
                 {
-                    command.CommandText = @"
-                        SELECT rf.raw_file_name, c.predicted_cell_type, 
-                            c.composite_score, c.spearman_correlation, 
-                            c.specificity_score, c.hypergeometric_pvalue
-                        FROM raw_file_cell_type_classifications c
-                        JOIN raw_files rf ON c.raw_file_id = rf.raw_file_id
-                    ";
-
-                    using (var reader = await command.ExecuteReaderAsync())
+                    string cellType = reader.GetString(1);
+                    var topScore = new CellTypeScore
                     {
-                        while (await reader.ReadAsync())
-                        {
-                            string runName = reader.GetString(0);
-                            string cellType = reader.GetString(1);
-                            double compositeScore = reader.GetDouble(2);
-                            double spearman = reader.GetDouble(3);
-                            double specificity = reader.GetDouble(4);
-                            double pvalue = reader.GetDouble(5);
+                        CompositeScore = reader.GetDouble(2),
+                        SpearmanCorrelation = reader.GetDouble(3),
+                        SpecificityScore = reader.GetDouble(4),
+                        HypergeometricPValue = reader.GetDouble(5)
+                    };
+                    return (RunName: reader.GetString(0), Result: new CellTypePredictionResult
+                    {
+                        TopCellType = cellType,
+                        TopScore = topScore,
+                        Scores = new Dictionary<string, CellTypeScore> { { cellType, topScore } }
+                    });
+                });
 
-                            var topScore = new CellTypeScore
-                            {
-                                CompositeScore = compositeScore,
-                                SpearmanCorrelation = spearman,
-                                SpecificityScore = specificity,
-                                HypergeometricPValue = pvalue
-                            };
+            var predictions = rows.ToDictionary(r => r.RunName, r => r.Result);
 
-                            var result = new CellTypePredictionResult
-                            {
-                                TopCellType = cellType,
-                                TopScore = topScore,
-                                Scores = new Dictionary<string, CellTypeScore>
-                                {
-                                    { cellType, topScore }
-                                }
-                            };
+            Console.WriteLine($"DB LOAD: {predictions.Count} predictions loaded for import {importId}");
+            var typeCounts = predictions.Values.GroupBy(p => p.TopCellType).OrderByDescending(g => g.Count());
+            foreach (var group in typeCounts)
+                Console.WriteLine($"  DB LOAD: {group.Key} = {group.Count()}");
 
-                            predictions[runName] = result;
-                        }
-                    }
-                }
-                }
-
-                Console.WriteLine($"DB LOAD: {predictions.Count} predictions loaded for import {importId}");
-                var typeCounts = predictions.Values.GroupBy(p => p.TopCellType).OrderByDescending(g => g.Count());
-                foreach (var group in typeCounts)
-                    Console.WriteLine($"  DB LOAD: {group.Key} = {group.Count()}");
-
-                return predictions;
-            }
+            return predictions;
+        }
 
         /// <summary>
         /// Deletes all cell type classifications for a given import
         /// </summary>
         public async Task DeleteAllCellTypeClassificationsAsync(int importId)
         {
-            using (var connection = new SqliteConnection($"Data Source={_projectDbPath}"))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
-                        DELETE FROM raw_file_cell_type_classifications
-                    ";
-
-                    int deletedCount = await command.ExecuteNonQueryAsync();
-                    Console.WriteLine($"Deleted {deletedCount} cell type classifications (all imports)");
-                }
-            }
+            int deletedCount = await ExecuteNonQueryAsync("DELETE FROM raw_file_cell_type_classifications");
+            Console.WriteLine($"Deleted {deletedCount} cell type classifications (all imports)");
         }
     }
 }

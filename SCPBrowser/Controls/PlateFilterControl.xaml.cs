@@ -1,4 +1,4 @@
-﻿// PlateFilterControl.xaml.cs
+// PlateFilterControl.xaml.cs
 // Global plate filter control - manages plate selection for filtering data
 // Location: SCPBrowser/Controls/PlateFilterControl.xaml.cs
 
@@ -201,14 +201,7 @@ namespace SCPBrowser
         /// </summary>
         public void SelectAll()
         {
-            _isInitializing = true;
-            foreach (var item in _plateItems)
-            {
-                item.IsSelected = true;
-            }
-            _isInitializing = false;
-            UpdateSummaryText();
-            RaisePlateSelectionChanged();
+            SetAll(true);
         }
 
         /// <summary>
@@ -216,10 +209,15 @@ namespace SCPBrowser
         /// </summary>
         public void DeselectAll()
         {
+            SetAll(false);
+        }
+
+        private void SetAll(bool selected)
+        {
             _isInitializing = true;
             foreach (var item in _plateItems)
             {
-                item.IsSelected = false;
+                item.IsSelected = selected;
             }
             _isInitializing = false;
             UpdateSummaryText();

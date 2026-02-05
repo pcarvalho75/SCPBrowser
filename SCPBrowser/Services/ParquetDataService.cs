@@ -98,20 +98,16 @@ namespace SCPBrowser.Services
         public List<string> TargetProteinIdentifiers { get; set; } = new();
     }
 
-    public class ParquetDataService
+    public class ParquetDataService : DatabaseServiceBase
     {
-        private readonly string _projectDbPath;
-
         // Constructor for database operations
-        public ParquetDataService(string projectDbPath)
+        public ParquetDataService(string projectDbPath) : base(projectDbPath)
         {
-            _projectDbPath = projectDbPath;
         }
 
         // Parameterless constructor for file parsing only (backwards compatibility)
-        public ParquetDataService()
+        public ParquetDataService() : base(null)
         {
-            _projectDbPath = null;
         }
 
         // ==================== FILE PARSING METHODS ====================
@@ -137,30 +133,11 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<Dictionary<string, int>> GetRawFileNameToIdMappingAsync()
         {
-            var mapping = new Dictionary<string, int>();
-            var connectionString = $"Data Source={_projectDbPath}";
+            var list = await QueryAsync(
+                "SELECT raw_file_id, raw_file_name FROM raw_files",
+                reader => (Id: reader.GetInt32(0), Name: reader.GetString(1)));
 
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = "SELECT raw_file_id, raw_file_name FROM raw_files";
-
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            int rawFileId = reader.GetInt32(0);
-                            string rawFileName = reader.GetString(1);
-                            mapping[rawFileName] = rawFileId;
-                        }
-                    }
-                }
-            }
-
-            return mapping;
+            return list.ToDictionary(r => r.Name, r => r.Id);
         }
 
         /// <summary>
@@ -168,31 +145,9 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<List<string>> GetAllImportedParquetFilesAsync()
         {
-            var fileNames = new List<string>();
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
-                SELECT file_name 
-                FROM parquet_imports 
-                ORDER BY import_timestamp ASC";
-
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            fileNames.Add(reader.GetString(0));
-                        }
-                    }
-                }
-            }
-
-            return fileNames;
+            return await QueryAsync(
+                "SELECT file_name FROM parquet_imports ORDER BY import_timestamp ASC",
+                reader => reader.GetString(0));
         }
 
         /// <summary>
@@ -297,32 +252,11 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<int?> GetMostRecentImportIdAsync()
         {
-            var connectionString = $"Data Source={_projectDbPath}";
+            var result = await ExecuteScalarAsync<int>(
+                "SELECT import_id FROM parquet_imports ORDER BY import_timestamp DESC LIMIT 1",
+                defaultValue: -1);
 
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
-                SELECT import_id 
-                FROM parquet_imports 
-                ORDER BY import_timestamp DESC 
-                LIMIT 1
-            ";
-
-                    var result = await command.ExecuteScalarAsync();
-
-                    if (result == null || result == DBNull.Value)
-                        return null;
-
-                    if (int.TryParse(result.ToString(), out int importId))
-                        return importId;
-
-                    return null;
-                }
-            }
+            return result == -1 ? null : result;
         }
 
         public async Task<ProteomicsData> LoadParquetFileAsync(string filePath, ColumnMapping mapping)
@@ -511,36 +445,23 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<int> InsertParquetImportAsync(ParquetImportInfo importInfo)
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
+            return await ExecuteScalarAsync<int>(@"
+                INSERT INTO parquet_imports 
+                (plate_id, file_name, file_hash, import_timestamp, row_count, protein_count, cell_count, column_mapping)
+                VALUES 
+                (@plateId, @fileName, @fileHash, @timestamp, @rowCount, @proteinCount, @cellCount, @mapping);
+                SELECT last_insert_rowid();",
+                cmd =>
                 {
-                    command.CommandText = @"
-                        INSERT INTO parquet_imports 
-                        (plate_id, file_name, file_hash, import_timestamp, row_count, protein_count, cell_count, column_mapping)
-                        VALUES 
-                        (@plateId, @fileName, @fileHash, @timestamp, @rowCount, @proteinCount, @cellCount, @mapping);
-                        
-                        SELECT last_insert_rowid();
-                    ";
-
-                    command.Parameters.AddWithValue("@plateId", importInfo.PlateId);
-                    command.Parameters.AddWithValue("@fileName", importInfo.FileName);
-                    command.Parameters.AddWithValue("@fileHash", importInfo.FileHash);
-                    command.Parameters.AddWithValue("@timestamp", importInfo.ImportTimestamp.ToString("o"));
-                    command.Parameters.AddWithValue("@rowCount", importInfo.RowCount);
-                    command.Parameters.AddWithValue("@proteinCount", importInfo.ProteinCount);
-                    command.Parameters.AddWithValue("@cellCount", importInfo.CellCount);
-                    command.Parameters.AddWithValue("@mapping", importInfo.ColumnMappingJson);
-
-                    var result = await command.ExecuteScalarAsync();
-                    return result != null && int.TryParse(result.ToString(), out int id) ? id : 0;
-                }
-            }
+                    cmd.Parameters.AddWithValue("@plateId", importInfo.PlateId);
+                    cmd.Parameters.AddWithValue("@fileName", importInfo.FileName);
+                    cmd.Parameters.AddWithValue("@fileHash", importInfo.FileHash);
+                    cmd.Parameters.AddWithValue("@timestamp", importInfo.ImportTimestamp.ToString("o"));
+                    cmd.Parameters.AddWithValue("@rowCount", importInfo.RowCount);
+                    cmd.Parameters.AddWithValue("@proteinCount", importInfo.ProteinCount);
+                    cmd.Parameters.AddWithValue("@cellCount", importInfo.CellCount);
+                    cmd.Parameters.AddWithValue("@mapping", importInfo.ColumnMappingJson);
+                });
         }
 
         /// <summary>
@@ -549,13 +470,10 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<List<RawFileInfo>> InsertRawFilesAsync(int importId, List<RawFileInfo> rawFiles)
         {
-            var connectionString = $"Data Source={_projectDbPath}";
             var insertedFiles = new List<RawFileInfo>();
 
-            using (var connection = new SqliteConnection(connectionString))
+            await WithConnectionAsync(async connection =>
             {
-                await connection.OpenAsync();
-
                 using (var transaction = connection.BeginTransaction())
                 {
                     try
@@ -569,9 +487,7 @@ namespace SCPBrowser.Services
                                     (import_id, raw_file_name, biological_condition, plate_id, protein_count, peptide_count, total_ion_current)
                                     VALUES 
                                     (@importId, @rawFileName, @condition, @plateId, @proteinCount, @peptideCount, @tic);
-                                    
-                                    SELECT last_insert_rowid();
-                                ";
+                                    SELECT last_insert_rowid();";
 
                                 command.Parameters.AddWithValue("@importId", importId);
                                 command.Parameters.AddWithValue("@rawFileName", rawFile.RawFileName);
@@ -582,10 +498,7 @@ namespace SCPBrowser.Services
                                 command.Parameters.AddWithValue("@tic", rawFile.TotalIonCurrent);
 
                                 var result = await command.ExecuteScalarAsync();
-                                int rawFileId = result != null && int.TryParse(result.ToString(), out int parsedId) ? parsedId : 0;
-
-                                // Update the raw file object with its database ID
-                                rawFile.RawFileId = rawFileId;
+                                rawFile.RawFileId = result != null && int.TryParse(result.ToString(), out int parsedId) ? parsedId : 0;
                                 insertedFiles.Add(rawFile);
                             }
                         }
@@ -598,7 +511,7 @@ namespace SCPBrowser.Services
                         throw;
                     }
                 }
-            }
+            });
 
             return insertedFiles;
         }
@@ -608,71 +521,41 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<List<RawFileInfo>> GetRawFilesAsync(int? plateId = null, string biologicalCondition = null)
         {
-            var rawFiles = new List<RawFileInfo>();
-            var connectionString = $"Data Source={_projectDbPath}";
+            var whereClauses = new List<string>();
+            if (plateId.HasValue)
+                whereClauses.Add("rf.plate_id = @plateId");
+            if (!string.IsNullOrEmpty(biologicalCondition))
+                whereClauses.Add("rf.biological_condition = @condition");
 
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
+            var whereClause = whereClauses.Count > 0 ? "WHERE " + string.Join(" AND ", whereClauses) : "";
 
-                using (var command = connection.CreateCommand())
+            return await QueryAsync($@"
+                SELECT rf.raw_file_id, rf.import_id, rf.raw_file_name, 
+                       rf.biological_condition, rf.plate_id, p.plate_name,
+                       rf.protein_count, rf.peptide_count, rf.total_ion_current
+                FROM raw_files rf
+                LEFT JOIN plates p ON rf.plate_id = p.plate_id
+                {whereClause}
+                ORDER BY rf.raw_file_name",
+                reader => new RawFileInfo
                 {
-                    var whereClauses = new List<string>();
-
+                    RawFileId = reader.GetInt32(0),
+                    ImportId = reader.GetInt32(1),
+                    RawFileName = reader.GetString(2),
+                    BiologicalCondition = reader.IsDBNull(3) ? "" : reader.GetString(3),
+                    PlateId = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                    PlateName = reader.IsDBNull(5) ? "" : reader.GetString(5),
+                    ProteinCount = reader.IsDBNull(6) ? 0 : reader.GetInt32(6),
+                    PeptideCount = reader.IsDBNull(7) ? 0 : reader.GetInt32(7),
+                    TotalIonCurrent = reader.IsDBNull(8) ? 0.0 : reader.GetDouble(8)
+                },
+                cmd =>
+                {
                     if (plateId.HasValue)
-                    {
-                        whereClauses.Add("rf.plate_id = @plateId");
-                    }
-
+                        cmd.Parameters.AddWithValue("@plateId", plateId.Value);
                     if (!string.IsNullOrEmpty(biologicalCondition))
-                    {
-                        whereClauses.Add("rf.biological_condition = @condition");
-                    }
-
-                    var whereClause = whereClauses.Count > 0 ? "WHERE " + string.Join(" AND ", whereClauses) : "";
-
-                    command.CommandText = $@"
-                        SELECT rf.raw_file_id, rf.import_id, rf.raw_file_name, 
-                               rf.biological_condition, rf.plate_id, p.plate_name,
-                               rf.protein_count, rf.peptide_count, rf.total_ion_current
-                        FROM raw_files rf
-                        LEFT JOIN plates p ON rf.plate_id = p.plate_id
-                        {whereClause}
-                        ORDER BY rf.raw_file_name
-                    ";
-
-                    if (plateId.HasValue)
-                    {
-                        command.Parameters.AddWithValue("@plateId", plateId.Value);
-                    }
-
-                    if (!string.IsNullOrEmpty(biologicalCondition))
-                    {
-                        command.Parameters.AddWithValue("@condition", biologicalCondition);
-                    }
-
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            rawFiles.Add(new RawFileInfo
-                            {
-                                RawFileId = reader.GetInt32(0),
-                                ImportId = reader.GetInt32(1),
-                                RawFileName = reader.GetString(2),
-                                BiologicalCondition = reader.IsDBNull(3) ? "" : reader.GetString(3),
-                                PlateId = reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                                PlateName = reader.IsDBNull(5) ? "" : reader.GetString(5),
-                                ProteinCount = reader.IsDBNull(6) ? 0 : reader.GetInt32(6),
-                                PeptideCount = reader.IsDBNull(7) ? 0 : reader.GetInt32(7),
-                                TotalIonCurrent = reader.IsDBNull(8) ? 0.0 : reader.GetDouble(8)
-                            });
-                        }
-                    }
-                }
-            }
-
-            return rawFiles;
+                        cmd.Parameters.AddWithValue("@condition", biologicalCondition);
+                });
         }
 
         /// <summary>
@@ -680,34 +563,13 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<List<string>> GetBiologicalConditionsAsync()
         {
-            var conditions = new List<string>();
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
-                        SELECT DISTINCT biological_condition 
-                        FROM raw_files 
-                        WHERE biological_condition IS NOT NULL 
-                          AND biological_condition != ''
-                        ORDER BY biological_condition
-                    ";
-
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            conditions.Add(reader.GetString(0));
-                        }
-                    }
-                }
-            }
-
-            return conditions;
+            return await QueryAsync(@"
+                SELECT DISTINCT biological_condition 
+                FROM raw_files 
+                WHERE biological_condition IS NOT NULL 
+                  AND biological_condition != ''
+                ORDER BY biological_condition",
+                reader => reader.GetString(0));
         }
 
         /// <summary>
@@ -715,21 +577,10 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<bool> IsParquetImportedAsync(string fileName)
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = "SELECT COUNT(*) FROM parquet_imports WHERE file_name = @fileName";
-                    command.Parameters.AddWithValue("@fileName", fileName);
-
-                    var result = await command.ExecuteScalarAsync();
-                    return result != null && int.TryParse(result.ToString(), out int count) && count > 0;
-                }
-            }
+            var count = await ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM parquet_imports WHERE file_name = @fileName",
+                cmd => cmd.Parameters.AddWithValue("@fileName", fileName));
+            return count > 0;
         }
 
         /// <summary>
@@ -737,17 +588,12 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task DeleteParquetImportAsync(string fileName)
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
+            await WithConnectionAsync(async connection =>
             {
-                await connection.OpenAsync();
-
                 using (var transaction = connection.BeginTransaction())
                 {
                     try
                     {
-                        // Get import_id
                         int importId;
                         using (var command = connection.CreateCommand())
                         {
@@ -757,7 +603,6 @@ namespace SCPBrowser.Services
                             if (result == null || !int.TryParse(result.ToString(), out importId)) return;
                         }
 
-                        // Delete raw files first (foreign key constraint)
                         using (var command = connection.CreateCommand())
                         {
                             command.CommandText = "DELETE FROM raw_files WHERE import_id = @importId";
@@ -765,7 +610,6 @@ namespace SCPBrowser.Services
                             await command.ExecuteNonQueryAsync();
                         }
 
-                        // Delete the import
                         using (var command = connection.CreateCommand())
                         {
                             command.CommandText = "DELETE FROM parquet_imports WHERE import_id = @importId";
@@ -781,7 +625,7 @@ namespace SCPBrowser.Services
                         throw;
                     }
                 }
-            }
+            });
         }
 
         /// <summary>
@@ -804,24 +648,8 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<string> GetLastImportedParquetFileAsync()
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
-                        SELECT file_name 
-                        FROM parquet_imports 
-                        ORDER BY import_timestamp DESC 
-                        LIMIT 1";
-
-                    var result = await command.ExecuteScalarAsync();
-                    return result?.ToString();
-                }
-            }
+            return await ExecuteScalarAsync<string>(
+                "SELECT file_name FROM parquet_imports ORDER BY import_timestamp DESC LIMIT 1");
         }
 
         /// <summary>
@@ -904,33 +732,14 @@ namespace SCPBrowser.Services
                 return;
             }
 
-            var connectionString = $"Data Source={_projectDbPath}";
+            var rows = await QueryAsync(
+                "SELECT raw_file_name, biological_condition FROM raw_files",
+                reader => (Name: reader.GetString(0), Condition: reader.IsDBNull(1) ? null : reader.GetString(1)));
 
-            using (var connection = new SqliteConnection(connectionString))
+            foreach (var (name, condition) in rows)
             {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
-                SELECT raw_file_name, biological_condition 
-                FROM raw_files";
-
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            string rawFileName = reader.GetString(0);
-                            string bioCondition = reader.IsDBNull(1) ? null : reader.GetString(1);
-
-                            // Only populate if this raw file exists in our data
-                            if (data.RawFileNames.Contains(rawFileName))
-                            {
-                                data.BiologicalConditionPerFile[rawFileName] = bioCondition;
-                            }
-                        }
-                    }
-                }
+                if (data.RawFileNames.Contains(name))
+                    data.BiologicalConditionPerFile[name] = condition;
             }
 
             Console.WriteLine($"Populated biological conditions for {data.BiologicalConditionPerFile.Count} raw files");
@@ -944,25 +753,19 @@ namespace SCPBrowser.Services
             if (proteinStats == null || proteinStats.Count == 0)
                 return;
 
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
+            await WithConnectionAsync(async connection =>
             {
-                await connection.OpenAsync();
-
                 using (var transaction = connection.BeginTransaction())
                 {
                     try
                     {
-                        // Use a prepared command with parameter reuse for much better performance
                         using (var command = connection.CreateCommand())
                         {
                             command.CommandText = @"
                                 INSERT INTO protein_quant_summary
                                 (protein_id, raw_file_id, median_intensity, mean_intensity, detection_count)
                                 VALUES
-                                (@proteinId, @rawFileId, @median, @mean, @count)
-                            ";
+                                (@proteinId, @rawFileId, @median, @mean, @count)";
 
                             var proteinIdParam = command.Parameters.Add("@proteinId", SqliteType.Integer);
                             var rawFileIdParam = command.Parameters.Add("@rawFileId", SqliteType.Integer);
@@ -970,7 +773,7 @@ namespace SCPBrowser.Services
                             var meanParam = command.Parameters.Add("@mean", SqliteType.Real);
                             var countParam = command.Parameters.Add("@count", SqliteType.Integer);
 
-                            command.Prepare(); // Pre-compile the statement for faster execution
+                            command.Prepare();
 
                             foreach (var stat in proteinStats)
                             {
@@ -992,7 +795,7 @@ namespace SCPBrowser.Services
                         throw;
                     }
                 }
-            }
+            });
         }
 
         /// <summary>
@@ -1000,24 +803,13 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task UpdateRawFileConditionAsync(int rawFileId, string biologicalCondition)
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
+            await ExecuteNonQueryAsync(@"
+                UPDATE raw_files SET biological_condition = @condition WHERE raw_file_id = @rawFileId",
+                cmd =>
                 {
-                    command.CommandText = @"
-                UPDATE raw_files 
-                SET biological_condition = @condition
-                WHERE raw_file_id = @rawFileId
-            ";
-                    command.Parameters.AddWithValue("@rawFileId", rawFileId);
-                    command.Parameters.AddWithValue("@condition", biologicalCondition ?? "");
-                    await command.ExecuteNonQueryAsync();
-                }
-            }
+                    cmd.Parameters.AddWithValue("@rawFileId", rawFileId);
+                    cmd.Parameters.AddWithValue("@condition", biologicalCondition ?? "");
+                });
         }
 
         /// <summary>
@@ -1025,24 +817,13 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task UpdateRawFilePlateAsync(int rawFileId, int? plateId)
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
+            await ExecuteNonQueryAsync(@"
+                UPDATE raw_files SET plate_id = @plateId WHERE raw_file_id = @rawFileId",
+                cmd =>
                 {
-                    command.CommandText = @"
-                UPDATE raw_files 
-                SET plate_id = @plateId
-                WHERE raw_file_id = @rawFileId
-            ";
-                    command.Parameters.AddWithValue("@rawFileId", rawFileId);
-                    command.Parameters.AddWithValue("@plateId", plateId.HasValue ? plateId.Value : DBNull.Value);
-                    await command.ExecuteNonQueryAsync();
-                }
-            }
+                    cmd.Parameters.AddWithValue("@rawFileId", rawFileId);
+                    cmd.Parameters.AddWithValue("@plateId", plateId.HasValue ? plateId.Value : DBNull.Value);
+                });
         }
 
         // ==================== RUN EXCLUSION METHODS ====================
@@ -1052,28 +833,10 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<HashSet<int>> GetExcludedRunIdsAsync()
         {
-            var excludedIds = new HashSet<int>();
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = "SELECT raw_file_id FROM excluded_runs";
-
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            excludedIds.Add(reader.GetInt32(0));
-                        }
-                    }
-                }
-            }
-
-            return excludedIds;
+            var list = await QueryAsync(
+                "SELECT raw_file_id FROM excluded_runs",
+                reader => reader.GetInt32(0));
+            return new HashSet<int>(list);
         }
 
         /// <summary>
@@ -1081,32 +844,12 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<HashSet<string>> GetExcludedRunNamesAsync()
         {
-            var excludedNames = new HashSet<string>();
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
+            var list = await QueryAsync(@"
                 SELECT rf.raw_file_name 
                 FROM excluded_runs er
-                INNER JOIN raw_files rf ON er.raw_file_id = rf.raw_file_id
-            ";
-
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            excludedNames.Add(reader.GetString(0));
-                        }
-                    }
-                }
-            }
-
-            return excludedNames;
+                INNER JOIN raw_files rf ON er.raw_file_id = rf.raw_file_id",
+                reader => reader.GetString(0));
+            return new HashSet<string>(list);
         }
 
         /// <summary>
@@ -1114,23 +857,14 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task ExcludeRunAsync(int rawFileId)
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
+            await ExecuteNonQueryAsync(@"
                 INSERT OR IGNORE INTO excluded_runs (raw_file_id, excluded_at)
-                VALUES (@rawFileId, @excludedAt)
-            ";
-                    command.Parameters.AddWithValue("@rawFileId", rawFileId);
-                    command.Parameters.AddWithValue("@excludedAt", DateTime.Now.ToString("o"));
-                    await command.ExecuteNonQueryAsync();
-                }
-            }
+                VALUES (@rawFileId, @excludedAt)",
+                cmd =>
+                {
+                    cmd.Parameters.AddWithValue("@rawFileId", rawFileId);
+                    cmd.Parameters.AddWithValue("@excludedAt", DateTime.Now.ToString("o"));
+                });
         }
 
         /// <summary>
@@ -1138,19 +872,9 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task IncludeRunAsync(int rawFileId)
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = "DELETE FROM excluded_runs WHERE raw_file_id = @rawFileId";
-                    command.Parameters.AddWithValue("@rawFileId", rawFileId);
-                    await command.ExecuteNonQueryAsync();
-                }
-            }
+            await ExecuteNonQueryAsync(
+                "DELETE FROM excluded_runs WHERE raw_file_id = @rawFileId",
+                cmd => cmd.Parameters.AddWithValue("@rawFileId", rawFileId));
         }
 
         /// <summary>
@@ -1158,18 +882,7 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task ClearAllExclusionsAsync()
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = "DELETE FROM excluded_runs";
-                    await command.ExecuteNonQueryAsync();
-                }
-            }
+            await ExecuteNonQueryAsync("DELETE FROM excluded_runs");
         }
 
         /// <summary>
@@ -1177,21 +890,10 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<bool> IsRunExcludedAsync(int rawFileId)
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = "SELECT COUNT(*) FROM excluded_runs WHERE raw_file_id = @rawFileId";
-                    command.Parameters.AddWithValue("@rawFileId", rawFileId);
-
-                    var result = await command.ExecuteScalarAsync();
-                    return result != null && int.TryParse(result.ToString(), out int excludedCount) && excludedCount > 0;
-                }
-            }
+            var count = await ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM excluded_runs WHERE raw_file_id = @rawFileId",
+                cmd => cmd.Parameters.AddWithValue("@rawFileId", rawFileId));
+            return count > 0;
         }
 
         // Helper class for protein statistics

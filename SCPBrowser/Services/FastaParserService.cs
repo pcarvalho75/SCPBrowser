@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
@@ -11,13 +12,10 @@ namespace SCPBrowser.Services
     /// Parses FASTA files and stores protein annotations in the database.
     /// Handles UniProt, NCBI, and generic FASTA header formats.
     /// </summary>
-    public class FastaParserService
+    public class FastaParserService : DatabaseServiceBase
     {
-        private readonly string _projectDbPath;
-
-        public FastaParserService(string projectDbPath)
+        public FastaParserService(string projectDbPath) : base(projectDbPath)
         {
-            _projectDbPath = projectDbPath;
         }
 
         /// <summary>
@@ -194,31 +192,24 @@ namespace SCPBrowser.Services
         /// </summary>
         private async Task StoreAnnotationsAsync(List<ProteinAnnotation> annotations, IProgress<string> progress = null)
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
+            await WithConnectionAsync(async connection =>
             {
-                await connection.OpenAsync();
-
                 using (var transaction = connection.BeginTransaction())
                 {
                     try
                     {
-                        // Clear existing annotations
                         using (var clearCmd = connection.CreateCommand())
                         {
                             clearCmd.CommandText = "DELETE FROM protein_annotations";
                             await clearCmd.ExecuteNonQueryAsync();
                         }
 
-                        // Batch insert
                         using (var insertCmd = connection.CreateCommand())
                         {
                             insertCmd.CommandText = @"
                                 INSERT OR REPLACE INTO protein_annotations 
                                 (accession, entry_name, protein_name, gene_name, organism, full_header, source)
-                                VALUES (@acc, @entry, @protein, @gene, @org, @header, @source)
-                            ";
+                                VALUES (@acc, @entry, @protein, @gene, @org, @header, @source)";
 
                             var accParam = insertCmd.Parameters.Add("@acc", SqliteType.Text);
                             var entryParam = insertCmd.Parameters.Add("@entry", SqliteType.Text);
@@ -243,9 +234,7 @@ namespace SCPBrowser.Services
 
                                 count++;
                                 if (count % 5000 == 0)
-                                {
                                     progress?.Report($"Stored {count:N0} / {annotations.Count:N0} annotations...");
-                                }
                             }
                         }
 
@@ -257,7 +246,7 @@ namespace SCPBrowser.Services
                         throw;
                     }
                 }
-            }
+            });
         }
 
         /// <summary>
@@ -268,44 +257,24 @@ namespace SCPBrowser.Services
             if (string.IsNullOrWhiteSpace(accession))
                 return null;
 
-            // Handle protein groups (semicolon-separated) - just use first
             string firstAccession = accession.Split(';')[0].Trim();
 
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
+            var results = await QueryAsync(@"
+                SELECT accession, entry_name, protein_name, gene_name, organism, full_header, source
+                FROM protein_annotations WHERE accession = @acc",
+                reader => new ProteinAnnotation
                 {
-                    command.CommandText = @"
-                        SELECT accession, entry_name, protein_name, gene_name, organism, full_header, source
-                        FROM protein_annotations
-                        WHERE accession = @acc
-                    ";
-                    command.Parameters.AddWithValue("@acc", firstAccession);
+                    Accession = reader.IsDBNull(0) ? null : reader.GetString(0),
+                    EntryName = reader.IsDBNull(1) ? null : reader.GetString(1),
+                    ProteinName = reader.IsDBNull(2) ? null : reader.GetString(2),
+                    GeneName = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    Organism = reader.IsDBNull(4) ? null : reader.GetString(4),
+                    FullHeader = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    Source = reader.IsDBNull(6) ? null : reader.GetString(6)
+                },
+                cmd => cmd.Parameters.AddWithValue("@acc", firstAccession));
 
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        if (await reader.ReadAsync())
-                        {
-                            return new ProteinAnnotation
-                            {
-                                Accession = reader.IsDBNull(0) ? null : reader.GetString(0),
-                                EntryName = reader.IsDBNull(1) ? null : reader.GetString(1),
-                                ProteinName = reader.IsDBNull(2) ? null : reader.GetString(2),
-                                GeneName = reader.IsDBNull(3) ? null : reader.GetString(3),
-                                Organism = reader.IsDBNull(4) ? null : reader.GetString(4),
-                                FullHeader = reader.IsDBNull(5) ? null : reader.GetString(5),
-                                Source = reader.IsDBNull(6) ? null : reader.GetString(6)
-                            };
-                        }
-                    }
-                }
-            }
-
-            return null;
+            return results.FirstOrDefault();
         }
 
         /// <summary>
@@ -313,19 +282,7 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<int> GetAnnotationCountAsync()
         {
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = "SELECT COUNT(*) FROM protein_annotations";
-                    var result = await command.ExecuteScalarAsync();
-                    return Convert.ToInt32(result);
-                }
-            }
+            return await ExecuteScalarAsync<int>("SELECT COUNT(*) FROM protein_annotations");
         }
 
         /// <summary>
@@ -333,43 +290,26 @@ namespace SCPBrowser.Services
         /// </summary>
         public async Task<Dictionary<string, ProteinAnnotation>> GetAllAnnotationsAsync()
         {
-            var annotations = new Dictionary<string, ProteinAnnotation>(StringComparer.OrdinalIgnoreCase);
-            var connectionString = $"Data Source={_projectDbPath}";
-
-            using (var connection = new SqliteConnection(connectionString))
-            {
-                await connection.OpenAsync();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
+            var list = await QueryAsync(@"
                 SELECT accession, entry_name, protein_name, gene_name, organism, full_header, source
-                FROM protein_annotations
-            ";
+                FROM protein_annotations",
+                reader => new ProteinAnnotation
+                {
+                    Accession = reader.IsDBNull(0) ? null : reader.GetString(0),
+                    EntryName = reader.IsDBNull(1) ? null : reader.GetString(1),
+                    ProteinName = reader.IsDBNull(2) ? null : reader.GetString(2),
+                    GeneName = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    Organism = reader.IsDBNull(4) ? null : reader.GetString(4),
+                    FullHeader = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    Source = reader.IsDBNull(6) ? null : reader.GetString(6)
+                });
 
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var accession = reader.IsDBNull(0) ? null : reader.GetString(0);
-                            if (string.IsNullOrEmpty(accession))
-                                continue;
-
-                            annotations[accession] = new ProteinAnnotation
-                            {
-                                Accession = accession,
-                                EntryName = reader.IsDBNull(1) ? null : reader.GetString(1),
-                                ProteinName = reader.IsDBNull(2) ? null : reader.GetString(2),
-                                GeneName = reader.IsDBNull(3) ? null : reader.GetString(3),
-                                Organism = reader.IsDBNull(4) ? null : reader.GetString(4),
-                                FullHeader = reader.IsDBNull(5) ? null : reader.GetString(5),
-                                Source = reader.IsDBNull(6) ? null : reader.GetString(6)
-                            };
-                        }
-                    }
-                }
+            var annotations = new Dictionary<string, ProteinAnnotation>(StringComparer.OrdinalIgnoreCase);
+            foreach (var ann in list)
+            {
+                if (!string.IsNullOrEmpty(ann.Accession))
+                    annotations[ann.Accession] = ann;
             }
-
             return annotations;
         }
     }

@@ -494,7 +494,7 @@ namespace SCPBrowser
             {
                 // Simple hue-based color generation
                 double hue = (double)i / uniqueConditions.Count * 360.0;
-                colorMap[uniqueConditions[i]] = HsvToRgb(hue, 0.7, 0.9);
+                colorMap[uniqueConditions[i]] = ColorMapper.HsvToRgb(hue, 0.7, 0.9);
             }
             return colorMap;
         }
@@ -521,29 +521,6 @@ namespace SCPBrowser
             }
 
             return colorMap;
-        }
-
-        // Helper to convert HSV to
-        private Color HsvToRgb(double h, double s, double v)
-        {
-            double c = v * s;
-            double x = c * (1 - Math.Abs((h / 60.0) % 2 - 1));
-            double m = v - c;
-
-            double r, g, b;
-
-            if (h < 60) { r = c; g = x; b = 0; }
-            else if (h < 120) { r = x; g = c; b = 0; }
-            else if (h < 180) { r = 0; g = c; b = x; }
-            else if (h < 240) { r = 0; g = x; b = c; }
-            else if (h < 300) { r = x; g = 0; b = c; }
-            else { r = c; g = 0; b = x; }
-
-            return Color.FromRgb(
-                (byte)((r + m) * 255),
-                (byte)((g + m) * 255),
-                (byte)((b + m) * 255)
-            );
         }
 
         public void EnableBioConditionClassification(bool isAvailable)
@@ -988,10 +965,7 @@ namespace SCPBrowser
 
         private void BatchCorrectionCheckBox_Changed(object sender, RoutedEventArgs e)
         {
-            if (_currentData != null)
-            {
-                RefreshChart();
-            }
+            LogLogCheckBox_Changed(sender, e);
         }
 
         /// <summary>
@@ -1178,18 +1152,17 @@ namespace SCPBrowser
 
         private void HvpCountUp_Click(object sender, RoutedEventArgs e)
         {
-            _hvpCount = Math.Min(5000, _hvpCount + 50);
-            HvpCountTextBox.Text = _hvpCount.ToString();
-
-            if (_currentData != null && UseHvpCheckBox.IsChecked == true)
-            {
-                RefreshChart();
-            }
+            AdjustHvpCount(50);
         }
 
         private void HvpCountDown_Click(object sender, RoutedEventArgs e)
         {
-            _hvpCount = Math.Max(10, _hvpCount - 50);
+            AdjustHvpCount(-50);
+        }
+
+        private void AdjustHvpCount(int delta)
+        {
+            _hvpCount = Math.Clamp(_hvpCount + delta, 10, 5000);
             HvpCountTextBox.Text = _hvpCount.ToString();
 
             if (_currentData != null && UseHvpCheckBox.IsChecked == true)

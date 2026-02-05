@@ -1,4 +1,4 @@
-﻿using BioTessera.GO;
+using BioTessera.GO;
 using BioTessera.Utilities;
 using SCPBrowser.Services;
 using System;
@@ -179,35 +179,10 @@ namespace SCPBrowser.GOTools
             for (int i = 0; i < uniqueGoTerms.Count; i++)
             {
                 double hue = (double)i / uniqueGoTerms.Count * 360.0;
-                colorMap[uniqueGoTerms[i]] = HsvToRgb(hue, 0.7, 0.9);
+                colorMap[uniqueGoTerms[i]] = ColorMapper.HsvToRgb(hue, 0.7, 0.9);
             }
 
             return colorMap;
-        }
-
-        private System.Windows.Media.Color HsvToRgb(double h, double s, double v)
-        {
-            int hi = (int)(h / 60) % 6;
-            double f = h / 60 - (int)(h / 60);
-            double p = v * (1 - s);
-            double q = v * (1 - f * s);
-            double t = v * (1 - (1 - f) * s);
-
-            double r, g, b;
-            switch (hi)
-            {
-                case 0: r = v; g = t; b = p; break;
-                case 1: r = q; g = v; b = p; break;
-                case 2: r = p; g = v; b = t; break;
-                case 3: r = p; g = q; b = v; break;
-                case 4: r = t; g = p; b = v; break;
-                default: r = v; g = p; b = q; break;
-            }
-
-            return System.Windows.Media.Color.FromRgb(
-                (byte)(r * 255),
-                (byte)(g * 255),
-                (byte)(b * 255));
         }
     }
 }

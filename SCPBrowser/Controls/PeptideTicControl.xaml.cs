@@ -324,6 +324,7 @@ namespace SCPBrowser
         private void PopulatePlateCheckboxes()
         {
             var colorMap = GeneratePlateColorMap();
+            var counts = GetCategoryCounts("Plate");
 
             BioConditionCheckboxes.Children.Clear();
 
@@ -333,7 +334,13 @@ namespace SCPBrowser
             // If no items are currently checked, check all by default
             bool checkAllByDefault = _checkedPlates.Count == 0;
 
-            foreach (var item in colorMap.OrderBy(kvp => kvp.Key))
+            // Sort by count descending, then alphabetically as tiebreaker
+            var sortedItems = counts != null && counts.Count > 0
+                ? colorMap.OrderByDescending(kvp => counts.ContainsKey(kvp.Key) ? counts[kvp.Key] : 0)
+                          .ThenBy(kvp => kvp.Key)
+                : colorMap.OrderBy(kvp => kvp.Key);
+
+            foreach (var item in sortedItems)
             {
                 bool isChecked = checkAllByDefault || _checkedPlates.Contains(item.Key);
 
@@ -401,20 +408,15 @@ namespace SCPBrowser
             }
         }
 
-        private void UpdatePieChart(string coloringMode)
+        private Dictionary<string, int> GetCategoryCounts(string coloringMode)
         {
-            if (_currentData == null)
-            {
-                DistributionPieChart.Clear();
-                return;
-            }
-
             var counts = new Dictionary<string, int>();
-            Dictionary<string, Color> colorMap = null;
+
+            if (_currentData == null)
+                return counts;
 
             if (coloringMode == "CellType" && _cellTypePredictions != null)
             {
-                colorMap = _cellTypeColorMap;
                 foreach (var kvp in _cellTypePredictions)
                 {
                     string cellType = kvp.Value.TopCellType ?? "Unknown";
@@ -425,7 +427,6 @@ namespace SCPBrowser
             }
             else if (coloringMode == "BioCondition" && _currentData.BiologicalConditionPerFile != null)
             {
-                colorMap = GenerateBioConditionColorMap();
                 foreach (var kvp in _currentData.BiologicalConditionPerFile)
                 {
                     string condition = string.IsNullOrEmpty(kvp.Value) ? "Unknown" : kvp.Value;
@@ -436,7 +437,6 @@ namespace SCPBrowser
             }
             else if (coloringMode == "Plate" && _plateMappingPerFile != null)
             {
-                colorMap = GeneratePlateColorMap();
                 var platePerFile = GeneratePlatePerFile();
                 foreach (var kvp in platePerFile)
                 {
@@ -446,6 +446,27 @@ namespace SCPBrowser
                     counts[plate]++;
                 }
             }
+
+            return counts;
+        }
+
+        private void UpdatePieChart(string coloringMode)
+        {
+            if (_currentData == null)
+            {
+                DistributionPieChart.Clear();
+                return;
+            }
+
+            var counts = GetCategoryCounts(coloringMode);
+            Dictionary<string, Color> colorMap = null;
+
+            if (coloringMode == "CellType")
+                colorMap = _cellTypeColorMap;
+            else if (coloringMode == "BioCondition")
+                colorMap = GenerateBioConditionColorMap();
+            else if (coloringMode == "Plate")
+                colorMap = GeneratePlateColorMap();
 
             if (counts.Count > 0 && colorMap != null)
             {
@@ -533,7 +554,8 @@ namespace SCPBrowser
 
         private void PopulateCellTypeCheckboxes()
         {
-            PopulateColorCheckboxes(_cellTypeColorMap, _checkedCellTypes);
+            var counts = GetCategoryCounts("CellType");
+            PopulateColorCheckboxes(_cellTypeColorMap, _checkedCellTypes, counts);
         }
 
 
@@ -541,10 +563,11 @@ namespace SCPBrowser
         private void PopulateBioConditionCheckboxes()
         {
             var colorMap = GenerateBioConditionColorMap();
-            PopulateColorCheckboxes(colorMap, _checkedBioConditions);
+            var counts = GetCategoryCounts("BioCondition");
+            PopulateColorCheckboxes(colorMap, _checkedBioConditions, counts);
         }
 
-        private void PopulateColorCheckboxes(Dictionary<string, Color> colorMap, HashSet<string> checkedItems)
+        private void PopulateColorCheckboxes(Dictionary<string, Color> colorMap, HashSet<string> checkedItems, Dictionary<string, int> counts = null)
         {
             BioConditionCheckboxes.Children.Clear();
 
@@ -554,7 +577,13 @@ namespace SCPBrowser
             // If no items are currently checked, check all by default
             bool checkAllByDefault = checkedItems.Count == 0;
 
-            foreach (var item in colorMap.OrderBy(kvp => kvp.Key))
+            // Sort by count descending, then alphabetically as tiebreaker
+            var sortedItems = counts != null && counts.Count > 0
+                ? colorMap.OrderByDescending(kvp => counts.ContainsKey(kvp.Key) ? counts[kvp.Key] : 0)
+                          .ThenBy(kvp => kvp.Key)
+                : colorMap.OrderBy(kvp => kvp.Key);
+
+            foreach (var item in sortedItems)
             {
                 // Check by default if no previous selection, otherwise use existing state
                 bool isChecked = checkAllByDefault || checkedItems.Contains(item.Key);

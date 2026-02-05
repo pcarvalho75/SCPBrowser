@@ -956,12 +956,17 @@ namespace SCPBrowser
                 // Get predictions from MainControl (which uses CellTypeClassificationManager)
                 // Pass key markers from ProjectBrowser for classification
                 var keyMarkers = ProjectBrowserDialog.GetKeyMarkers();
+                var excludedCellTypes = ProjectBrowserDialog.GetExcludedCellTypes();
+                var priorWeights = ProjectBrowserDialog.GetPriorWeights();
                 var predictions = await MainControlTab.GetCellTypePredictionsAsync(
                     proteomicsData,
                     _projectReferenceDatabasePath,
                     importId.Value,
                     progressReporter,
-                    keyMarkers);
+                    keyMarkers,
+                    forceRecompute: false,
+                    excludedCellTypes,
+                    priorWeights);
 
                 if (predictions == null || predictions.Count == 0)
                 {
@@ -1033,12 +1038,17 @@ namespace SCPBrowser
                 // Get predictions from MainControl (which uses CellTypeClassificationManager)
                 // Pass key markers from ProjectBrowser for classification
                 var keyMarkers = ProjectBrowserDialog.GetKeyMarkers();
+                var excludedCellTypes = ProjectBrowserDialog.GetExcludedCellTypes();
+                var priorWeights = ProjectBrowserDialog.GetPriorWeights();
                 var predictions = await MainControlTab.GetCellTypePredictionsAsync(
                     proteomicsData,
                     _projectReferenceDatabasePath,
                     importId.Value,
                     progressReporter,
-                    keyMarkers);
+                    keyMarkers,
+                    forceRecompute: false,
+                    excludedCellTypes,
+                    priorWeights);
 
                 // Get color map
                 var colorMap = MainControlTab.GetCellTypeColorMap();

@@ -63,7 +63,7 @@ namespace SCPBrowser
             // 1. Check if already in memory cache (skip if forcing recompute)
             if (!forceRecompute && _cachedPredictions != null && _cachedPredictions.Count > 0)
             {
-                Console.WriteLine("Cell type predictions already in memory cache");
+                Console.WriteLine("Cell type predictions returned from MEMORY CACHE (no recomputation)");
                 return _cachedPredictions;
             }
 
@@ -83,7 +83,7 @@ namespace SCPBrowser
 
                 if (existingPredictions.Count > 0 && existingPredictions.Count == proteomicsData.TotalRawFiles)
                 {
-                    Console.WriteLine($"Loaded {existingPredictions.Count} cell type classifications from database");
+                    Console.WriteLine($"Cell type predictions returned from DATABASE ({existingPredictions.Count} runs, no recomputation)");
                     _cachedPredictions = existingPredictions;
                     return _cachedPredictions;
                 }
@@ -94,6 +94,7 @@ namespace SCPBrowser
             }
 
             // 4. Need to compute predictions
+            Console.WriteLine("Cell type predictions being FRESHLY COMPUTED (not from cache or database)");
             progressReporter?.ReportMessage("Computing cell type predictions...");
 
             var predictions = PredictCellTypesForAllRuns(proteomicsData, progressReporter, keyMarkers, excludedCellTypes, priorWeights);

@@ -52,6 +52,7 @@ namespace SCPBrowser.Services
                         }
 
                         // Insert classifications
+                        int savedCount = 0;
                         using (var insertCmd = connection.CreateCommand())
                         {
                             insertCmd.CommandText = @"
@@ -95,11 +96,13 @@ namespace SCPBrowser.Services
                                 insertCmd.Parameters.AddWithValue("@pvalue", pvalue);
                                 insertCmd.Parameters.AddWithValue("@timestamp", DateTime.UtcNow.ToString("o"));
 
-                                await insertCmd.ExecuteNonQueryAsync();
-                            }
-                        }
+                                        await insertCmd.ExecuteNonQueryAsync();
+                                        savedCount++;
+                                    }
+                                }
 
-                        transaction.Commit();
+                                Console.WriteLine($"DB SAVE: {savedCount}/{predictions.Count} predictions saved ({rawFileMap.Count} raw files in DB map)");
+                                transaction.Commit();
                     }
                     catch (Exception ex)
                     {
@@ -125,13 +128,11 @@ namespace SCPBrowser.Services
                 {
                     command.CommandText = @"
                         SELECT rf.raw_file_name, c.predicted_cell_type, 
-                               c.composite_score, c.spearman_correlation, 
-                               c.specificity_score, c.hypergeometric_pvalue
+                            c.composite_score, c.spearman_correlation, 
+                            c.specificity_score, c.hypergeometric_pvalue
                         FROM raw_file_cell_type_classifications c
                         JOIN raw_files rf ON c.raw_file_id = rf.raw_file_id
-                        WHERE rf.import_id = @importId
                     ";
-                    command.Parameters.AddWithValue("@importId", importId);
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
@@ -166,10 +167,15 @@ namespace SCPBrowser.Services
                         }
                     }
                 }
-            }
+                }
 
-            return predictions;
-        }
+                Console.WriteLine($"DB LOAD: {predictions.Count} predictions loaded for import {importId}");
+                var typeCounts = predictions.Values.GroupBy(p => p.TopCellType).OrderByDescending(g => g.Count());
+                foreach (var group in typeCounts)
+                    Console.WriteLine($"  DB LOAD: {group.Key} = {group.Count()}");
+
+                return predictions;
+            }
 
         /// <summary>
         /// Deletes all cell type classifications for a given import
@@ -183,17 +189,11 @@ namespace SCPBrowser.Services
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        DELETE FROM raw_file_cell_type_classifications 
-                        WHERE raw_file_id IN (
-                            SELECT raw_file_id 
-                            FROM raw_files 
-                            WHERE import_id = @importId
-                        )
+                        DELETE FROM raw_file_cell_type_classifications
                     ";
-                    command.Parameters.AddWithValue("@importId", importId);
 
                     int deletedCount = await command.ExecuteNonQueryAsync();
-                    Console.WriteLine($"Deleted {deletedCount} cell type classifications for import {importId}");
+                    Console.WriteLine($"Deleted {deletedCount} cell type classifications (all imports)");
                 }
             }
         }

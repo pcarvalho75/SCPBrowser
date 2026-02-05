@@ -641,7 +641,8 @@ namespace SCPBrowser
                 if (!_hasOpenProject)
                     return;
 
-                var data = MainControlTab.GetCurrentData();
+                // Use filtered data (respects plate filter + protein cutoff)
+                var data = _dataFilterService?.FilteredData;
                 if (data == null)
                 {
                     MessageBox.Show("No data loaded. Import omic data first.", "Export",
@@ -654,6 +655,11 @@ namespace SCPBrowser
                 var cellTypePredictions = MainControlTab.GetCellTypePredictions();
                 var rawFileToPlateId = _dataFilterService?.RawFileToPlateId;
                 var plateIdToName = _dataFilterService?.PlateIdToName;
+
+                // Get checked conditions from PeptideTicControl
+                var checkedBioConditions = PeptideTicTab.CheckedBioConditions;
+                var checkedCellTypes = PeptideTicTab.CheckedCellTypes;
+                var checkedPlates = PeptideTicTab.CheckedPlates;
 
                 // Load FASTA annotations
                 Dictionary<string, FastaParserService.ProteinAnnotation> fastaAnnotations = null;
@@ -668,7 +674,8 @@ namespace SCPBrowser
                 }
 
                 ExportPLPControl.Initialize(data, excludedRuns, cellTypePredictions,
-                    rawFileToPlateId, plateIdToName, fastaAnnotations);
+                    rawFileToPlateId, plateIdToName, fastaAnnotations,
+                    checkedBioConditions, checkedCellTypes, checkedPlates);
                 ExportPLPControl.Show();
             }
             catch (Exception ex)

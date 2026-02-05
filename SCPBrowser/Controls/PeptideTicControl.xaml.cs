@@ -38,6 +38,10 @@ namespace SCPBrowser
         private Dictionary<string, int> _plateMappingPerFile;
         private HashSet<string> _checkedPlates = new HashSet<string>();
 
+        public HashSet<string> CheckedBioConditions => _checkedBioConditions;
+        public HashSet<string> CheckedCellTypes => _checkedCellTypes;
+        public HashSet<string> CheckedPlates => _checkedPlates;
+
         public PeptideTicControl()
         {
             InitializeComponent();

@@ -33,6 +33,9 @@ namespace SCPBrowser
         private Dictionary<string, int> _rawFileToPlateId;
         private Dictionary<int, string> _plateIdToName;
         private Dictionary<string, FastaParserService.ProteinAnnotation> _fastaAnnotations;
+        private HashSet<string> _checkedBioConditions;
+        private HashSet<string> _checkedCellTypes;
+        private HashSet<string> _checkedPlates;
 
         private bool _isInitialized = false;
 
@@ -53,7 +56,10 @@ namespace SCPBrowser
             Dictionary<string, CellTypePredictionResult> cellTypePredictions,
             Dictionary<string, int> rawFileToPlateId,
             Dictionary<int, string> plateIdToName,
-            Dictionary<string, FastaParserService.ProteinAnnotation> fastaAnnotations)
+            Dictionary<string, FastaParserService.ProteinAnnotation> fastaAnnotations,
+            HashSet<string> checkedBioConditions = null,
+            HashSet<string> checkedCellTypes = null,
+            HashSet<string> checkedPlates = null)
         {
             _data = data;
             _excludedRunNames = excludedRunNames ?? new HashSet<string>();
@@ -61,6 +67,9 @@ namespace SCPBrowser
             _rawFileToPlateId = rawFileToPlateId;
             _plateIdToName = plateIdToName;
             _fastaAnnotations = fastaAnnotations;
+            _checkedBioConditions = checkedBioConditions;
+            _checkedCellTypes = checkedCellTypes;
+            _checkedPlates = checkedPlates;
 
             _isInitialized = true;
 
@@ -119,7 +128,50 @@ namespace SCPBrowser
 
             return _data.RawFileNames
                 .Where(r => !_excludedRunNames.Contains(r))
+                .Where(r => IsRunChecked(r))
                 .ToList();
+        }
+
+        private bool IsRunChecked(string runName)
+        {
+            // Filter by bio condition checkboxes
+            if (_checkedBioConditions != null && _checkedBioConditions.Count > 0 &&
+                _data.BiologicalConditionPerFile != null)
+            {
+                if (_data.BiologicalConditionPerFile.TryGetValue(runName, out var condition) &&
+                    !string.IsNullOrEmpty(condition))
+                {
+                    if (!_checkedBioConditions.Contains(condition))
+                        return false;
+                }
+            }
+
+            // Filter by cell type checkboxes
+            if (_checkedCellTypes != null && _checkedCellTypes.Count > 0 &&
+                _cellTypePredictions != null)
+            {
+                if (_cellTypePredictions.TryGetValue(runName, out var prediction) &&
+                    !string.IsNullOrEmpty(prediction.TopCellType))
+                {
+                    if (!_checkedCellTypes.Contains(prediction.TopCellType))
+                        return false;
+                }
+            }
+
+            // Filter by plate checkboxes
+            if (_checkedPlates != null && _checkedPlates.Count > 0 &&
+                _rawFileToPlateId != null && _plateIdToName != null)
+            {
+                if (_rawFileToPlateId.TryGetValue(runName, out var plateId) &&
+                    _plateIdToName.TryGetValue(plateId, out var plateName) &&
+                    !string.IsNullOrEmpty(plateName))
+                {
+                    if (!_checkedPlates.Contains(plateName))
+                        return false;
+                }
+            }
+
+            return true;
         }
 
         private void UpdateSummary()

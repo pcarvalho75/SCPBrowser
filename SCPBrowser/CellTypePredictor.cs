@@ -22,21 +22,24 @@ namespace SCPBrowser
         /// Creates a new CellTypePredictor using aggregated cell type profiles
         /// </summary>
         /// <param name="database">Database containing cell type profiles (not individual cells)</param>
-        /// <param name="markerSpecificityThreshold">Minimum specificity score for a gene to be considered a marker (default: 0.5)</param>
-        public CellTypePredictor(TranscriptomicDatabase database, double markerSpecificityThreshold = 0.2)
+        /// <param name="markerSpecificityThreshold">Minimum specificity score for a gene to be considered a marker. 
+        /// If negative, auto-calculated as log(N/2) where N = number of cell types (recommended). Default: -1 (auto)</param>
+        public CellTypePredictor(TranscriptomicDatabase database, double markerSpecificityThreshold = -1)
         {
             _database = database ?? throw new ArgumentNullException(nameof(database));
 
             if (_database.CellTypeProfiles == null || _database.CellTypeProfiles.Count == 0)
                 throw new ArgumentException("Database must contain cell type profiles", nameof(database));
 
-            if (markerSpecificityThreshold < 0 || markerSpecificityThreshold > 1)
-                throw new ArgumentOutOfRangeException(nameof(markerSpecificityThreshold), "Marker specificity threshold must be between 0 and 1");
-
             // Pre-calculate gene specificity and marker sets for efficient prediction
             _geneSpecificity = CalculateGeneSpecificity();
-            _cellTypeMarkers = DefineCellTypeMarkers(markerSpecificityThreshold);
-        }
+
+            // Auto-calculate threshold: log(N/2) ensures only genes in ≤ 2 cell types qualify
+                if (markerSpecificityThreshold < 0)
+                    markerSpecificityThreshold = Math.Log((double)_database.CellTypeProfiles.Count / 2.0);
+
+                _cellTypeMarkers = DefineCellTypeMarkers(markerSpecificityThreshold);
+            }
 
         /// <summary>
         /// Calculates how specific each gene is to certain cell types
@@ -152,10 +155,12 @@ namespace SCPBrowser
         /// <param name="proteinAbundances">Protein abundances from proteomics data</param>
         /// <param name="userKeyMarkers">User-defined key markers per cell type (can be null)</param>
         /// <param name="excludedCellTypes">Cell types to exclude from classification (can be null)</param>
+        /// <param name="priorWeights">User-defined prior weights per cell type (can be null). Auto-normalized to sum=1.</param>
         public CellTypePredictionResult PredictCellType(
             Dictionary<string, double> proteinAbundances, 
             Dictionary<string, HashSet<string>> userKeyMarkers,
-            HashSet<string> excludedCellTypes = null)
+            HashSet<string> excludedCellTypes = null,
+            Dictionary<string, double> priorWeights = null)
         {
             if (proteinAbundances == null || proteinAbundances.Count == 0)
                 return new CellTypePredictionResult();
@@ -173,10 +178,12 @@ namespace SCPBrowser
 
             // 1. First Pass: Calculate Raw Metrics for considered cell types
             var results = new Dictionary<string, CellTypeScore>();
+            var detectedProteinList = proteinAbundances.Keys.ToList();
             foreach (var cellType in cellTypesToConsider)
             {
-                // We use the helper method to get raw values (CompositeScore starts at 0)
-                results[cellType] = CalculateRawMetrics(proteinAbundances, cellType);
+                var score = CalculateRawMetrics(proteinAbundances, cellType);
+                score.MarkerCoverage = CalculateMarkerCoverage(detectedProteinList, cellType);
+                results[cellType] = score;
             }
 
             // 2. Gather populations for statistics
@@ -186,6 +193,7 @@ namespace SCPBrowser
             // Convert P-Value to -log10(p) so "higher is better" with better separation at significant values
             // Clamp minimum p-value to 1e-300 to avoid infinity
             var enrichmentValues = results.Values.Select(x => -Math.Log10(Math.Max(x.HypergeometricPValue, 1e-300))).ToList();
+            var coverageValues = results.Values.Select(x => x.MarkerCoverage).ToList();
 
             // 3. Calculate Statistics (Mean and StdDev)
             double meanSpearman = spearmanValues.Mean();
@@ -196,6 +204,9 @@ namespace SCPBrowser
 
             double meanEnrich = enrichmentValues.Mean();
             double stdEnrich = enrichmentValues.StandardDeviation();
+
+            double meanCoverage = coverageValues.Mean();
+            double stdCoverage = coverageValues.StandardDeviation();
 
             // 4. Second Pass: Calculate Z-Scores and Final Composite Score
             foreach (var kvp in results)
@@ -208,9 +219,10 @@ namespace SCPBrowser
                 double zSpearman = stdSpearman > 1e-9 ? (score.SpearmanCorrelation - meanSpearman) / stdSpearman : 0;
                 double zSpecificity = stdSpec > 1e-9 ? (score.SpecificityScore - meanSpec) / stdSpec : 0;
                 double zEnrichment = stdEnrich > 1e-9 ? (-Math.Log10(Math.Max(score.HypergeometricPValue, 1e-300)) - meanEnrich) / stdEnrich : 0;
+                double zCoverage = stdCoverage > 1e-9 ? (score.MarkerCoverage - meanCoverage) / stdCoverage : 0;
 
-                // Base Composite Score is the average of the Z-Scores
-                double baseComposite = (zSpearman + zSpecificity + zEnrichment) / 3.0;
+                // Base Composite Score is the average of the Z-Scores (4 components)
+                double baseComposite = (zSpearman + zSpecificity + zEnrichment + zCoverage) / 4.0;
 
                 // 5. Apply Key Marker Adjustments (if user defined markers for this cell type)
                 // Pass the score object to populate marker found/missing info
@@ -221,7 +233,32 @@ namespace SCPBrowser
                 score.CompositeScore = baseComposite + keyMarkerAdjustment;
             }
 
-            // 6. Order by the adjusted composite score (Highest score is best)
+            // 6. Apply Prior Weight Adjustments (if user defined prior weights)
+            // Auto-normalize weights to sum=1, then add ln(normalized / uniform) to composite
+            if (priorWeights != null && priorWeights.Count > 0)
+            {
+                // Clamp weights: minimum 0.01 to avoid ln(0)
+                var clampedWeights = new Dictionary<string, double>();
+                foreach (var cellType in cellTypesToConsider)
+                {
+                    double w = priorWeights.TryGetValue(cellType, out double val) ? val : 1.0;
+                    clampedWeights[cellType] = Math.Max(w, 0.01);
+                }
+
+                // Normalize to sum = 1
+                double totalWeight = clampedWeights.Values.Sum();
+                double uniform = 1.0 / cellTypesToConsider.Count;
+
+                foreach (var kvp in results)
+                {
+                    double normalized = clampedWeights[kvp.Key] / totalWeight;
+                    double priorAdjustment = Math.Log(normalized / uniform);
+                    kvp.Value.PriorAdjustment = priorAdjustment;
+                    kvp.Value.CompositeScore += priorAdjustment;
+                }
+            }
+
+            // 7. Order by the adjusted composite score (Highest score is best)
             var orderedResults = results
                 .OrderByDescending(kvp => kvp.Value.CompositeScore)
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
@@ -294,6 +331,21 @@ namespace SCPBrowser
             }
 
             return totalAdjustment;
+        }
+
+        /// <summary>
+        /// Calculates the fraction of strict markers for a cell type that are detected in the sample.
+        /// Returns 0 if no markers defined.
+        /// </summary>
+        private double CalculateMarkerCoverage(List<string> detectedProteins, string cellType)
+        {
+            if (!_cellTypeMarkers.ContainsKey(cellType) || _cellTypeMarkers[cellType].Count == 0)
+                return 0;
+
+            int totalMarkers = _cellTypeMarkers[cellType].Count;
+            int detected = detectedProteins.Count(p => _cellTypeMarkers[cellType].Contains(p));
+
+            return (double)detected / totalMarkers;
         }
 
         /// <summary>
@@ -382,7 +434,6 @@ namespace SCPBrowser
 
             foreach (var (protein, abundance) in proteinAbundances)
             {
-                // Check if this gene is in the cell type profile
                 if (!profile.MedianExpression.ContainsKey(protein))
                     continue;
 
@@ -390,7 +441,6 @@ namespace SCPBrowser
                 if (medianExpression <= 0)
                     continue;
 
-                // Get gene specificity (how unique is this gene to certain cell types?)
                 if (!_geneSpecificity.ContainsKey(protein))
                     continue;
 
@@ -398,8 +448,6 @@ namespace SCPBrowser
                 if (specificity <= 0)
                     continue;
 
-                // Weight the match by specificity and log-expression
-                // Specific genes with high expression contribute more
                 totalScore += specificity * Math.Log(medianExpression + 1) * Math.Log(abundance + 1);
                 matchCount++;
             }
@@ -407,7 +455,6 @@ namespace SCPBrowser
             if (matchCount == 0)
                 return 0;
 
-            // Normalize by sqrt of matches to prevent bias toward cell types with many expressed genes
             return totalScore / Math.Sqrt(matchCount);
         }
 
@@ -466,6 +513,58 @@ namespace SCPBrowser
             return 1.0 - hypergeometric.CumulativeDistribution(k - 1);
         }
 
+        /// <summary>
+        /// Post-processes predictions to mark low-confidence ones as "Undetermined".
+        /// Uses an adaptive approach: computes the margin (1st - 2nd score) for each run,
+        /// then marks the weakest predictions as Undetermined, capped at maxUndeterminedPercent.
+        /// A run is considered weak if its margin is below the 25th percentile of all margins.
+        /// </summary>
+        /// <param name="predictions">All predictions (modified in-place)</param>
+        /// <param name="maxUndeterminedPercent">Maximum fraction of runs to mark as Undetermined (0.0 to 1.0, default 0.10)</param>
+        public static void ApplyUndeterminedClassification(
+            Dictionary<string, CellTypePredictionResult> predictions,
+            double maxUndeterminedPercent = 0.10)
+        {
+            if (predictions == null || predictions.Count < 4)
+                return;
+
+            // Calculate margin for each run
+            var margins = new List<(string RunName, double Margin)>();
+            foreach (var kvp in predictions)
+            {
+                var scores = kvp.Value.Scores;
+                if (scores.Count < 2) continue;
+
+                var sortedScores = scores.Values.OrderByDescending(s => s.CompositeScore).ToList();
+                var top = sortedScores[0];
+                var second = sortedScores[1];
+                margins.Add((kvp.Key, top.CompositeScore - second.CompositeScore));
+            }
+
+            if (margins.Count == 0) return;
+
+            // Sort by margin ascending (weakest first)
+            margins.Sort((a, b) => a.Margin.CompareTo(b.Margin));
+
+            // Find the 25th percentile margin as the natural cutoff
+            int p25Index = (int)(margins.Count * 0.25);
+            double p25Margin = margins[p25Index].Margin;
+
+            // Count how many runs fall below this cutoff
+            int belowCutoff = margins.Count(m => m.Margin < p25Margin);
+
+            // Cap at maxUndeterminedPercent
+            int maxUndetermined = (int)(predictions.Count * maxUndeterminedPercent);
+            int toMark = Math.Min(belowCutoff, maxUndetermined);
+
+            // Mark the weakest runs as Undetermined
+            for (int i = 0; i < toMark; i++)
+            {
+                var run = margins[i].RunName;
+                predictions[run].TopCellType = "Undetermined";
+            }
+        }
+
 
     }
 
@@ -509,6 +608,18 @@ namespace SCPBrowser
         public double KeyMarkerAdjustment { get; set; }
 
         /// <summary>
+        /// Adjustment from user-defined prior weights: ln(normalized_weight / uniform)
+        /// Positive = cell type expected, Negative = cell type unexpected
+        /// </summary>
+        public double PriorAdjustment { get; set; }
+
+        /// <summary>
+        /// Fraction of strict cell-type markers detected in the sample (0 to 1)
+        /// Higher = more expected markers found, stronger evidence for this cell type
+        /// </summary>
+        public double MarkerCoverage { get; set; }
+
+        /// <summary>
         /// Z-score based composite combining all metrics plus key marker adjustment (unbounded, can be negative)
         /// Higher = better overall match relative to other cell types
         /// </summary>
@@ -527,7 +638,8 @@ namespace SCPBrowser
         public override string ToString()
         {
             return $"Spearman: {SpearmanCorrelation:F3}, Specificity: {SpecificityScore:F3}, " +
-                   $"P-value: {HypergeometricPValue:E2}, KeyMarker: {KeyMarkerAdjustment:+0.00;-0.00;0}, Composite: {CompositeScore:F3}";
+                   $"P-value: {HypergeometricPValue:E2}, Coverage: {MarkerCoverage:F3}, " +
+                   $"KeyMarker: {KeyMarkerAdjustment:+0.00;-0.00;0}, Prior: {PriorAdjustment:+0.00;-0.00;0}, Composite: {CompositeScore:F3}";
         }
 
         /// <summary>

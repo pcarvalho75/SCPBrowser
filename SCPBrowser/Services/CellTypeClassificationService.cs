@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
@@ -71,19 +71,24 @@ namespace SCPBrowser.Services
                                     continue;
                                 }
 
-                                // Skip if no prediction data
-                                if (prediction.TopScore == null)
-                                    continue;
+                                // Use actual scores, or zeros for runs with no prediction
+                                string cellType = prediction.TopCellType ?? "Undetermined";
+                                double compositeScore = 0.0;
+                                double spearman = 0.0;
+                                double specificity = 0.0;
+                                double pvalue = 1.0;
 
-                                // Handle NaN values
-                                double compositeScore = double.IsNaN(prediction.TopScore.CompositeScore) ? 0.0 : prediction.TopScore.CompositeScore;
-                                double spearman = double.IsNaN(prediction.TopScore.SpearmanCorrelation) ? 0.0 : prediction.TopScore.SpearmanCorrelation;
-                                double specificity = double.IsNaN(prediction.TopScore.SpecificityScore) ? 0.0 : prediction.TopScore.SpecificityScore;
-                                double pvalue = double.IsNaN(prediction.TopScore.HypergeometricPValue) ? 1.0 : prediction.TopScore.HypergeometricPValue;
+                                if (prediction.TopScore != null)
+                                {
+                                    compositeScore = double.IsNaN(prediction.TopScore.CompositeScore) ? 0.0 : prediction.TopScore.CompositeScore;
+                                    spearman = double.IsNaN(prediction.TopScore.SpearmanCorrelation) ? 0.0 : prediction.TopScore.SpearmanCorrelation;
+                                    specificity = double.IsNaN(prediction.TopScore.SpecificityScore) ? 0.0 : prediction.TopScore.SpecificityScore;
+                                    pvalue = double.IsNaN(prediction.TopScore.HypergeometricPValue) ? 1.0 : prediction.TopScore.HypergeometricPValue;
+                                }
 
                                 insertCmd.Parameters.Clear();
                                 insertCmd.Parameters.AddWithValue("@rawFileId", rawFileId);
-                                insertCmd.Parameters.AddWithValue("@cellType", prediction.TopCellType);
+                                insertCmd.Parameters.AddWithValue("@cellType", cellType);
                                 insertCmd.Parameters.AddWithValue("@compositeScore", compositeScore);
                                 insertCmd.Parameters.AddWithValue("@spearman", spearman);
                                 insertCmd.Parameters.AddWithValue("@specificity", specificity);

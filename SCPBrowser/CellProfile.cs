@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace SCPBrowser
 {
@@ -49,5 +49,6 @@ namespace SCPBrowser
         public int GenesExpressed { get; set; }
         public string BatchInfo { get; set; }
         public string AgeRange { get; set; }
+        public double PriorWeight { get; set; } = 1.0;
     }
 }

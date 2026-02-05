@@ -8,9 +8,13 @@ Location: SCPBrowser/Controls/OmicBrowserControl.xaml
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:converters="clr-namespace:SCPBrowser.Converters"
              mc:Ignorable="d" 
              d:DesignHeight="600" d:DesignWidth="900"
              Background="White">
+    <UserControl.Resources>
+        <converters:PriorWeightToGreenConverter x:Key="PriorWeightToGreenConverter"/>
+    </UserControl.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -153,16 +157,18 @@ Location: SCPBrowser/Controls/OmicBrowserControl.xaml
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <Border x:Name="ItemBorder"
-                                        Background="White"
+                                        Background="{Binding PriorWeight, Converter={StaticResource PriorWeightToGreenConverter}}"
                                         BorderBrush="#e2e8f0"
                                         BorderThickness="1"
                                         CornerRadius="4"
                                         Padding="10"
-                                        Margin="0,2">
+                                        Margin="0,2"
+                                        MinHeight="50">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto"/>
@@ -191,6 +197,15 @@ Location: SCPBrowser/Controls/OmicBrowserControl.xaml
                                             <Run Text="·"/>
                                             <Run Text="{Binding GenesExpressed, StringFormat='{}{0:N0} genes'}"/>
                                         </TextBlock>
+                                        
+                                        <!-- Prior weight (display only) -->
+                                        <TextBlock Grid.Column="2" Grid.RowSpan="2"
+                                                   Text="{Binding PriorWeight, StringFormat='{}{0:F2}'}"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="11"
+                                                   Foreground="#94a3b8"
+                                                   Margin="6,0,0,0"
+                                                   ToolTip="Prior weight (edit in detail panel)"/>
                                     </Grid>
                                 </Border>
                             </DataTemplate>

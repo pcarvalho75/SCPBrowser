@@ -25,6 +25,12 @@ namespace SCPBrowser.Services
         public PLPLabelMode PrimaryLabelMode { get; set; } = PLPLabelMode.BioCondition;
         public PLPLabelMode SecondaryLabelMode { get; set; } = PLPLabelMode.CellType;
         public string Description { get; set; } = "SCPBrowser Export";
+
+        /// <summary>
+        /// Maps cell type names to a target name for merging (e.g., "GABAergic neurons" → "Neurons").
+        /// Only entries where key != value are actual merges. Can be null if no merges.
+        /// </summary>
+        public Dictionary<string, string> CellTypeMergeMap { get; set; }
     }
 
     /// <summary>
@@ -56,7 +62,8 @@ namespace SCPBrowser.Services
             ProteomicsData data,
             Dictionary<string, CellTypePredictionResult> cellTypePredictions,
             Dictionary<string, int> rawFileToPlateId,
-            Dictionary<int, string> plateIdToName)
+            Dictionary<int, string> plateIdToName,
+            Dictionary<string, string> cellTypeMergeMap = null)
         {
             switch (mode)
             {
@@ -71,7 +78,12 @@ namespace SCPBrowser.Services
                     if (cellTypePredictions != null &&
                         cellTypePredictions.TryGetValue(runName, out var prediction) &&
                         !string.IsNullOrEmpty(prediction.TopCellType))
-                        return prediction.TopCellType;
+                    {
+                        var cellType = prediction.TopCellType;
+                        if (cellTypeMergeMap != null && cellTypeMergeMap.TryGetValue(cellType, out var merged))
+                            cellType = merged;
+                        return cellType;
+                    }
                     return null;
 
                 case PLPLabelMode.Plate:
@@ -105,8 +117,8 @@ namespace SCPBrowser.Services
 
             foreach (var run in selectedRuns)
             {
-                string primary = GetRunLabel(run, options.PrimaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName);
-                string secondary = GetRunLabel(run, options.SecondaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName);
+                string primary = GetRunLabel(run, options.PrimaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap);
+                string secondary = GetRunLabel(run, options.SecondaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap);
 
                 if (primary == null || secondary == null)
                 {
@@ -225,8 +237,8 @@ namespace SCPBrowser.Services
             var runLabels = new Dictionary<string, string>();
             foreach (var run in selectedRuns)
             {
-                string primary = GetRunLabel(run, options.PrimaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName);
-                string secondary = GetRunLabel(run, options.SecondaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName);
+                string primary = GetRunLabel(run, options.PrimaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap);
+                string secondary = GetRunLabel(run, options.SecondaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap);
 
                 if (primary != null && secondary != null)
                     runLabels[run] = primary + "_" + secondary;

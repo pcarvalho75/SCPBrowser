@@ -591,6 +591,91 @@ namespace SCPBrowser.Services
             return result;
         }
 
+        // ==================== CELL TYPE PRIOR WEIGHTS ====================
+
+        /// <summary>
+        /// Ensures the cell_type_priors table exists
+        /// </summary>
+        public async Task EnsurePriorsTableExistsAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS cell_type_priors (
+                    cell_type TEXT NOT NULL PRIMARY KEY,
+                    weight REAL NOT NULL DEFAULT 1.0,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                ) WITHOUT ROWID;
+            ";
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Saves a prior weight for a cell type
+        /// </summary>
+        public async Task SavePriorWeightAsync(string cellType, double weight)
+        {
+            await EnsurePriorsTableExistsAsync();
+
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                    INSERT OR REPLACE INTO cell_type_priors (cell_type, weight, updated_at)
+                    VALUES (@cellType, @weight, @updatedAt)
+                ";
+                    command.Parameters.AddWithValue("@cellType", cellType);
+                    command.Parameters.AddWithValue("@weight", weight);
+                    command.Parameters.AddWithValue("@updatedAt", DateTime.Now.ToString("o"));
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Loads all prior weights for all cell types
+        /// </summary>
+        public async Task<Dictionary<string, double>> LoadAllPriorWeightsAsync()
+        {
+            await EnsurePriorsTableExistsAsync();
+
+            var result = new Dictionary<string, double>();
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "SELECT cell_type, weight FROM cell_type_priors";
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            result[reader.GetString(0)] = reader.GetDouble(1);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
         // ==================== PROTEIN CONTAMINANTS ====================
 
         /// <summary>

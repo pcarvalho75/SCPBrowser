@@ -627,6 +627,8 @@ namespace SCPBrowser
 
                 var stackPanel = new StackPanel { Orientation = Orientation.Horizontal };
 
+                int itemCount = counts != null && counts.ContainsKey(item.Key) ? counts[item.Key] : -1;
+
                 var colorRect = new Rectangle
                 {
                     Width = 12,
@@ -642,7 +644,8 @@ namespace SCPBrowser
                 {
                     Text = item.Key,
                     FontSize = 11,
-                    VerticalAlignment = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = itemCount == 0 ? Brushes.LightGray : Brushes.Black
                 };
 
                 stackPanel.Children.Add(colorRect);

@@ -25,6 +25,9 @@ namespace SCPBrowser
             // Subscribe to key markers change event
             OmicBrowser.KeyMarkersChanged += OmicBrowser_KeyMarkersChanged;
             
+            // Subscribe to prior weights change event
+            OmicBrowser.PriorWeightsChanged += OmicBrowser_PriorWeightsChanged;
+            
             // Subscribe to reclassify request
             OmicBrowser.ReclassifyRequested += (s, e) => ReclassifyRequested?.Invoke(this, e);
             
@@ -44,6 +47,22 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 Console.WriteLine($"Error saving key markers: {ex.Message}");
+            }
+        }
+
+        private async void OmicBrowser_PriorWeightsChanged(object sender, PriorWeightsChangedEventArgs e)
+        {
+            if (_projectDbService == null || string.IsNullOrEmpty(e.CellType))
+                return;
+
+            try
+            {
+                await _projectDbService.SavePriorWeightAsync(e.CellType, e.Weight);
+                Console.WriteLine($"Saved prior weight {e.Weight} for {e.CellType}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error saving prior weight: {ex.Message}");
             }
         }
 
@@ -74,6 +93,11 @@ namespace SCPBrowser
                 var keyMarkers = await _projectDbService.LoadAllKeyMarkersAsync();
                 OmicBrowser.SetKeyMarkers(keyMarkers);
                 Console.WriteLine($"  ✓ Loaded key markers for {keyMarkers.Count} cell types");
+
+                // Load prior weights from database
+                var priorWeights = await _projectDbService.LoadAllPriorWeightsAsync();
+                OmicBrowser.SetPriorWeights(priorWeights);
+                Console.WriteLine($"  ✓ Loaded prior weights for {priorWeights.Count} cell types");
 
                 if (mainWindow != null)
                 {
@@ -129,12 +153,28 @@ namespace SCPBrowser
         }
 
         /// <summary>
-        /// Close button handler - simply hides the control
+        /// Gets the current prior weights (for use by cell type predictor)
+        /// </summary>
+        public System.Collections.Generic.Dictionary<string, double> GetPriorWeights()
+        {
+            return OmicBrowser.GetPriorWeights();
+        }
+
+        /// <summary>
+        /// Close button handler - hides the control and triggers reclassification
         /// </summary>
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
             Console.WriteLine("Closing ProjectBrowser2...");
             this.Visibility = Visibility.Collapsed;
+
+            // Trigger reclassification with current priors and markers
+            var priorWeights = OmicBrowser.GetPriorWeights();
+            ReclassifyRequested?.Invoke(this, new ReclassifyRequestedEventArgs
+            {
+                ApplyKeyMarkers = true,
+                PriorWeights = priorWeights
+            });
         }
     }
 }

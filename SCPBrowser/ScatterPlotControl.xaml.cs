@@ -1515,14 +1515,17 @@ namespace SCPBrowser
                         var score = kvp.Value;
                         string indicator = kvp.Key == point.PredictedCellType ? "★" : "○";
                         
-                        // Show composite score with marker adjustment
+                        // Show composite score with marker and prior adjustments
                         string markerAdj = score.KeyMarkerAdjustment != 0 
                             ? $" (marker: {score.KeyMarkerAdjustment:+0.0;-0.0})" 
                             : "";
-                        tooltipText += $"\n{indicator} {kvp.Key}: {score.CompositeScore:F2}{markerAdj}";
+                        string priorAdj = score.PriorAdjustment != 0
+                            ? $" (prior: {score.PriorAdjustment:+0.0;-0.0})"
+                            : "";
+                        tooltipText += $"\n{indicator} {kvp.Key}: {score.CompositeScore:F2}{markerAdj}{priorAdj}";
                         
                         // Show individual score components
-                        tooltipText += $"\n   Spearman: {score.SpearmanCorrelation:F3}, Spec: {score.SpecificityScore:F2}, -log(p): {-Math.Log10(Math.Max(score.HypergeometricPValue, 1e-300)):F1}";
+                        tooltipText += $"\n   Spearman: {score.SpearmanCorrelation:F3}, Spec: {score.SpecificityScore:F2}, -log(p): {-Math.Log10(Math.Max(score.HypergeometricPValue, 1e-300)):F1}, Cov: {score.MarkerCoverage:F3}";
                         
                         // Show markers if defined for this cell type
                         if (score.MarkersFound.Count > 0 || score.MarkersMissing.Count > 0)

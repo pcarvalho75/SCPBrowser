@@ -54,7 +54,8 @@ namespace SCPBrowser
             IProgressReporter progressReporter = null,
             Dictionary<string, HashSet<string>> keyMarkers = null,
             bool forceRecompute = false,
-            HashSet<string> excludedCellTypes = null)
+            HashSet<string> excludedCellTypes = null,
+            Dictionary<string, double> priorWeights = null)
         {
             if (proteomicsData == null)
                 throw new ArgumentNullException(nameof(proteomicsData));
@@ -95,7 +96,7 @@ namespace SCPBrowser
             // 4. Need to compute predictions
             progressReporter?.ReportMessage("Computing cell type predictions...");
 
-            var predictions = PredictCellTypesForAllRuns(proteomicsData, progressReporter, keyMarkers, excludedCellTypes);
+            var predictions = PredictCellTypesForAllRuns(proteomicsData, progressReporter, keyMarkers, excludedCellTypes, priorWeights);
 
             // 5. Save to database (delete old ones first if forcing recompute)
             progressReporter?.ReportMessage("Saving classifications to database...");
@@ -121,7 +122,8 @@ namespace SCPBrowser
             ProteomicsData proteomicsData,
             IProgressReporter progressReporter = null,
             Dictionary<string, HashSet<string>> keyMarkers = null,
-            HashSet<string> excludedCellTypes = null)
+            HashSet<string> excludedCellTypes = null,
+            Dictionary<string, double> priorWeights = null)
         {
             if (!IsLoaded)
                 throw new InvalidOperationException("Transcriptomic database not loaded");
@@ -141,9 +143,12 @@ namespace SCPBrowser
                 currentRun++;
                 progressReporter?.ReportProgress($"Classifying run {currentRun} of {totalRuns}: {runName}");
 
-                var prediction = PredictCellTypeForRun(proteomicsData, runName, keyMarkers, excludedCellTypes);
+                var prediction = PredictCellTypeForRun(proteomicsData, runName, keyMarkers, excludedCellTypes, priorWeights);
                 predictions[runName] = prediction;
             }
+
+            // Post-process: mark low-confidence predictions as Undetermined (max 10%)
+            CellTypePredictor.ApplyUndeterminedClassification(predictions, 0.10);
 
             return predictions;
         }
@@ -155,7 +160,8 @@ namespace SCPBrowser
             ProteomicsData proteomicsData, 
             string runName,
             Dictionary<string, HashSet<string>> keyMarkers = null,
-            HashSet<string> excludedCellTypes = null)
+            HashSet<string> excludedCellTypes = null,
+            Dictionary<string, double> priorWeights = null)
         {
             if (!IsLoaded || _predictor == null)
                 return new CellTypePredictionResult();
@@ -165,7 +171,7 @@ namespace SCPBrowser
 
             var proteinAbundances = ExtractProteinAbundances(proteomicsData, runName);
 
-            return _predictor.PredictCellType(proteinAbundances, keyMarkers, excludedCellTypes);
+            return _predictor.PredictCellType(proteinAbundances, keyMarkers, excludedCellTypes, priorWeights);
         }
 
         /// <summary>
@@ -185,6 +191,9 @@ namespace SCPBrowser
                 var color = ColorFromHSV(hue, 0.7, 0.9);
                 colorMap[cellTypes[i]] = color;
             }
+
+            // Add Undetermined as grey
+            colorMap["Undetermined"] = System.Windows.Media.Color.FromRgb(180, 180, 180);
 
             return colorMap;
         }
@@ -577,7 +586,9 @@ namespace SCPBrowser
                 "SpearmanCorr",
                 "SpecificityScore",
                 "HypergeometricPValue",
+                "MarkerCoverage",
                 "KeyMarkerAdjustment",
+                "PriorAdjustment",
                 "ProteinsDetected",
                 "GenesMatched"
             };
@@ -621,7 +632,9 @@ namespace SCPBrowser
                     result.TopScore?.SpearmanCorrelation.ToString("F4") ?? "",
                     result.TopScore?.SpecificityScore.ToString("F4") ?? "",
                     result.TopScore?.HypergeometricPValue.ToString("E3") ?? "",
+                    result.TopScore?.MarkerCoverage.ToString("F4") ?? "",
                     result.TopScore?.KeyMarkerAdjustment.ToString("F3") ?? "",
+                    result.TopScore?.PriorAdjustment.ToString("F3") ?? "",
                     proteinAbundances.Count.ToString(),
                     CountGenesMatchingDatabase(proteinAbundances).ToString()
                 };
@@ -669,6 +682,113 @@ namespace SCPBrowser
             }
 
             return proteinAbundances.Keys.Count(g => allDbGenes.Contains(g));
+        }
+
+        /// <summary>
+        /// Exports a gene-presence-by-cell-type summary for marker discovery.
+        /// For each gene found in proteomics, shows:
+        /// - What fraction of cells of each classified type detect it
+        /// - The transcriptomic median expression per cell type (from reference DB)
+        /// This cross-references proteomics detectability with transcriptomic specificity.
+        /// </summary>
+        public async Task ExportGenePresenceByCellTypeAsync(
+            string outputPath,
+            Dictionary<string, CellTypePredictionResult> predictions,
+            ProteomicsData proteomicsData,
+            IProgressReporter progress = null)
+        {
+            if (predictions == null || predictions.Count == 0)
+                throw new InvalidOperationException("No predictions available");
+            if (!IsLoaded)
+                throw new InvalidOperationException("Transcriptomic database not loaded");
+
+            progress?.ReportMessage("Building gene presence matrix...");
+
+            // Group runs by predicted cell type (exclude Undetermined)
+            var runsByCellType = new Dictionary<string, List<string>>();
+            foreach (var kvp in predictions)
+            {
+                var ct = kvp.Value.TopCellType;
+                if (string.IsNullOrEmpty(ct) || ct == "Undetermined") continue;
+                if (!runsByCellType.ContainsKey(ct))
+                    runsByCellType[ct] = new List<string>();
+                runsByCellType[ct].Add(kvp.Key);
+            }
+
+            var cellTypes = runsByCellType.Keys.OrderBy(ct => ct).ToList();
+
+            // Collect all genes detected across all runs
+            var allGenes = new HashSet<string>();
+            // gene -> cellType -> count of runs detecting it
+            var geneDetectionCounts = new Dictionary<string, Dictionary<string, int>>();
+
+            int processed = 0;
+            int total = predictions.Count;
+
+            foreach (var kvp in predictions)
+            {
+                processed++;
+                if (processed % 50 == 0)
+                    progress?.ReportProgress($"Scanning run {processed}/{total}...");
+
+                var ct = kvp.Value.TopCellType;
+                if (string.IsNullOrEmpty(ct) || ct == "Undetermined") continue;
+
+                var abundances = ExtractProteinAbundances(proteomicsData, kvp.Key);
+                foreach (var gene in abundances.Keys)
+                {
+                    allGenes.Add(gene);
+                    if (!geneDetectionCounts.ContainsKey(gene))
+                        geneDetectionCounts[gene] = new Dictionary<string, int>();
+                    if (!geneDetectionCounts[gene].ContainsKey(ct))
+                        geneDetectionCounts[gene][ct] = 0;
+                    geneDetectionCounts[gene][ct]++;
+                }
+            }
+
+            progress?.ReportMessage($"Writing {allGenes.Count} genes to file...");
+
+            // Build header
+            var headerParts = new List<string> { "Gene" };
+            foreach (var ct in cellTypes)
+                headerParts.Add($"Prot_{ct}");    // fraction detected in proteomics
+            foreach (var ct in cellTypes)
+                headerParts.Add($"Transcr_{ct}"); // median expression from reference DB
+
+            var lines = new List<string> { string.Join("\t", headerParts) };
+
+            var sortedGenes = allGenes.OrderBy(g => g).ToList();
+            foreach (var gene in sortedGenes)
+            {
+                var parts = new List<string> { gene };
+
+                // Proteomics detection fractions
+                foreach (var ct in cellTypes)
+                {
+                    int detected = 0;
+                    if (geneDetectionCounts.ContainsKey(gene) && geneDetectionCounts[gene].ContainsKey(ct))
+                        detected = geneDetectionCounts[gene][ct];
+                    int totalRuns = runsByCellType[ct].Count;
+                    double fraction = totalRuns > 0 ? (double)detected / totalRuns : 0;
+                    parts.Add(fraction.ToString("F4"));
+                }
+
+                // Transcriptomic median expression
+                foreach (var ct in cellTypes)
+                {
+                    double expr = 0;
+                    if (_database.CellTypeProfiles.TryGetValue(ct, out var profile) &&
+                        profile.MedianExpression.TryGetValue(gene, out double val))
+                        expr = val;
+                    parts.Add(expr.ToString("F4"));
+                }
+
+                lines.Add(string.Join("\t", parts));
+            }
+
+            await Task.Run(() => File.WriteAllLines(outputPath, lines));
+
+            progress?.ReportProgress($"Exported gene presence for {allGenes.Count} genes across {cellTypes.Count} cell types");
         }
     }
 }

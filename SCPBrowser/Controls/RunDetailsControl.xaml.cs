@@ -169,6 +169,7 @@ namespace SCPBrowser
                     detailsText += $"\n  Spearman Corr: {dataPoint.PredictionScore.SpearmanCorrelation:F3}";
                     detailsText += $"\n  Specificity Score: {dataPoint.PredictionScore.SpecificityScore:F3}";
                     detailsText += $"\n  P-value: {dataPoint.PredictionScore.HypergeometricPValue:E2}";
+                    detailsText += $"\n  Marker Coverage: {dataPoint.PredictionScore.MarkerCoverage:F3}";
                 }
             }
 

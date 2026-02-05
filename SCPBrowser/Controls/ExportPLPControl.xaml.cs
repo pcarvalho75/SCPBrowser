@@ -36,6 +36,9 @@ namespace SCPBrowser
 
         private bool _isInitialized = false;
 
+        // Merge map: source cell type → target cell type
+        private Dictionary<string, string> _cellTypeMergeMap = new Dictionary<string, string>();
+
         public ExportPLPControl()
         {
             InitializeComponent();
@@ -61,6 +64,7 @@ namespace SCPBrowser
 
             _isInitialized = true;
 
+            UpdateMergePanelVisibility();
             UpdateSummary();
         }
 
@@ -86,6 +90,14 @@ namespace SCPBrowser
 
             if (SecondaryLabelComboBox.SelectedItem is ComboBoxItem secondaryItem)
                 options.SecondaryLabelMode = ParseLabelMode(secondaryItem.Tag?.ToString());
+
+            // Only include actual merges (where source != target)
+            var activeMerges = _cellTypeMergeMap
+                .Where(kvp => kvp.Key != kvp.Value)
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+            if (activeMerges.Count > 0)
+                options.CellTypeMergeMap = activeMerges;
 
             return options;
         }
@@ -175,7 +187,113 @@ namespace SCPBrowser
             if (!_isInitialized)
                 return;
 
+            UpdateMergePanelVisibility();
             UpdateSummary();
+        }
+
+        private bool IsCellTypeInUse()
+        {
+            var options = BuildOptions();
+            return options.PrimaryLabelMode == PLPLabelMode.CellType || options.SecondaryLabelMode == PLPLabelMode.CellType;
+        }
+
+        private void UpdateMergePanelVisibility()
+        {
+            if (MergeCellTypesExpander == null)
+                return;
+
+            if (IsCellTypeInUse())
+            {
+                MergeCellTypesExpander.Visibility = Visibility.Visible;
+                PopulateMergeCellTypes();
+            }
+            else
+            {
+                MergeCellTypesExpander.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void PopulateMergeCellTypes()
+        {
+            MergeCellTypesPanel.Children.Clear();
+
+            if (_cellTypePredictions == null || _cellTypePredictions.Count == 0)
+                return;
+
+            // Get distinct cell types from predictions
+            var cellTypes = _cellTypePredictions.Values
+                .Where(p => !string.IsNullOrEmpty(p.TopCellType))
+                .Select(p => p.TopCellType)
+                .Distinct()
+                .OrderBy(ct => ct, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (cellTypes.Count == 0)
+                return;
+
+            // Initialize merge map entries for any new cell types
+            foreach (var ct in cellTypes)
+            {
+                if (!_cellTypeMergeMap.ContainsKey(ct))
+                    _cellTypeMergeMap[ct] = ct;
+            }
+
+            foreach (var ct in cellTypes)
+            {
+                var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20, GridUnitType.Pixel) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                var sourceLabel = new TextBlock
+                {
+                    Text = ct,
+                    FontSize = 12,
+                    FontWeight = FontWeights.Normal,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(sourceLabel, 0);
+
+                var arrow = new TextBlock
+                {
+                    Text = "→",
+                    FontSize = 12,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = System.Windows.Media.Brushes.Gray
+                };
+                Grid.SetColumn(arrow, 1);
+
+                var combo = new ComboBox
+                {
+                    FontSize = 12,
+                    Tag = ct,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                foreach (var target in cellTypes)
+                    combo.Items.Add(target);
+
+                // Set current selection from merge map
+                combo.SelectedItem = _cellTypeMergeMap.ContainsKey(ct) ? _cellTypeMergeMap[ct] : ct;
+
+                combo.SelectionChanged += MergeCombo_SelectionChanged;
+                Grid.SetColumn(combo, 2);
+
+                row.Children.Add(sourceLabel);
+                row.Children.Add(arrow);
+                row.Children.Add(combo);
+                MergeCellTypesPanel.Children.Add(row);
+            }
+        }
+
+        private void MergeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (sender is ComboBox combo && combo.Tag is string sourceCellType && combo.SelectedItem is string targetCellType)
+            {
+                _cellTypeMergeMap[sourceCellType] = targetCellType;
+                UpdateSummary();
+            }
         }
 
         private void ExportButton_Click(object sender, RoutedEventArgs e)

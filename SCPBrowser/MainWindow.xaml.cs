@@ -1102,9 +1102,20 @@ namespace SCPBrowser
                     proteomicsData,
                     progressReporter);
 
+                // Also export gene presence by cell type
+                var genePresencePath = System.IO.Path.Combine(
+                    System.IO.Path.GetDirectoryName(saveDialog.FileName),
+                    System.IO.Path.GetFileNameWithoutExtension(saveDialog.FileName) + "_GenePresence.tsv");
+
+                await MainControlTab.ExportGenePresenceByCellTypeAsync(
+                    genePresencePath,
+                    predictions,
+                    proteomicsData,
+                    progressReporter);
+
                 LoadingOverlay.Hide();
 
-                MessageBox.Show($"Diagnostics exported successfully to:\n{saveDialog.FileName}",
+                MessageBox.Show($"Diagnostics exported successfully to:\n{saveDialog.FileName}\n\nGene presence matrix exported to:\n{genePresencePath}",
                     "Export Complete", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
@@ -1157,6 +1168,7 @@ namespace SCPBrowser
                 // Get key markers only if applying them, and get excluded cell types
                 var keyMarkers = applyMarkers ? ProjectBrowserDialog.GetKeyMarkers() : null;
                 var excludedCellTypes = ProjectBrowserDialog.GetExcludedCellTypes();
+                var priorWeights = e.PriorWeights;
                 
                 var predictions = await MainControlTab.GetCellTypePredictionsAsync(
                     proteomicsData,
@@ -1165,7 +1177,8 @@ namespace SCPBrowser
                     progressReporter,
                     keyMarkers,
                     forceRecompute: true,
-                    excludedCellTypes); // Pass excluded cell types
+                    excludedCellTypes,
+                    priorWeights); // Pass prior weights
 
                 // Get color map
                 var colorMap = MainControlTab.GetCellTypeColorMap();

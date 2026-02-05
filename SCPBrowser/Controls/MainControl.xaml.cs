@@ -364,7 +364,8 @@ namespace SCPBrowser
             IProgressReporter progressReporter,
             Dictionary<string, HashSet<string>> keyMarkers = null,
             bool forceRecompute = false,
-            HashSet<string> excludedCellTypes = null)
+            HashSet<string> excludedCellTypes = null,
+            Dictionary<string, double> priorWeights = null)
         {
             var predictions = await _cellTypeClassificationManager.GetOrComputePredictionsAsync(
                 proteomicsData,
@@ -373,7 +374,8 @@ namespace SCPBrowser
                 progressReporter,
                 keyMarkers,
                 forceRecompute,
-                excludedCellTypes);
+                excludedCellTypes,
+                priorWeights);
 
             // Store in memory for future use
             _cellTypePredictions = predictions;
@@ -439,6 +441,16 @@ namespace SCPBrowser
             IProgressReporter progress = null)
         {
             await _cellTypeClassificationManager.ExportClassificationDiagnosticsAsync(
+                outputPath, predictions, proteomicsData, progress);
+        }
+
+        public async Task ExportGenePresenceByCellTypeAsync(
+            string outputPath,
+            Dictionary<string, CellTypePredictionResult> predictions,
+            ProteomicsData proteomicsData,
+            IProgressReporter progress = null)
+        {
+            await _cellTypeClassificationManager.ExportGenePresenceByCellTypeAsync(
                 outputPath, predictions, proteomicsData, progress);
         }
     }

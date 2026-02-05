@@ -31,6 +31,9 @@ namespace SCPBrowser
         // Excluded cell types (not considered in classification)
         private HashSet<string> _excludedCellTypes = new HashSet<string>();
 
+        // Prior weights per cell type
+        private Dictionary<string, double> _priorWeights = new Dictionary<string, double>();
+
         // Event to notify when markers change
         public event EventHandler<KeyMarkersChangedEventArgs> KeyMarkersChanged;
         
@@ -39,6 +42,9 @@ namespace SCPBrowser
         
         // Event to notify when cell type exclusions change
         public event EventHandler<CellTypeExclusionsChangedEventArgs> ExclusionsChanged;
+
+        // Event to notify when prior weights change
+        public event EventHandler<PriorWeightsChangedEventArgs> PriorWeightsChanged;
 
         public OmicBrowserControl()
         {
@@ -74,6 +80,19 @@ namespace SCPBrowser
         }
 
         /// <summary>
+        /// Gets the current prior weights for all cell types
+        /// </summary>
+        public Dictionary<string, double> GetPriorWeights() => new Dictionary<string, double>(_priorWeights);
+
+        /// <summary>
+        /// Sets prior weights (called when loading from database)
+        /// </summary>
+        public void SetPriorWeights(Dictionary<string, double> weights)
+        {
+            _priorWeights = weights ?? new Dictionary<string, double>();
+        }
+
+        /// <summary>
         /// Event handler for cell type enable/disable checkbox
         /// </summary>
         private void CellTypeEnabled_Changed(object sender, RoutedEventArgs e)
@@ -99,6 +118,62 @@ namespace SCPBrowser
                     ExcludedCellTypes = new HashSet<string>(_excludedCellTypes)
                 });
             }
+        }
+
+        /// <summary>
+        /// Event handler for prior weight TextBox losing focus
+        /// </summary>
+        private void PriorWeight_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is TextBox textBox && textBox.Tag is string cellType)
+            {
+                if (double.TryParse(textBox.Text, out double weight) && weight >= 0)
+                {
+                    _priorWeights[cellType] = weight;
+                    Console.WriteLine($"Prior weight for '{cellType}' set to {weight}");
+
+                    // Update the card's displayed weight and re-sort
+                    if (CellTypeListBox.ItemsSource is System.Collections.Generic.List<CellTypeMetadata> metaList)
+                    {
+                        var match = metaList.FirstOrDefault(m => m.CellType == cellType);
+                        if (match != null)
+                            match.PriorWeight = weight;
+
+                        // Re-sort by descending prior weight
+                        var sorted = metaList.OrderByDescending(m => m.PriorWeight).ThenBy(m => m.CellType).ToList();
+                        CellTypeListBox.ItemsSource = sorted;
+
+                        // Re-select the current cell type
+                        CellTypeListBox.SelectedItem = sorted.FirstOrDefault(m => m.CellType == cellType);
+                    }
+
+                    PriorWeightsChanged?.Invoke(this, new PriorWeightsChangedEventArgs
+                    {
+                        CellType = cellType,
+                        Weight = weight
+                    });
+                }
+                else
+                {
+                    // Revert to previous value or default
+                    double current = _priorWeights.ContainsKey(cellType) ? _priorWeights[cellType] : 1.0;
+                    textBox.Text = current.ToString("F2");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Handles PreviewMouseDown on prior weight TextBox to steal focus from ListBox
+        /// </summary>
+        private void PriorWeight_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is TextBox textBox && !textBox.IsFocused)
+            {
+                textBox.Focus();
+                textBox.SelectAll();
+                e.Handled = true;
+            }
+            // If already focused, let the click through normally for caret positioning
         }
 
         /// <summary>
@@ -176,9 +251,17 @@ namespace SCPBrowser
             TotalGenesText.Text = _transcriptomicData.TotalGenes.ToString("N0");
 
             // Populate cell type list
-            var cellTypeList = _transcriptomicData.CellTypeMetadata.Values
-                .OrderBy(m => m.CellType)
-                .ToList();
+            var cellTypeList = _transcriptomicData.CellTypeMetadata.Values.ToList();
+
+            // Apply saved prior weights
+            foreach (var meta in cellTypeList)
+            {
+                if (_priorWeights.TryGetValue(meta.CellType, out double w))
+                    meta.PriorWeight = w;
+            }
+
+            // Sort by descending prior weight
+            cellTypeList = cellTypeList.OrderByDescending(m => m.PriorWeight).ThenBy(m => m.CellType).ToList();
 
             CellTypeListBox.ItemsSource = cellTypeList;
         }
@@ -239,6 +322,44 @@ namespace SCPBrowser
             }
 
             CellTypeDetailsPanel.Children.Add(statsGrid);
+
+            // Prior weight editor
+            var priorPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 15) };
+            priorPanel.Children.Add(new TextBlock
+            {
+                Text = "Prior Weight:",
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            });
+
+            double currentWeight = _priorWeights.ContainsKey(_currentCellType) ? _priorWeights[_currentCellType] : 1.0;
+            var priorTextBox = new TextBox
+            {
+                Text = currentWeight.ToString("F2"),
+                Width = 60,
+                Height = 28,
+                FontSize = 13,
+                Padding = new Thickness(2, 1, 2, 1),
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                BorderBrush = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                BorderThickness = new Thickness(1),
+                Tag = _currentCellType,
+                ToolTip = "Prior weight for this cell type (auto-normalized when reclassifying)"
+            };
+            priorTextBox.LostFocus += PriorWeight_LostFocus;
+            priorPanel.Children.Add(priorTextBox);
+
+            priorPanel.Children.Add(new TextBlock
+            {
+                Text = "(auto-normalized)",
+                FontSize = 10,
+                Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0)
+            });
+            CellTypeDetailsPanel.Children.Add(priorPanel);
 
             // Get profile and show key markers section + top expressed genes
             if (_transcriptomicData.CellTypeProfiles.TryGetValue(metadata.CellType, out var profile))
@@ -791,7 +912,11 @@ namespace SCPBrowser
             _reclassifyStatusText.Visibility = Visibility.Visible;
 
             // Fire event to trigger reclassification
-            ReclassifyRequested?.Invoke(this, new ReclassifyRequestedEventArgs { ApplyKeyMarkers = applyMarkers });
+            ReclassifyRequested?.Invoke(this, new ReclassifyRequestedEventArgs
+            {
+                ApplyKeyMarkers = applyMarkers,
+                PriorWeights = GetPriorWeights()
+            });
         }
 
         private void RefreshMarkersCountText()
@@ -1143,10 +1268,17 @@ namespace SCPBrowser
     public class ReclassifyRequestedEventArgs : EventArgs
     {
         public bool ApplyKeyMarkers { get; set; }
+        public Dictionary<string, double> PriorWeights { get; set; }
     }
 
     public class CellTypeExclusionsChangedEventArgs : EventArgs
     {
         public HashSet<string> ExcludedCellTypes { get; set; }
+    }
+
+    public class PriorWeightsChangedEventArgs : EventArgs
+    {
+        public string CellType { get; set; }
+        public double Weight { get; set; }
     }
 }

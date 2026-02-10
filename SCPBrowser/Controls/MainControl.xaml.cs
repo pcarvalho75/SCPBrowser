@@ -193,22 +193,6 @@ namespace SCPBrowser
             return _cellTypeClassificationManager.IsLoaded;
         }
 
-        public async void OpenDiannFile()
-        {
-            var dialog = new OpenFileDialog
-            {
-                Filter = "DIA-NN Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
-                Title = "Open DIA-NN Parquet File"
-            };
-
-            if (dialog.ShowDialog() != true)
-                return;
-
-            _currentFilePath = dialog.FileName;
-            _currentFileDirectory = Path.GetDirectoryName(dialog.FileName);
-            await LoadDataAsync();
-        }
-
 
         public async Task LoadDataFromProject(List<string> parquetFilePaths, string databasePath)
         {

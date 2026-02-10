@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Animation;
@@ -7,7 +7,7 @@ namespace SCPBrowser
 {
     public partial class LoadingOverlay : UserControl
     {
-        private Storyboard _animationStoryboard;
+        private Storyboard? _animationStoryboard;
         private bool _isAnimating = false;
 
         public LoadingOverlay()

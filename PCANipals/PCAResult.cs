@@ -1,4 +1,4 @@
-﻿namespace PCANipals
+namespace PCANipals
 {
     /// <summary>
     /// Result of PCA computation via NIPALS algorithm.
@@ -9,24 +9,24 @@
         /// Score matrix (n samples × k components).
         /// Each row is a sample projected into PC space.
         /// </summary>
-        public double[,] Scores { get; set; }
+        public double[,] Scores { get; set; } = null!;
 
         /// <summary>
         /// Loading matrix (p variables × k components).
         /// Each column is a principal component direction.
         /// </summary>
-        public double[,] Loadings { get; set; }
+        public double[,] Loadings { get; set; } = null!;
 
         /// <summary>
         /// Proportion of variance explained by each component (length k).
         /// Computed as reduction in residual SS over observed entries.
         /// </summary>
-        public double[] VarianceExplained { get; set; }
+        public double[] VarianceExplained { get; set; } = null!;
 
         /// <summary>
         /// Number of iterations for each component to converge.
         /// </summary>
-        public int[] Iterations { get; set; }
+        public int[] Iterations { get; set; } = null!;
 
         /// <summary>
         /// Whether all components converged within tolerance.
@@ -37,31 +37,31 @@
         /// Column means used for centering (length p).
         /// Needed for projecting new samples consistently.
         /// </summary>
-        public double[] Means { get; set; }
+        public double[] Means { get; set; } = null!;
 
         /// <summary>
         /// Column standard deviations used for scaling (length p).
         /// All ones if scale=false was used.
         /// </summary>
-        public double[] StandardDeviations { get; set; }
+        public double[] StandardDeviations { get; set; } = null!;
 
         /// <summary>
         /// Number of observed (non-NaN) values per sample (length n).
         /// Low values indicate unreliable scores.
         /// </summary>
-        public int[] SupportPerSample { get; set; }
+        public int[] SupportPerSample { get; set; } = null!;
 
         /// <summary>
         /// Number of observed (non-NaN) values per variable (length p).
         /// Low values indicate unreliable loadings.
         /// </summary>
-        public int[] SupportPerVariable { get; set; }
+        public int[] SupportPerVariable { get; set; } = null!;
 
         /// <summary>
         /// Minimum support threshold used during computation.
         /// </summary>
         public int MinimumSupport { get; set; }
-        public int[,] SupportPerScore { get; internal set; }
+        public int[,] SupportPerScore { get; internal set; } = null!;
         public bool WasCentered { get; internal set; }
         public bool WasScaled { get; internal set; }
         public int ExtractedComponents { get; internal set; }

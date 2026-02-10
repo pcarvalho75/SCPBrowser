@@ -26,84 +26,188 @@
           SelectedIndex="0"
           SelectionChanged="ViewModeComboBox_SelectionChanged"
           ToolTip="Select visualization mode"
-          Margin="0,0,10,0">
+          Margin="0,0,4,0">
                 <ComboBoxItem Content="Peptide vs TIC" Tag="PeptideTic"/>
-                <ComboBoxItem Content="PCA" Tag="PCA"/>
+                <ComboBoxItem x:Name="PcaViewItem" Content="PCA" Tag="PCA" Visibility="Collapsed"/>
                 <ComboBoxItem Content="UMAP" Tag="UMAP"/>
             </ComboBox>
 
-            <Button x:Name="ShowLoadingsButton"
-        Content="Loadings"
-        Click="ShowLoadingsButton_Click"
-        Padding="6,2"
-        Margin="0,0,15,0"
-        VerticalAlignment="Center"
-        IsEnabled="False"
-        Visibility="Collapsed"
-        ToolTip="Show which proteins drive PC1 and PC2 separation"/>
+            <!-- Dim Reduction Settings Button -->
+            <Button x:Name="DimRedSettingsButton"
+                            Content="⚙"
+                            FontSize="14"
+                            Padding="4,1"
+                            Margin="0,0,10,0"
+                            VerticalAlignment="Center"
+                            Click="DimRedSettingsButton_Click"
+                            ToolTip="Dimensionality reduction settings (PCA/UMAP)"/>
 
-            <!-- HVP Feature Selection -->
-            <CheckBox x:Name="UseHvpCheckBox"
-          Content="Top HVPs:"
-          VerticalAlignment="Center"
-          Margin="0,0,3,0"
-          IsEnabled="False"
-          Checked="UseHvpCheckBox_Changed"
-          Unchecked="UseHvpCheckBox_Changed"
-          ToolTip="Use only highly variable proteins for dimensionality reduction"/>
+            <!-- Dim Reduction Settings Popup -->
+            <Popup x:Name="DimRedSettingsPopup"
+                   PlacementTarget="{Binding ElementName=DimRedSettingsButton}"
+                   Placement="Bottom"
+                   StaysOpen="False"
+                   AllowsTransparency="True">
+                <Border Background="#1B1B2F" BorderBrush="#6C63FF" BorderThickness="1" CornerRadius="8"
+                        Padding="16" MinWidth="320">
+                    <StackPanel>
+                        <TextBlock Text="Dimensionality Reduction Settings" FontWeight="Bold" FontSize="13"
+                                   Foreground="#E0E0E0" Margin="0,0,0,4"/>
+                        <TextBlock Text="Controls how raw protein quantification is transformed into 2D plots."
+                                   Foreground="#7777AA" FontSize="10" TextWrapping="Wrap" Margin="0,0,0,12"/>
 
-            <Border x:Name="HvpCountBorder"
-        Background="#f1f5f9"
-        BorderBrush="#94a3b8"
-        BorderThickness="1"
-        CornerRadius="2"
-        Padding="2,0"
-        VerticalAlignment="Center"
-        Margin="0,0,15,0">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="HvpCountDown" Content="−" FontSize="11" FontWeight="Bold" Padding="3,0" 
-        Click="HvpCountDown_Click" Background="Transparent" BorderThickness="0" 
-        Foreground="#1e293b" Cursor="Hand" IsEnabled="False"/>
-                    <TextBox x:Name="HvpCountTextBox"
-         Text="500"
-         Width="40"
-         Height="20"
-         FontSize="11"
-         FontWeight="SemiBold"
-         Foreground="#1e293b"
-         Background="White"
-         BorderThickness="0"
-         Padding="0"
-         Margin="0"
-         VerticalAlignment="Center"
-         VerticalContentAlignment="Center"
-         HorizontalContentAlignment="Center"
-         PreviewTextInput="HvpCountTextBox_PreviewTextInput"
-         LostFocus="HvpCountTextBox_LostFocus"
-         KeyDown="HvpCountTextBox_KeyDown"
-         IsEnabled="False"/>
-                    <Button x:Name="HvpCountUp" Content="+" FontSize="11" FontWeight="Bold" Padding="3,0"
-        Click="HvpCountUp_Click" Background="Transparent" BorderThickness="0" 
-        Foreground="#1e293b" Cursor="Hand" IsEnabled="False"/>
-                </StackPanel>
-            </Border>
+                        <!-- Preprocessing Section -->
+                        <TextBlock Text="PREPROCESSING" FontSize="10" Foreground="#8888AA" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <CheckBox x:Name="ZScaleCheckBox" IsChecked="True" VerticalAlignment="Center" Margin="0,0,6,0"
+                                      ToolTip="Standardize each protein to mean=0, stdev=1 across samples.&#x0a;Prevents high-abundance proteins from dominating PCA.&#x0a;Recommended: ON for most proteomics data."/>
+                            <TextBlock Text="Z-score scaling" Foreground="#C0C0D0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="Clip max:" Foreground="#9090A0" VerticalAlignment="Center" Margin="16,0,6,0"
+                                       ToolTip="After z-score, values beyond ±clip are clamped.&#x0a;Reduces influence of extreme outliers.&#x0a;Default: 10 (very permissive). Use 3–5 for stricter clipping."/>
+                            <TextBox x:Name="ClipMaxTextBox" Text="10" Width="45" Height="22" FontSize="11"
+                                     Background="#2A2A40" Foreground="#E0E0E0" BorderBrush="#4A4A60"
+                                     BorderThickness="1" Padding="4,2" VerticalContentAlignment="Center"
+                                     PreviewTextInput="NumericTextBox_PreviewTextInput"
+                                     ToolTip="Clipping threshold for z-scored values.&#x0a;Range: 1–50. Default: 10."/>
+                        </StackPanel>
 
-            <CheckBox x:Name="LogLogCheckBox"
-                      Content="Log-Log Scale"
-                      IsChecked="True"
-                      Margin="0,0,20,0"
-                      Checked="LogLogCheckBox_Changed" VerticalAlignment="Center"
-                      Unchecked="LogLogCheckBox_Changed"/>
+                        <!-- Feature Selection Section -->
+                        <TextBlock Text="FEATURE SELECTION" FontSize="10" Foreground="#8888AA" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <CheckBox x:Name="UseHvpCheckBox" IsChecked="False" VerticalAlignment="Center" Margin="0,0,6,0"
+                                    ToolTip="Use only the top N highly variable proteins (HVPs) for PCA/UMAP.&#x0a;Filters out low-variance proteins before dimensionality reduction.&#x0a;Usually unnecessary — PCA already downweights flat proteins —&#x0a;but can help with very large protein sets (3000+)."
+                                    Checked="UseHvpCheckBox_Changed" Unchecked="UseHvpCheckBox_Changed"/>
+                            <TextBlock Text="Top HVPs only" Foreground="#C0C0D0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="16,0,0,10">
+                            <TextBlock Text="Count:" Foreground="#9090A0" VerticalAlignment="Center" Margin="0,0,6,0"
+                                    ToolTip="Number of top highly variable proteins to keep.&#x0a;Ranked by standardized variance (Brennecke et al.).&#x0a;Range: 10–5000. Default: 500."/>
+                            <Button x:Name="HvpCountDown" Content="−" FontSize="11" FontWeight="Bold" Padding="4,1"
+                                    Background="#2A2A40" Foreground="#C0C0D0" BorderBrush="#4A4A60" BorderThickness="1"
+                                    Click="HvpCountDown_Click" Cursor="Hand" IsEnabled="False"/>
+                            <TextBox x:Name="HvpCountTextBox" Text="500" Width="45" Height="22" FontSize="11"
+                                    Background="#2A2A40" Foreground="#E0E0E0" BorderBrush="#4A4A60"
+                                    BorderThickness="1" Padding="4,2" VerticalContentAlignment="Center"
+                                    HorizontalContentAlignment="Center"
+                                    PreviewTextInput="HvpCountTextBox_PreviewTextInput"
+                                    LostFocus="HvpCountTextBox_LostFocus"
+                                    KeyDown="HvpCountTextBox_KeyDown"
+                                    IsEnabled="False"
+                                    ToolTip="Number of top HVPs. Range: 10–5000."/>
+                            <Button x:Name="HvpCountUp" Content="+" FontSize="11" FontWeight="Bold" Padding="4,1"
+                                    Background="#2A2A40" Foreground="#C0C0D0" BorderBrush="#4A4A60" BorderThickness="1"
+                                    Click="HvpCountUp_Click" Cursor="Hand" IsEnabled="False"/>
+                        </StackPanel>
+
+                        <!-- PCA Section -->
+                        <TextBlock Text="PCA" FontSize="10" Foreground="#8888AA" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <CheckBox x:Name="ShowPcaViewCheckBox" IsChecked="False" VerticalAlignment="Center" Margin="0,0,6,0"
+                                    ToolTip="Show PCA as a view mode in the dropdown.&#x0a;PCA plots raw principal components (PC1 vs PC2).&#x0a;Useful for inspecting variance structure before UMAP."/>
+                            <TextBlock Text="Show PCA in view modes" Foreground="#C0C0D0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <TextBlock Text="Components:" Foreground="#9090A0" VerticalAlignment="Center" Width="90"
+                                       ToolTip="Total principal components to compute.&#x0a;More components capture more variance but take longer.&#x0a;Capped by min(samples-1, proteins-1)."/>
+                            <TextBox x:Name="PcaComponentsTextBox" Text="30" Width="45" Height="22" FontSize="11"
+                                     Background="#2A2A40" Foreground="#E0E0E0" BorderBrush="#4A4A60"
+                                     BorderThickness="1" Padding="4,2" VerticalContentAlignment="Center"
+                                     PreviewTextInput="NumericTextBox_PreviewTextInput"
+                                     ToolTip="Number of PCA components to extract.&#x0a;Range: 2–100. Default: 30.&#x0a;Only the first 2 are plotted; the rest feed UMAP."/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="PCs for UMAP:" Foreground="#9090A0" VerticalAlignment="Center" Width="90"
+                                       ToolTip="How many top PCs to use as input for UMAP.&#x0a;UMAP runs on these PCs instead of raw proteins,&#x0a;which denoises the data dramatically.&#x0a;Typical: 10–30. Capped by Components above."/>
+                            <TextBox x:Name="PcsForUmapTextBox" Text="20" Width="45" Height="22" FontSize="11"
+                                     Background="#2A2A40" Foreground="#E0E0E0" BorderBrush="#4A4A60"
+                                     BorderThickness="1" Padding="4,2" VerticalContentAlignment="Center"
+                                     PreviewTextInput="NumericTextBox_PreviewTextInput"
+                                     ToolTip="Top N principal components fed into UMAP.&#x0a;Range: 2–100. Default: 20.&#x0a;Lower = smoother clusters, higher = more detail."/>
+                        </StackPanel>
+
+                        <!-- UMAP Section -->
+                        <TextBlock Text="UMAP" FontSize="10" Foreground="#8888AA" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="Neighbors:" Foreground="#9090A0" VerticalAlignment="Center" Width="90"
+                                       ToolTip="Number of nearest neighbors in the high-dimensional space.&#x0a;Controls local vs global structure preservation.&#x0a;Low (5–10): tight local clusters.&#x0a;High (30–50): broader, more connected layout."/>
+                            <TextBox x:Name="UmapNeighborsTextBox" Text="15" Width="45" Height="22" FontSize="11"
+                                     Background="#2A2A40" Foreground="#E0E0E0" BorderBrush="#4A4A60"
+                                     BorderThickness="1" Padding="4,2" VerticalContentAlignment="Center"
+                                     PreviewTextInput="NumericTextBox_PreviewTextInput"
+                                                 ToolTip="k-nearest neighbors for UMAP graph.&#x0a;Range: 5–50. Default: 15.&#x0a;Also used for label purity kNN diagnostic."/>
+                                     </StackPanel>
+                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <CheckBox x:Name="UmapFixedSeedCheckBox" IsChecked="True" VerticalAlignment="Center" Margin="0,0,6,0"
+                                    ToolTip="Use a fixed random seed (42) for reproducible results.&#x0a;Uncheck for a different random layout each time.&#x0a;Useful to verify that cluster structure is robust."/>
+                            <TextBlock Text="Fixed seed (reproducible)" Foreground="#C0C0D0" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <!-- Guided Embedding Section -->
+                        <TextBlock Text="GUIDED EMBEDDING" FontSize="10" Foreground="#8888AA" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <CheckBox x:Name="GuidedEmbeddingCheckBox" IsChecked="False" VerticalAlignment="Center" Margin="0,0,6,0"
+                                      IsEnabled="False"
+                                      ToolTip="Appends weighted one-hot cell type vectors to PCA coordinates.&#x0a;Nudges UMAP to respect known labels, improving separation.&#x0a;Only available after cell type classification runs.&#x0a;Use for visualization refinement, NOT for discovery."/>
+                            <TextBlock Text="Use cell type labels" Foreground="#C0C0D0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="16,0,0,4">
+                            <TextBlock Text="Weight:" Foreground="#9090A0" VerticalAlignment="Center" Margin="0,0,6,0"
+                                       ToolTip="Strength of the label guidance signal.&#x0a;0.05 = subtle nudge, 1.0 = strong pull.&#x0a;Higher values force tighter type-specific clusters&#x0a;but risk masking true data structure."/>
+                            <Slider x:Name="GuidedWeightSlider" Minimum="0.05" Maximum="1.0" Value="0.3"
+                                    Width="100" VerticalAlignment="Center" IsEnabled="False"
+                                    ToolTip="Guided embedding weight.&#x0a;Default: 0.30. Range: 0.05–1.0.&#x0a;Start low and increase if clusters don't separate."/>
+                            <TextBlock x:Name="GuidedWeightLabel" Text="0.30" Foreground="#C0C0D0"
+                                       VerticalAlignment="Center" Margin="6,0,0,0" FontSize="11"/>
+                        </StackPanel>
+                        <TextBlock Text="⚠ Nudges embedding with labels. Not for discovery."
+                                   Foreground="#AA8844" FontSize="10" Margin="16,0,0,10" TextWrapping="Wrap"/>
+
+                        <!-- Buttons -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
+                            <Button Content="Reset" Padding="10,4" Margin="0,0,8,0"
+                                            Background="#2A2A40" Foreground="#C0C0D0" BorderBrush="#4A4A60"
+                                            Click="DimRedResetButton_Click"
+                                            ToolTip="Reset all settings to defaults"/>
+                            <Button Content="Refresh" Padding="10,4" Margin="0,0,8,0"
+                                            Background="#2A2A40" Foreground="#C0C0D0" BorderBrush="#4A4A60"
+                                            Click="DimRedRefreshButton_Click"
+                                            ToolTip="Force recompute PCA/UMAP with current settings.&#x0a;Useful with random seed to get a new layout."/>
+                            <Button Content="Apply" Padding="10,4"
+                                            Background="#6C63FF" Foreground="White" BorderBrush="#6C63FF" FontWeight="SemiBold"
+                                            Click="DimRedApplyButton_Click"
+                                            ToolTip="Apply settings and recompute PCA/UMAP"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Popup>
+
+                      <Button x:Name="ShowLoadingsButton"
+            Content="Loadings"
+            Click="ShowLoadingsButton_Click"
+            Padding="6,2"
+            Margin="0,0,15,0"
+            VerticalAlignment="Center"
+            IsEnabled="False"
+            Visibility="Collapsed"
+            ToolTip="Show which proteins drive PC1 and PC2 separation"/>
+
+                      <CheckBox x:Name="LogLogCheckBox"
+                                          Content="Log-Log Scale"
+                                          IsChecked="True"
+                                          Margin="0,0,20,0"
+                                          Checked="LogLogCheckBox_Changed" VerticalAlignment="Center"
+                                          Unchecked="LogLogCheckBox_Changed"/>
 
             <CheckBox x:Name="BatchCorrectionCheckBox"
-          Content="Batch Correction"
-          IsChecked="False"
-          IsEnabled="False"
-          Margin="0,0,20,0"
-          VerticalAlignment="Center"
-          Checked="BatchCorrectionCheckBox_Changed"
-          Unchecked="BatchCorrectionCheckBox_Changed"
-          ToolTip="Apply ComBat batch correction before dimensionality reduction (Johnson et al., 2007)"/>
+            Content="Batch Correction"
+            IsChecked="False"
+            Margin="0,0,20,0"
+            VerticalAlignment="Center"
+            Checked="BatchCorrectionCheckBox_Changed"
+            Unchecked="BatchCorrectionCheckBox_Changed"
+            ToolTip="Apply ComBat batch correction before dimensionality reduction (Johnson et al., 2007)"/>
 
             <TextBlock Text="Color by:" 
            VerticalAlignment="Center"

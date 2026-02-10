@@ -1,8 +1,11 @@
 using SCPBrowser.GOTools;
+using SCPBrowser.Models;
 using SCPBrowser.Services;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -37,6 +40,8 @@ namespace SCPBrowser
         private int _hvpCount = 500;
         private Dictionary<string, int> _plateMappingPerFile;
         private HashSet<string> _checkedPlates = new HashSet<string>();
+        private ProjectDatabaseService _databaseService;
+        private DimensionReductionSettings? _dimRedSettings;
 
         public HashSet<string> CheckedBioConditions => _checkedBioConditions;
         public HashSet<string> CheckedCellTypes => _checkedCellTypes;
@@ -51,6 +56,13 @@ namespace SCPBrowser
 
             SelectedPointsGridPanel.RunInclusionChanged += SelectedPointsGridPanel_RunInclusionChanged;
             SelectedPointsGridPanel.ClearAllExclusionsRequested += SelectedPointsGridPanel_ClearAllExclusionsRequested;
+
+            GuidedWeightSlider.ValueChanged += (s, e) =>
+                GuidedWeightLabel.Text = GuidedWeightSlider.Value.ToString("F2");
+            GuidedEmbeddingCheckBox.Checked += (s, e) =>
+                GuidedWeightSlider.IsEnabled = true;
+            GuidedEmbeddingCheckBox.Unchecked += (s, e) =>
+                GuidedWeightSlider.IsEnabled = false;
 
             _isInitialized = true;
         }
@@ -75,25 +87,22 @@ namespace SCPBrowser
             bool isUmapMode = mode == "UMAP";
             bool isDimensionalityReduction = isPcaMode || isUmapMode;
 
-            // Disable Log-Log scale for PCA/UMAP (doesn't apply)
-            LogLogCheckBox.IsEnabled = !isDimensionalityReduction;
+            // Hide Log-Log scale for PCA/UMAP (doesn't apply)
+            LogLogCheckBox.Visibility = isDimensionalityReduction ? Visibility.Collapsed : Visibility.Visible;
 
-            // Enable Batch Correction only for PCA/UMAP
-            BatchCorrectionCheckBox.IsEnabled = isDimensionalityReduction;
+            // Batch Correction stays enabled regardless of view mode (sticky toggle)
+
+            // Enable dim reduction settings button always (controls view modes & feature selection)
+            DimRedSettingsButton.IsEnabled = true;
+
+            // Enable guided embedding only if cell type predictions exist
+            bool hasClassifications = _cellTypePredictions != null && _cellTypePredictions.Count > 0;
+            GuidedEmbeddingCheckBox.IsEnabled = hasClassifications;
+            GuidedWeightSlider.IsEnabled = hasClassifications && GuidedEmbeddingCheckBox.IsChecked == true;
 
             // Show Loadings button only in PCA mode
             ShowLoadingsButton.Visibility = isPcaMode ? Visibility.Visible : Visibility.Collapsed;
             ShowLoadingsButton.IsEnabled = isPcaMode;
-
-            // Enable HVP controls only in PCA/UMAP mode (and if we have HVP data)
-            bool hasHvpData = _hvpResults != null && _hvpResults.Count > 0;
-            UseHvpCheckBox.IsEnabled = isDimensionalityReduction && hasHvpData;
-
-            // Disable the count controls if checkbox is disabled or unchecked
-            bool hvpActive = UseHvpCheckBox.IsEnabled && UseHvpCheckBox.IsChecked == true;
-            HvpCountTextBox.IsEnabled = hvpActive;
-            HvpCountUp.IsEnabled = hvpActive;
-            HvpCountDown.IsEnabled = hvpActive;
 
             // Update header text
             if (isPcaMode)
@@ -145,6 +154,127 @@ namespace SCPBrowser
         public void SetRawFileIdMapping(Dictionary<string, int> mapping)
         {
             _runNameToRawFileId = mapping ?? new Dictionary<string, int>();
+        }
+
+        /// <summary>
+        /// Sets the database service for loading/saving dim reduction settings.
+        /// Call this after project open, before UpdateChart.
+        /// </summary>
+        public async void SetDatabaseService(ProjectDatabaseService db)
+        {
+            _databaseService = db;
+            _dimRedSettings = await DimensionReductionSettings.LoadAsync(db);
+            ApplySettingsToUI(_dimRedSettings);
+        }
+
+        private void ApplySettingsToUI(DimensionReductionSettings s)
+        {
+            if (s == null) return;
+            ZScaleCheckBox.IsChecked = s.ZScoreScale;
+            ClipMaxTextBox.Text = s.ClipMaxValue.ToString("G", CultureInfo.InvariantCulture);
+            PcaComponentsTextBox.Text = s.NumPcaComponents.ToString();
+            PcsForUmapTextBox.Text = s.NumPcsForUmap.ToString();
+            UmapNeighborsTextBox.Text = s.UmapNeighbors.ToString();
+            UmapFixedSeedCheckBox.IsChecked = s.UmapFixedSeed;
+            GuidedEmbeddingCheckBox.IsChecked = s.UseGuidedEmbedding;
+            GuidedWeightSlider.Value = s.GuidedWeight;
+            GuidedWeightLabel.Text = s.GuidedWeight.ToString("F2");
+            ShowPcaViewCheckBox.IsChecked = s.ShowPcaView;
+            UseHvpCheckBox.IsChecked = s.UseHvpFilter;
+            HvpCountTextBox.Text = s.HvpCount.ToString();
+            _hvpCount = s.HvpCount;
+
+            // Show/hide PCA view mode
+            PcaViewItem.Visibility = s.ShowPcaView ? Visibility.Visible : Visibility.Collapsed;
+
+            // Enable/disable HVP count controls
+            bool hvpActive = s.UseHvpFilter;
+            HvpCountTextBox.IsEnabled = hvpActive;
+            HvpCountUp.IsEnabled = hvpActive;
+            HvpCountDown.IsEnabled = hvpActive;
+
+            // Restore batch correction state
+            BatchCorrectionCheckBox.IsChecked = s.ApplyBatchCorrection;
+        }
+
+        private DimensionReductionSettings ReadSettingsFromUI()
+        {
+            var s = DimensionReductionSettings.CreateDefaults();
+            s.ZScoreScale = ZScaleCheckBox.IsChecked == true;
+            if (double.TryParse(ClipMaxTextBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double clip))
+                s.ClipMaxValue = Math.Max(1, clip);
+            if (int.TryParse(PcaComponentsTextBox.Text, out int nPca))
+                s.NumPcaComponents = Math.Clamp(nPca, 2, 100);
+            if (int.TryParse(PcsForUmapTextBox.Text, out int nPcsUmap))
+                s.NumPcsForUmap = Math.Clamp(nPcsUmap, 2, 100);
+            if (int.TryParse(UmapNeighborsTextBox.Text, out int neighbors))
+                s.UmapNeighbors = Math.Clamp(neighbors, 2, 200);
+            s.UmapFixedSeed = UmapFixedSeedCheckBox.IsChecked == true;
+            s.UseGuidedEmbedding = GuidedEmbeddingCheckBox.IsChecked == true;
+            s.GuidedWeight = GuidedWeightSlider.Value;
+            s.ShowPcaView = ShowPcaViewCheckBox.IsChecked == true;
+            s.UseHvpFilter = UseHvpCheckBox.IsChecked == true;
+            s.ApplyBatchCorrection = BatchCorrectionCheckBox.IsChecked == true;
+            if (int.TryParse(HvpCountTextBox.Text, out int hvpCount))
+                s.HvpCount = Math.Clamp(hvpCount, 10, 5000);
+
+            // Ensure PCs for UMAP doesn't exceed total PCA components
+            if (s.NumPcsForUmap > s.NumPcaComponents)
+                s.NumPcsForUmap = s.NumPcaComponents;
+
+            return s;
+        }
+
+        private void DimRedSettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            DimRedSettingsPopup.IsOpen = !DimRedSettingsPopup.IsOpen;
+        }
+
+        private async void DimRedApplyButton_Click(object sender, RoutedEventArgs e)
+        {
+            _dimRedSettings = ReadSettingsFromUI();
+            _hvpCount = _dimRedSettings.HvpCount;
+            await _dimRedSettings.SaveAsync(_databaseService);
+            DimRedSettingsPopup.IsOpen = false;
+
+            // Show/hide PCA in the view mode dropdown
+            PcaViewItem.Visibility = _dimRedSettings.ShowPcaView ? Visibility.Visible : Visibility.Collapsed;
+
+            // If user hid PCA while it was selected, switch to UMAP
+            if (!_dimRedSettings.ShowPcaView && ViewModeComboBox.SelectedItem == PcaViewItem)
+                ViewModeComboBox.SelectedIndex = 0; // PeptideTic
+
+            if (_currentData != null)
+                RefreshChart();
+        }
+
+        private void DimRedResetButton_Click(object sender, RoutedEventArgs e)
+        {
+            ApplySettingsToUI(DimensionReductionSettings.CreateDefaults());
+        }
+
+        private async void DimRedRefreshButton_Click(object sender, RoutedEventArgs e)
+        {
+            _dimRedSettings = ReadSettingsFromUI();
+            _hvpCount = _dimRedSettings.HvpCount;
+            await _dimRedSettings.SaveAsync(_databaseService);
+            DimRedSettingsPopup.IsOpen = false;
+
+            PcaViewItem.Visibility = _dimRedSettings.ShowPcaView ? Visibility.Visible : Visibility.Collapsed;
+            if (!_dimRedSettings.ShowPcaView && ViewModeComboBox.SelectedItem == PcaViewItem)
+                ViewModeComboBox.SelectedIndex = 0;
+
+            // Force invalidation so caches are rebuilt (useful for random seed)
+            ScatterPlot.InvalidateCaches();
+
+            if (_currentData != null)
+                RefreshChart();
+        }
+
+        private void NumericTextBox_PreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
+        {
+            // Allow digits and decimal point
+            e.Handled = !char.IsDigit(e.Text[0]) && e.Text[0] != '.';
         }
 
         private void SelectedPointsGridPanel_RunInclusionChanged(object sender, RunInclusionChangedEventArgs e)
@@ -636,7 +766,7 @@ namespace SCPBrowser
                 BioConditionCheckboxes.Children.Add(checkBox);
             }
         }
-        private void RefreshChart()
+        private async void RefreshChart()
         {
             if (_currentData == null || _currentData.PeptideCountPerFile.Count == 0)
             {
@@ -723,9 +853,46 @@ namespace SCPBrowser
                 PlateColorMap = GeneratePlateColorMap(),
                 CheckedCellTypes = _checkedCellTypes,
                 CheckedBioConditions = _checkedBioConditions,
-                CheckedPlates = _checkedPlates,
-                HvpResults = GetFilteredHvpResults()
-            };
+                    CheckedPlates = _checkedPlates,
+                    HvpResults = GetFilteredHvpResults(),
+                    DimRedSettings = _dimRedSettings
+                };
+
+            // Run heavy PCA/UMAP on background thread with loading overlay
+            bool willInvalidate = false;
+            if (options.UsePcaView || options.UseUmapView)
+            {
+                // Check if caches will be invalidated by changed settings
+                bool batchChanged = (options.ApplyBatchCorrection) != ScatterPlot.PreviousApplyBatchCorrection;
+                bool dimRedChanged = options.DimRedSettings != null && options.DimRedSettings.DiffersFrom(ScatterPlot.PreviousDimRedSettings);
+                bool dataChanged = _currentData != ScatterPlot.CurrentData;
+                willInvalidate = batchChanged || dimRedChanged || dataChanged;
+            }
+
+            bool needsHeavyCompute = (options.UsePcaView && (ScatterPlot.NeedsPcaCompute || willInvalidate))
+                                  || (options.UseUmapView && (ScatterPlot.NeedsUmapCompute || willInvalidate));
+
+            MainWindow? mainWindow = null;
+            if (needsHeavyCompute)
+            {
+                mainWindow = Window.GetWindow(this) as MainWindow;
+                if (mainWindow != null)
+                {
+                    string computeType = options.UseUmapView ? "UMAP" : "PCA";
+                    if (willInvalidate && !ScatterPlot.NeedsPcaCompute)
+                        mainWindow.LoadingOverlay.SetMessage($"Recomputing {computeType}");
+                    else
+                        mainWindow.LoadingOverlay.SetMessage($"Computing {computeType}");
+                    mainWindow.LoadingOverlay.SetProgress("This may take a moment...");
+                    mainWindow.LoadingOverlay.Show();
+                    await Task.Delay(50); // Let UI render the overlay
+                }
+
+                // Precompute on background thread — caches will be filled when UpdatePlot runs
+                await ScatterPlot.PrecomputeIfNeededAsync(_currentData, options);
+
+                mainWindow?.LoadingOverlay.Hide();
+            }
 
             ScatterPlot.UpdatePlot(_currentData, options);
             UpdatePlotHeader(_currentData.PeptideCountPerFile.Count, options);
@@ -787,7 +954,7 @@ namespace SCPBrowser
                 return _hvpResults;
             }
 
-            if (UseHvpCheckBox.IsChecked == true)
+            if (_dimRedSettings != null && _dimRedSettings.UseHvpFilter)
             {
                 // Return only top N proteins by VarianceStandardized
                 return _hvpResults
@@ -813,25 +980,42 @@ namespace SCPBrowser
 
         private void UpdatePlotHeader(int fileCount, ScatterPlotOptions options)
         {
-            if (options.UseCellTypeColoring && _cellTypePredictions != null)
+            string baseHeader;
+
+            if (options.UsePcaView)
+            {
+                baseHeader = "PCA - Principal Component Analysis";
+            }
+            else if (options.UseUmapView)
+            {
+                baseHeader = "UMAP - Uniform Manifold Approximation and Projection";
+                var purity = ScatterPlot.LabelPurity;
+                if (purity.HasValue)
+                    baseHeader += $"  |  Label purity: {purity.Value:F2}";
+                if (options.DimRedSettings?.UseGuidedEmbedding == true)
+                    baseHeader += "  [guided]";
+            }
+            else if (options.UseCellTypeColoring && _cellTypePredictions != null)
             {
                 int predictedCount = _cellTypePredictions.Count(p => p.Value.TopCellType != null);
-                PlotGroupBoxHeader.Text = $"Peptides vs TIC ({fileCount} files, {predictedCount} with cell type predictions)";
+                baseHeader = $"Peptides vs TIC ({fileCount} files, {predictedCount} with cell type predictions)";
             }
             else if (options.UseBioConditionColoring && _currentData.BiologicalConditionPerFile.Count > 0)
             {
                 int conditionCount = _currentData.BiologicalConditionPerFile.Values.Where(c => !string.IsNullOrEmpty(c)).Distinct().Count();
-                PlotGroupBoxHeader.Text = $"Peptides vs TIC ({fileCount} files, {conditionCount} biological conditions)";
+                baseHeader = $"Peptides vs TIC ({fileCount} files, {conditionCount} biological conditions)";
             }
             else if (options.UsePlateColoring && options.PlateColorMap != null && options.PlateColorMap.Count > 0)
             {
                 int plateCount = options.PlateColorMap.Count;
-                PlotGroupBoxHeader.Text = $"Peptides vs TIC ({fileCount} files, {plateCount} plates)";
+                baseHeader = $"Peptides vs TIC ({fileCount} files, {plateCount} plates)";
             }
             else
             {
-                PlotGroupBoxHeader.Text = $"Peptides vs TIC ({fileCount} files)";
+                baseHeader = $"Peptides vs TIC ({fileCount} files)";
             }
+
+            PlotGroupBoxHeader.Text = baseHeader;
         }
 
         private void LogLogCheckBox_Changed(object sender, RoutedEventArgs e)
@@ -967,8 +1151,15 @@ namespace SCPBrowser
             SelectionChangedForBioTessera?.Invoke(this, EventArgs.Empty);
         }
 
-        private void BatchCorrectionCheckBox_Changed(object sender, RoutedEventArgs e)
+        private async void BatchCorrectionCheckBox_Changed(object sender, RoutedEventArgs e)
         {
+            // Persist batch correction state
+            if (_dimRedSettings != null)
+            {
+                _dimRedSettings.ApplyBatchCorrection = BatchCorrectionCheckBox.IsChecked == true;
+                await _dimRedSettings.SaveAsync(_databaseService);
+            }
+
             LogLogCheckBox_Changed(sender, e);
         }
 
@@ -1099,15 +1290,10 @@ namespace SCPBrowser
         {
             bool isChecked = UseHvpCheckBox.IsChecked == true;
 
-            // Enable/disable the count controls
+            // Enable/disable the count controls in the popup
             HvpCountTextBox.IsEnabled = isChecked;
             HvpCountUp.IsEnabled = isChecked;
             HvpCountDown.IsEnabled = isChecked;
-
-            if (_currentData != null)
-            {
-                RefreshChart();
-            }
         }
 
         private void HvpCountTextBox_PreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
@@ -1142,11 +1328,6 @@ namespace SCPBrowser
             {
                 _hvpCount = Math.Max(10, Math.Min(5000, parsed));
                 HvpCountTextBox.Text = _hvpCount.ToString();
-
-                if (_currentData != null && UseHvpCheckBox.IsChecked == true)
-                {
-                    RefreshChart();
-                }
             }
             else
             {
@@ -1168,11 +1349,6 @@ namespace SCPBrowser
         {
             _hvpCount = Math.Clamp(_hvpCount + delta, 10, 5000);
             HvpCountTextBox.Text = _hvpCount.ToString();
-
-            if (_currentData != null && UseHvpCheckBox.IsChecked == true)
-            {
-                RefreshChart();
-            }
         }
 
         private void ExportDiagnosticsButton_Click(object sender, RoutedEventArgs e)

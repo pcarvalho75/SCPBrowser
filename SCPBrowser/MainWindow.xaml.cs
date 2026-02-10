@@ -827,6 +827,7 @@ namespace SCPBrowser
                 await _dataFilterService.ApplyFiltersAsync(_parquetService);
 
                 // When MainControlTab finishes loading, populate other tabs with the same data
+                PeptideTicTab.SetDatabaseService(_projectDatabaseService);
                 PeptideTicTab.UpdateChart(_dataFilterService.FilteredData);
 
                 // Load raw file ID mapping for exclusion tracking
@@ -1351,11 +1352,6 @@ namespace SCPBrowser
             }
 
             Console.WriteLine($"Loaded {recentProjects.Count} recent projects for display");
-        }
-
-        private void LoadParquet(object sender, RoutedEventArgs e)
-        {
-            MainControlTab.OpenDiannFile();
         }
 
         private async void RecentProject_Click(object sender, RoutedEventArgs e)

@@ -26,7 +26,6 @@
             <MenuItem Header="_File">
                 <MenuItem x:Name="NewProjectMenuItem" Header="_New Project..." Click="NewProject_Click"/>
                 <MenuItem x:Name="OpenProjectMenuItem" Header="_Open Project..." Click="OpenProject_Click"/>
-                <MenuItem Header="_LoadParquet..." Click="LoadParquet"/>
                 <Separator/>
                 <MenuItem Header="_Close Project" 
                   x:Name="CloseProjectMenuItem"

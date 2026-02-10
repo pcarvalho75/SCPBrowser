@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -63,6 +63,11 @@ namespace SCPBrowser
 
                 ShowStatusMessage("Settings reset to defaults (click Save to apply)", false);
             }
+        }
+
+        private void Close_Click(object sender, RoutedEventArgs e)
+        {
+            this.Visibility = Visibility.Collapsed;
         }
 
         private void ShowStatusMessage(string message, bool isSuccess)

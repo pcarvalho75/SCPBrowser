@@ -187,9 +187,16 @@ namespace SCPBrowser
             var cellTypes = _database.CellTypeProfiles.Keys.OrderBy(ct => ct).ToList();
             var colorMap = new Dictionary<string, System.Windows.Media.Color>();
 
+            // Curated hues that avoid yellow (poor contrast on white/light backgrounds).
+            // Hue 60° (yellow) is replaced by 25° (orange).
             for (int i = 0; i < cellTypes.Count; i++)
             {
                 var hue = (i * 360.0 / cellTypes.Count) % 360;
+
+                // Shift yellow range (45–75°) to dark purple (~280°)
+                if (hue >= 45 && hue <= 75)
+                    hue = 280;
+
                 var color = ColorFromHSV(hue, 0.7, 0.9);
                 colorMap[cellTypes[i]] = color;
             }

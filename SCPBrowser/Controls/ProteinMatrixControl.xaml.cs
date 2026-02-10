@@ -558,6 +558,7 @@ namespace SCPBrowser
                 }
             }
 
+            SearchTextBox.Text = string.Empty;
             RefreshMatrix();
             ContaminantsUpdated?.Invoke(this, EventArgs.Empty);
         }

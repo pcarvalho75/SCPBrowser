@@ -1,9 +1,11 @@
 using PCANipals;
 using SCPBrowser.GOTools;
+using SCPBrowser.Models;
 using SCPBrowser.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -46,8 +48,11 @@ namespace SCPBrowser
         // Batch effect correction
         public bool ApplyBatchCorrection { get; set; } = false;
 
-        public Dictionary<string, int> BatchLabelPerFile { get; set; }
-    }
+            public Dictionary<string, int> BatchLabelPerFile { get; set; }
+
+            // Dimensionality reduction settings
+            public DimensionReductionSettings? DimRedSettings { get; set; }
+        }
 
     public class PlotSelectionChangedEventArgs : EventArgs
     {
@@ -69,13 +74,32 @@ namespace SCPBrowser
         private double[] _pcaVarianceExplained;
         private List<string> _pcaProteinNames;
         private float[][] _umapResult;
+        private double? _labelPurity;
         private SelectionManager _selectionManager;
         private bool _isRefreshing = false;
+        private DimensionReductionSettings? _previousDimRedSettings;
         private const double HoverTolerance = 12;
         private bool _suppressSelectionEvents = false;
         public event EventHandler<PlotSelectionChangedEventArgs> SelectionChanged;
         public event EventHandler<PointInteractionEventArgs> PointHovered;
         public event EventHandler<PointInteractionEventArgs> PointClicked;
+        public double? LabelPurity => _labelPurity;
+        public bool NeedsPcaCompute => _pcaResult == null;
+        public bool NeedsUmapCompute => _umapResult == null;
+        public bool PreviousApplyBatchCorrection => _previousApplyBatchCorrection;
+        public DimensionReductionSettings? PreviousDimRedSettings => _previousDimRedSettings;
+        public ProteomicsData CurrentData => _currentData;
+
+        /// <summary>
+        /// Force-clears PCA/UMAP caches so the next UpdatePlot recomputes from scratch.
+        /// </summary>
+        public void InvalidateCaches()
+        {
+            _pcaResult = null;
+            _pcaProteinNames = null;
+            _umapResult = null;
+            _labelPurity = null;
+        }
         private bool _previousApplyBatchCorrection = false;
         private HashSet<string> _hvpProteinIds;
         private Dictionary<string, int> _plateMappingPerFile;
@@ -148,6 +172,61 @@ namespace SCPBrowser
             }
         }
 
+        /// <summary>
+        /// Runs PCA/UMAP computation on a background thread so the UI stays responsive.
+        /// Call this before UpdatePlot when heavy compute is expected.
+        /// </summary>
+        public async Task PrecomputeIfNeededAsync(ProteomicsData data, ScatterPlotOptions options)
+        {
+            if (data == null || data.PeptideCountPerFile.Count == 0)
+                return;
+
+            // Mirror the cache invalidation logic from UpdatePlot
+            HashSet<string> newHvpIds = null;
+            if (options?.HvpResults != null && options.HvpResults.Count > 0)
+            {
+                newHvpIds = new HashSet<string>(
+                    options.HvpResults
+                        .Where(h => h.IsHighlyVariable)
+                        .Select(h => h.ProteinId));
+            }
+
+            bool hvpChanged = !HvpSetsEqual(_hvpProteinIds, newHvpIds);
+            bool batchCorrectionChanged = (options?.ApplyBatchCorrection ?? false) != _previousApplyBatchCorrection;
+            var currentDimRedSettings = options?.DimRedSettings;
+            bool dimRedSettingsChanged = currentDimRedSettings != null &&
+                (currentDimRedSettings.DiffersFrom(_previousDimRedSettings));
+
+            if (_currentData != data || hvpChanged || batchCorrectionChanged || dimRedSettingsChanged)
+            {
+                _pcaResult = null;
+                _pcaProteinNames = null;
+                _umapResult = null;
+                _labelPurity = null;
+            }
+
+            // Update tracking fields so UpdatePlot won't re-invalidate
+            _hvpProteinIds = newHvpIds;
+            _previousApplyBatchCorrection = options?.ApplyBatchCorrection ?? false;
+            _previousDimRedSettings = currentDimRedSettings?.Clone();
+            _currentData = data;
+            _currentOptions = options;
+
+            bool needsPca = (options.UsePcaView || options.UseUmapView) && _pcaResult == null;
+            bool needsUmap = options.UseUmapView && _umapResult == null;
+
+            if (needsPca || needsUmap)
+            {
+                await Task.Run(() =>
+                {
+                    if (needsPca)
+                        ComputePca(data);
+                    if (needsUmap)
+                        ComputeUmap(data);
+                });
+            }
+        }
+
         public void UpdatePlot(ProteomicsData data, ScatterPlotOptions options)
         {
             if (_isRefreshing)
@@ -170,15 +249,19 @@ namespace SCPBrowser
                             .Select(h => h.ProteinId));
                 }
 
-                // Clear PCA/UMAP if data changed OR if HVP set changed OR if batch correction toggled
+                // Clear PCA/UMAP if data changed OR if HVP set changed OR if batch correction toggled OR if dim red settings changed
                 bool hvpChanged = !HvpSetsEqual(_hvpProteinIds, newHvpIds);
                 bool batchCorrectionChanged = (options?.ApplyBatchCorrection ?? false) != _previousApplyBatchCorrection;
+                var currentDimRedSettings = options?.DimRedSettings;
+                bool dimRedSettingsChanged = currentDimRedSettings != null && 
+                    (currentDimRedSettings.DiffersFrom(_previousDimRedSettings));
 
-                if (_currentData != data || hvpChanged || batchCorrectionChanged)
+                if (_currentData != data || hvpChanged || batchCorrectionChanged || dimRedSettingsChanged)
                 {
                     _pcaResult = null;
                     _pcaProteinNames = null;
                     _umapResult = null;
+                    _labelPurity = null;
 
                     if (hvpChanged)
                     {
@@ -188,10 +271,15 @@ namespace SCPBrowser
                     {
                         Console.WriteLine($"Batch correction changed: {_previousApplyBatchCorrection} -> {options?.ApplyBatchCorrection ?? false}");
                     }
+                    if (dimRedSettingsChanged)
+                    {
+                        Console.WriteLine("DimRed settings changed, invalidating PCA/UMAP caches");
+                    }
                 }
 
                 _hvpProteinIds = newHvpIds;
                 _previousApplyBatchCorrection = options?.ApplyBatchCorrection ?? false;
+                _previousDimRedSettings = currentDimRedSettings?.Clone();
 
                 _currentData = data;
                 _currentOptions = options;
@@ -264,49 +352,40 @@ namespace SCPBrowser
             if (_pcaResult == null || _pcaProteinNames == null)
                 return null;
 
-            return (_pcaProteinNames, _pcaResult.Loadings, _pcaResult.VarianceExplained);
-        }
-
-        private void ComputeUmap(ProteomicsData data)
-        {
-            if (data == null || data.ProteinQuantMatrix.Count == 0)
-            {
-                _umapResult = null;
-                return;
+                return (_pcaProteinNames, _pcaResult.Loadings, _pcaResult.VarianceExplained);
             }
 
-            try
+            /// <summary>
+            /// Builds the preprocessed matrix for dimensionality reduction.
+            /// Pipeline: select proteins (HVP or all) → log2 transform → ComBat → z-score scaling → clip.
+            /// </summary>
+            private double[,] BuildPreprocessedMatrix(
+                ProteomicsData data,
+                DimensionReductionSettings settings,
+                out List<string> proteins,
+                out List<string> rawFiles)
             {
-                var rawFiles = data.RawFileNames.ToList();
+                rawFiles = data.RawFileNames.ToList();
 
                 // Determine which proteins to use - HVPs if available, otherwise all
-                List<string> proteins;
                 if (_hvpProteinIds != null && _hvpProteinIds.Count > 0)
                 {
                     proteins = data.ProteinQuantMatrix.Keys
                         .Where(p => _hvpProteinIds.Contains(p))
                         .ToList();
-                    Console.WriteLine($"UMAP: Using {proteins.Count} highly variable proteins");
+                    Console.WriteLine($"DimRed: Using {proteins.Count} highly variable proteins");
                 }
                 else
                 {
                     proteins = data.ProteinQuantMatrix.Keys.ToList();
-                    Console.WriteLine($"UMAP: Using all {proteins.Count} proteins (no HVP filter)");
+                    Console.WriteLine($"DimRed: Using all {proteins.Count} proteins (no HVP filter)");
                 }
 
                 int nSamples = rawFiles.Count;
                 int nProteins = proteins.Count;
 
-                if (nSamples < 15 || nProteins < 2)
-                {
-                    Console.WriteLine($"UMAP requires at least 15 samples, got {nSamples}");
-                    _umapResult = null;
-                    return;
-                }
-
-                // Build matrix as double[,] first (for potential ComBat correction)
+                // Build matrix: rows = samples, columns = proteins (log2 transformed)
                 double[,] matrix = new double[nSamples, nProteins];
-
                 for (int i = 0; i < nSamples; i++)
                 {
                     string rawFile = rawFiles[i];
@@ -314,13 +393,9 @@ namespace SCPBrowser
                     {
                         string protein = proteins[j];
                         if (data.ProteinQuantMatrix[protein].TryGetValue(rawFile, out double value) && value > 0)
-                        {
                             matrix[i, j] = Math.Log2(value + 1);
-                        }
                         else
-                        {
-                            matrix[i, j] = 0; // Impute missing as 0 for ComBat compatibility
-                        }
+                            matrix[i, j] = 0;
                     }
                 }
 
@@ -334,60 +409,275 @@ namespace SCPBrowser
                     var uniqueBatches = batchLabels.Distinct().Count();
                     if (uniqueBatches >= 2)
                     {
-                        Console.WriteLine($"UMAP: Applying ComBat batch correction ({uniqueBatches} batches)");
+                        Console.WriteLine($"DimRed: Applying ComBat batch correction ({uniqueBatches} batches)");
                         var combatService = new ComBatService();
                         var result = combatService.Apply(matrix, batchLabels);
 
                         if (result.Success)
                         {
                             matrix = result.CorrectedData;
-                            Console.WriteLine($"UMAP: ComBat correction applied successfully");
+                            Console.WriteLine($"DimRed: ComBat correction applied successfully");
                         }
                         else
                         {
-                            Console.WriteLine($"UMAP: ComBat correction failed - {result.ErrorMessage}");
+                            Console.WriteLine($"DimRed: ComBat correction failed - {result.ErrorMessage}");
                         }
                     }
-                    else
-                    {
-                        Console.WriteLine($"UMAP: Skipping batch correction (only {uniqueBatches} batch)");
-                    }
                 }
 
-                // Convert to float[][] for UMAP
-                float[][] umapMatrix = new float[nSamples][];
-                for (int i = 0; i < nSamples; i++)
+                // Z-score scaling per protein column (if enabled)
+                if (settings != null && settings.ZScoreScale)
                 {
-                    umapMatrix[i] = new float[nProteins];
+                    double clipMax = settings.ClipMaxValue;
                     for (int j = 0; j < nProteins; j++)
                     {
-                        umapMatrix[i][j] = (float)matrix[i, j];
+                        // Compute mean
+                        double sum = 0;
+                        for (int i = 0; i < nSamples; i++)
+                            sum += matrix[i, j];
+                        double mean = sum / nSamples;
+
+                        // Compute std dev
+                        double sumSq = 0;
+                        for (int i = 0; i < nSamples; i++)
+                        {
+                            double diff = matrix[i, j] - mean;
+                            sumSq += diff * diff;
+                        }
+                        double std = Math.Sqrt(sumSq / nSamples);
+
+                        // Scale and clip
+                        if (std > 1e-12)
+                        {
+                            for (int i = 0; i < nSamples; i++)
+                            {
+                                double scaled = (matrix[i, j] - mean) / std;
+                                matrix[i, j] = Math.Clamp(scaled, -clipMax, clipMax);
+                            }
+                        }
+                        else
+                        {
+                            // Zero variance — set to 0
+                            for (int i = 0; i < nSamples; i++)
+                                matrix[i, j] = 0;
+                        }
                     }
+                    Console.WriteLine($"DimRed: Z-score scaling applied (clip ±{clipMax})");
                 }
 
-                // Run UMAP
-                var umap = new Umap(
-                    distance: Umap.DistanceFunctions.Euclidean,
-                    dimensions: 2,
-                    numberOfNeighbors: Math.Min(15, nSamples - 1)
-                );
-
-                int epochs = umap.InitializeFit(umapMatrix);
-                for (int i = 0; i < epochs; i++)
-                {
-                    umap.Step();
-                }
-
-                _umapResult = umap.GetEmbedding();
+                return matrix;
             }
-            catch (Exception ex)
+
+            private void ComputeUmap(ProteomicsData data)
             {
-                Console.WriteLine($"UMAP computation failed: {ex.Message}");
-                _umapResult = null;
-            }
-        }
+                if (data == null || data.ProteinQuantMatrix.Count == 0)
+                {
+                    _umapResult = null;
+                    return;
+                }
 
-        private void DrawUmapChart(ProteomicsData data, ScatterPlotOptions options, List<string> rawFiles, double canvasWidth, double canvasHeight)
+                try
+                {
+                    var settings = _currentOptions?.DimRedSettings ?? DimensionReductionSettings.CreateDefaults();
+
+                    // Ensure PCA is computed first — UMAP runs on PCA coordinates
+                    if (_pcaResult == null)
+                    {
+                        Console.WriteLine("UMAP: PCA not yet computed, triggering PCA first...");
+                        ComputePca(data);
+                    }
+
+                    if (_pcaResult == null)
+                    {
+                        Console.WriteLine("UMAP: PCA computation failed, cannot proceed.");
+                        _umapResult = null;
+                        return;
+                    }
+
+                    int nSamples = _pcaResult.Scores.GetLength(0);
+                    int availablePCs = _pcaResult.Scores.GetLength(1);
+                    int nPcsToUse = Math.Min(settings.NumPcsForUmap, availablePCs);
+
+                    if (nSamples < 15)
+                    {
+                        Console.WriteLine($"UMAP requires at least 15 samples, got {nSamples}");
+                        _umapResult = null;
+                        return;
+                    }
+
+                    Console.WriteLine($"UMAP: Using {nPcsToUse} PCs from {availablePCs} available");
+
+                    // Build UMAP input from PCA scores
+                    int nDimensions = nPcsToUse;
+
+                    // Guided embedding: append weighted one-hot cell type columns
+                    List<string> cellTypeLabels = null;
+                    string[] uniqueTypes = null;
+                    if (settings.UseGuidedEmbedding &&
+                        _currentOptions?.CellTypePredictions != null &&
+                        _currentOptions.CellTypePredictions.Count > 0)
+                    {
+                        var rawFiles = data.RawFileNames.ToList();
+                        cellTypeLabels = new List<string>(nSamples);
+                        for (int i = 0; i < nSamples; i++)
+                        {
+                            string label = null;
+                            if (_currentOptions.CellTypePredictions.TryGetValue(rawFiles[i], out var pred))
+                                label = pred.TopCellType;
+                            cellTypeLabels.Add(label);
+                        }
+
+                        uniqueTypes = cellTypeLabels
+                            .Where(l => !string.IsNullOrEmpty(l))
+                            .Distinct()
+                            .OrderBy(t => t)
+                            .ToArray();
+
+                        if (uniqueTypes.Length >= 2)
+                        {
+                            nDimensions += uniqueTypes.Length;
+                            Console.WriteLine($"UMAP: Guided embedding with {uniqueTypes.Length} cell types, weight={settings.GuidedWeight:F2}");
+                        }
+                        else
+                        {
+                            cellTypeLabels = null;
+                            Console.WriteLine("UMAP: Guided embedding skipped (fewer than 2 cell types)");
+                        }
+                    }
+
+                    // Build float[][] matrix: PCA scores + optional one-hot
+                    float[][] umapMatrix = new float[nSamples][];
+                    for (int i = 0; i < nSamples; i++)
+                    {
+                        umapMatrix[i] = new float[nDimensions];
+
+                        // PCA scores
+                        for (int j = 0; j < nPcsToUse; j++)
+                            umapMatrix[i][j] = (float)_pcaResult.Scores[i, j];
+
+                        // Weighted one-hot cell type columns
+                        if (cellTypeLabels != null && uniqueTypes != null)
+                        {
+                            string label = cellTypeLabels[i];
+                            if (!string.IsNullOrEmpty(label))
+                            {
+                                int typeIdx = Array.IndexOf(uniqueTypes, label);
+                                if (typeIdx >= 0)
+                                    umapMatrix[i][nPcsToUse + typeIdx] = (float)settings.GuidedWeight;
+                            }
+                            // Unlabeled samples get zeros (neutral)
+                        }
+                    }
+
+                    // Run UMAP
+                    int neighbors = Math.Min(settings.UmapNeighbors, nSamples - 1);
+                    var umap = new Umap(
+                        distance: Umap.DistanceFunctions.Euclidean,
+                        dimensions: 2,
+                        numberOfNeighbors: neighbors,
+                        random: settings.UmapFixedSeed ? new DefaultRandomGenerator(42) : new DefaultRandomGenerator()
+                    );
+
+                    int epochs = umap.InitializeFit(umapMatrix);
+                    for (int i = 0; i < epochs; i++)
+                        umap.Step();
+
+                        _umapResult = umap.GetEmbedding();
+
+                            // Compute label purity in unsupervised PCA space
+                            _labelPurity = null;
+                            if (_currentOptions?.CellTypePredictions != null && _currentOptions.CellTypePredictions.Count > 0)
+                            {
+                                var rawFiles = data.RawFileNames.ToList();
+                                _labelPurity = ComputeLabelPurity(rawFiles, nPcsToUse, neighbors);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"UMAP computation failed: {ex.Message}");
+                            _umapResult = null;
+                            _labelPurity = null;
+                        }
+                        }
+
+                    /// <summary>
+                    /// Computes kNN label purity in unsupervised PCA space.
+                    /// For each labeled sample, checks how many of its k nearest neighbors (in PCA space)
+                    /// share the same cell type label. Returns average purity [0..1].
+                    /// This measures whether labels are consistent with data structure, independent of UMAP.
+                    /// </summary>
+                    private double? ComputeLabelPurity(List<string> rawFiles, int nPcs, int k)
+                    {
+                        try
+                        {
+                            if (_pcaResult == null || _currentOptions?.CellTypePredictions == null)
+                                return null;
+
+                            int nSamples = _pcaResult.Scores.GetLength(0);
+                            int availablePCs = _pcaResult.Scores.GetLength(1);
+                            int nPcsToUse = Math.Min(nPcs, availablePCs);
+
+                            // Build label array
+                            string[] labels = new string[nSamples];
+                            int labeledCount = 0;
+                            for (int i = 0; i < nSamples; i++)
+                            {
+                                if (_currentOptions.CellTypePredictions.TryGetValue(rawFiles[i], out var pred)
+                                    && !string.IsNullOrEmpty(pred.TopCellType))
+                                {
+                                    labels[i] = pred.TopCellType;
+                                    labeledCount++;
+                                }
+                            }
+
+                            if (labeledCount < k + 1)
+                            {
+                                Console.WriteLine($"Label purity: not enough labeled samples ({labeledCount}) for k={k}");
+                                return null;
+                            }
+
+                            // Compute pairwise squared Euclidean distances in PCA space
+                            int kActual = Math.Min(k, labeledCount - 1);
+                            double totalPurity = 0;
+                            int evaluated = 0;
+
+                            for (int i = 0; i < nSamples; i++)
+                            {
+                                if (labels[i] == null) continue;
+
+                                // Compute distances from i to all other labeled samples
+                                var distances = new List<(int idx, double dist)>();
+                                for (int j = 0; j < nSamples; j++)
+                                {
+                                    if (i == j || labels[j] == null) continue;
+                                    double dist = 0;
+                                    for (int p = 0; p < nPcsToUse; p++)
+                                    {
+                                        double d = _pcaResult.Scores[i, p] - _pcaResult.Scores[j, p];
+                                        dist += d * d;
+                                    }
+                                    distances.Add((j, dist));
+                                }
+
+                                // Get k nearest neighbors
+                                var neighbors = distances.OrderBy(d => d.dist).Take(kActual).ToList();
+                                int sameLabel = neighbors.Count(n => labels[n.idx] == labels[i]);
+                                totalPurity += (double)sameLabel / kActual;
+                                evaluated++;
+                            }
+
+                            double purity = evaluated > 0 ? totalPurity / evaluated : 0;
+                            Console.WriteLine($"Label purity (kNN k={kActual} in PCA space): {purity:F3} ({evaluated} labeled samples)");
+                            return purity;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Label purity computation failed: {ex.Message}");
+                            return null;
+                        }
+                    }
+
+                    private void DrawUmapChart(ProteomicsData data, ScatterPlotOptions options, List<string> rawFiles, double canvasWidth, double canvasHeight)
         {
             const double MarginLeft = 60;
             const double MarginRight = 20;
@@ -605,22 +895,8 @@ namespace SCPBrowser
 
             try
             {
-                var rawFiles = data.RawFileNames.ToList();
-
-                // Determine which proteins to use - HVPs if available, otherwise all
-                List<string> proteins;
-                if (_hvpProteinIds != null && _hvpProteinIds.Count > 0)
-                {
-                    proteins = data.ProteinQuantMatrix.Keys
-                        .Where(p => _hvpProteinIds.Contains(p))
-                        .ToList();
-                    Console.WriteLine($"PCA: Using {proteins.Count} highly variable proteins");
-                }
-                else
-                {
-                    proteins = data.ProteinQuantMatrix.Keys.ToList();
-                    Console.WriteLine($"PCA: Using all {proteins.Count} proteins (no HVP filter)");
-                }
+                var settings = _currentOptions?.DimRedSettings ?? DimensionReductionSettings.CreateDefaults();
+                var matrix = BuildPreprocessedMatrix(data, settings, out var proteins, out var rawFiles);
 
                 int nSamples = rawFiles.Count;
                 int nProteins = proteins.Count;
@@ -632,60 +908,13 @@ namespace SCPBrowser
                     return;
                 }
 
-                // Build matrix: rows = samples (raw files), columns = proteins
-                double[,] matrix = new double[nSamples, nProteins];
+                // Run NIPALS PCA - compute N components (capped by matrix dimensions)
+                int maxComponents = Math.Min(settings.NumPcaComponents, Math.Min(nSamples - 1, nProteins - 1));
+                Console.WriteLine($"PCA: Computing {maxComponents} components (requested {settings.NumPcaComponents}, matrix {nSamples}x{nProteins})");
 
-                for (int i = 0; i < nSamples; i++)
-                {
-                    string rawFile = rawFiles[i];
-                    for (int j = 0; j < nProteins; j++)
-                    {
-                        string protein = proteins[j];
-                        if (data.ProteinQuantMatrix[protein].TryGetValue(rawFile, out double value) && value > 0)
-                        {
-                            matrix[i, j] = Math.Log2(value + 1);
-                        }
-                        else
-                        {
-                            matrix[i, j] = 0; // Impute missing as 0 for ComBat compatibility
-                        }
-                    }
-                }
-
-                // Apply batch correction if enabled
-                if (_currentOptions?.ApplyBatchCorrection == true && _currentOptions.BatchLabelPerFile != null)
-                {
-                    var batchLabels = rawFiles
-                        .Select(rf => _currentOptions.BatchLabelPerFile.TryGetValue(rf, out int plateId) ? plateId : 0)
-                        .ToList();
-
-                    var uniqueBatches = batchLabels.Distinct().Count();
-                    if (uniqueBatches >= 2)
-                    {
-                        Console.WriteLine($"PCA: Applying ComBat batch correction ({uniqueBatches} batches)");
-                        var combatService = new ComBatService();
-                        var result = combatService.Apply(matrix, batchLabels);
-
-                        if (result.Success)
-                        {
-                            matrix = result.CorrectedData;
-                            Console.WriteLine($"PCA: ComBat correction applied successfully");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"PCA: ComBat correction failed - {result.ErrorMessage}");
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"PCA: Skipping batch correction (only {uniqueBatches} batch)");
-                    }
-                }
-
-                // Run NIPALS PCA
                 _pcaResult = NipalsAlgorithm.Compute(
                     matrix,
-                    nComponents: 2,
+                    nComponents: maxComponents,
                     maxIterations: 500,
                     tolerance: 1e-9,
                     center: true,

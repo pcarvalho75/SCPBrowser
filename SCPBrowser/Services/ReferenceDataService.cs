@@ -500,8 +500,130 @@ namespace SCPBrowser.Services
                 progress?.ReportMessage($"Database loaded: {database.TotalCellTypes} cell types, {database.TotalCells:N0} cells, {database.TotalGenes:N0} genes");
             }
 
-            return database;
-        }
+                        return database;
+                    }
 
-    }
-}
+                    // ==================== PROTEOMIC REFERENCE FROM PARQUET ====================
+
+                    /// <summary>
+                    /// Builds CellTypeProfiles from a loaded parquet dataset and a run→cellType label map.
+                    /// Uses Log2(intensity + 1) normalization, consistent with the PCA pipeline.
+                    /// Gene names are extracted by stripping _HUMAN/_MOUSE suffixes from ProteinToGeneMap.
+                    /// </summary>
+                    public ParsedTranscriptomicData BuildProteomicReference(
+                        ProteomicsData proteomicsData,
+                        Dictionary<string, string> runCellTypeMap)
+                    {
+                        // Step 1: For each run, extract gene → log2(intensity+1) 
+                        var runGeneAbundances = new Dictionary<string, Dictionary<string, double>>();
+
+                        foreach (var runName in runCellTypeMap.Keys)
+                        {
+                            var abundances = new Dictionary<string, double>();
+
+                            foreach (var proteinGroup in proteomicsData.ProteinQuantMatrix.Keys)
+                            {
+                                if (!proteomicsData.ProteinQuantMatrix[proteinGroup].TryGetValue(runName, out double intensity))
+                                    continue;
+                                if (intensity <= 0)
+                                    continue;
+
+                                double logValue = Math.Log2(intensity + 1);
+
+                                var geneNames = GeneNameUtility.ExtractGeneNames(proteomicsData, proteinGroup);
+                                foreach (var geneName in geneNames)
+                                {
+                                    if (!abundances.ContainsKey(geneName))
+                                        abundances[geneName] = logValue;
+                                    else
+                                        abundances[geneName] = Math.Max(abundances[geneName], logValue);
+                                }
+                            }
+
+                            runGeneAbundances[runName] = abundances;
+                        }
+
+                        // Step 2: Collect all gene names across all runs
+                        var allGenes = runGeneAbundances.Values
+                            .SelectMany(d => d.Keys)
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+
+                        // Step 3: Group runs by cell type
+                        var cellTypeGroups = runCellTypeMap
+                            .GroupBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase)
+                            .ToDictionary(g => g.Key, g => g.Select(kv => kv.Key).ToList());
+
+                        // Step 4: Build profiles
+                        var profiles = new List<CellTypeProfile>();
+                        var metadata = new List<CellTypeMetadata>();
+
+                        foreach (var kvp in cellTypeGroups.OrderBy(g => g.Key))
+                        {
+                            string cellType = kvp.Key;
+                            var runs = kvp.Value;
+
+                            var medianDict = new Dictionary<string, double>();
+                            var meanDict = new Dictionary<string, double>();
+                            var pctDict = new Dictionary<string, double>();
+
+                            foreach (var gene in allGenes)
+                            {
+                                var detectedValues = new List<double>();
+                                int totalRuns = runs.Count;
+
+                                foreach (var run in runs)
+                                {
+                                    if (runGeneAbundances[run].TryGetValue(gene, out double val))
+                                        detectedValues.Add(val);
+                                }
+
+                                // Skip genes not detected in any run of this cell type
+                                // (matches TSV parser behavior — only store expressed genes)
+                                if (detectedValues.Count == 0)
+                                    continue;
+
+                                double percentExpressing = (detectedValues.Count / (double)totalRuns) * 100.0;
+                                pctDict[gene] = percentExpressing;
+
+                                detectedValues.Sort();
+                                double median = detectedValues.Count % 2 == 0
+                                    ? (detectedValues[detectedValues.Count / 2 - 1] + detectedValues[detectedValues.Count / 2]) / 2.0
+                                    : detectedValues[detectedValues.Count / 2];
+                                double mean = detectedValues.Average();
+
+                                medianDict[gene] = median;
+                                meanDict[gene] = mean;
+                            }
+
+                            profiles.Add(new CellTypeProfile
+                            {
+                                CellType = cellType,
+                                CellCount = runs.Count,
+                                MedianExpression = medianDict,
+                                MeanExpression = meanDict,
+                                PercentExpressing = pctDict
+                            });
+
+                            metadata.Add(new CellTypeMetadata
+                            {
+                                CellType = cellType,
+                                CellCount = runs.Count,
+                                GenesExpressed = medianDict.Count,
+                                BatchInfo = "parquet",
+                                AgeRange = "",
+                                PriorWeight = 1.0
+                            });
+                        }
+
+                        return new ParsedTranscriptomicData
+                        {
+                            CellTypeProfiles = profiles,
+                            CellTypeMetadata = metadata
+                        };
+                    }
+
+
+
+                }
+            }

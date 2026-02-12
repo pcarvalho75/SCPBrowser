@@ -57,7 +57,8 @@
                   HeadersVisibility="All"
                   SelectionMode="Single"
                   SelectionChanged="SelectedPointsGrid_SelectionChanged"
-                  AlternatingRowBackground="#f9fafb"
+                  LoadingRow="SelectedPointsGrid_LoadingRow"
+                  AlternatingRowBackground="#e8f0fe"
                   RowBackground="White"
                   VirtualizingPanel.IsVirtualizing="True"
                   VirtualizingPanel.VirtualizationMode="Recycling"
@@ -66,6 +67,19 @@
                   EnableColumnVirtualization="True"
                   ScrollViewer.IsDeferredScrollingEnabled="True"
                   ScrollViewer.CanContentScroll="True">
+            <DataGrid.RowHeaderStyle>
+                <Style TargetType="DataGridRowHeader">
+                    <Setter Property="Width" Value="40"/>
+                    <Setter Property="Background" Value="#e2e8f0"/>
+                    <Setter Property="Foreground" Value="#475569"/>
+                    <Setter Property="FontSize" Value="11"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                    <Setter Property="BorderBrush" Value="#cbd5e1"/>
+                    <Setter Property="BorderThickness" Value="0,0,1,0"/>
+                    <Setter Property="Padding" Value="4,0"/>
+                </Style>
+            </DataGrid.RowHeaderStyle>
             <DataGrid.ColumnHeaderStyle>
                 <Style TargetType="DataGridColumnHeader">
                     <Setter Property="Background" Value="#e2e8f0"/>
@@ -86,7 +100,14 @@
                 <DataGridTextColumn Header="TIC" Binding="{Binding TicValue, StringFormat=E2}" Width="100" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Proteins" Binding="{Binding ProteinCount, StringFormat=N0}" Width="80" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Contaminant Ratio" Binding="{Binding ContaminantRatioPercent}" Width="90" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Cell Type" Binding="{Binding CellType}" Width="120" IsReadOnly="True"/>
+                <DataGridTemplateColumn Header="Cell Type" Width="120" IsReadOnly="True">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding CellType}" Foreground="{Binding CellTypeBrush}" 
+                                    FontWeight="SemiBold" VerticalAlignment="Center" Padding="2,0"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Score" Binding="{Binding CompositeScore}" Width="70" IsReadOnly="True"/>
             </DataGrid.Columns>
         </DataGrid>

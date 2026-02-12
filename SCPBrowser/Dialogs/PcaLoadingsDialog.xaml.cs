@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -9,6 +9,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using SCPBrowser.Services;
+using GeneNameExtractor = BioTessera.Utilities.GeneNameExtractor;
 
 namespace SCPBrowser
 {
@@ -231,7 +232,7 @@ namespace SCPBrowser
             else
             {
                 // Default display until UniProt info is fetched
-                ProteinName = ExtractGeneName(protein);
+                ProteinName = GeneNameExtractor.Extract(protein) ?? protein;
                 GeneName = null;
                 Tooltip = $"{protein}\nLoading: {loading:F4}\n\nClick to open in UniProt\n(Fetching details...)";
                 UniProtUrl = null;
@@ -259,7 +260,7 @@ namespace SCPBrowser
             if (entry == null) return;
 
             GeneName = entry.GeneName;
-            ProteinName = entry.GeneName ?? ExtractGeneName(ProteinId);
+            ProteinName = entry.GeneName ?? GeneNameExtractor.Extract(ProteinId) ?? ProteinId;
             UniProtUrl = entry.UniProtUrl;
 
             // Build rich tooltip
@@ -313,26 +314,5 @@ namespace SCPBrowser
             Tooltip = string.Join("\n", tooltipLines);
         }
 
-        private string ExtractGeneName(string proteinId)
-        {
-            if (string.IsNullOrEmpty(proteinId))
-                return proteinId;
-
-            // Handle sp|P36578|RL4_HUMAN format
-            if (proteinId.Contains("|"))
-            {
-                var parts = proteinId.Split('|');
-                if (parts.Length >= 3)
-                    return parts[2].Split('_')[0];
-                if (parts.Length >= 2)
-                    return parts[1];
-            }
-
-            // Handle RPL4_HUMAN format
-            if (proteinId.Contains("_"))
-                return proteinId.Split('_')[0];
-
-            return proteinId;
-        }
     }
 }

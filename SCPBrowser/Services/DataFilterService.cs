@@ -17,6 +17,7 @@ namespace SCPBrowser.Services
         // Data storage
         private ProteomicsData _originalData;
         private ProteomicsData _plateFilteredData;
+        private ProteomicsData _proteinCutoffFilteredData;
         private ProteomicsData _filteredData;
         private Dictionary<string, int> _rawFileToPlateId;
         private List<HvpResult> _hvpResults;
@@ -30,14 +31,22 @@ namespace SCPBrowser.Services
 
         // Filter settings
         private int _proteinCutoff = 800;
+        private double _contaminantRatioCutoff = 1.0; // 0.0–1.0 fraction; 1.0 = no filtering
         private List<int> _selectedPlateIds = new List<int>();
 
         // Public read-only access to data
         public ProteomicsData OriginalData => _originalData;
         public ProteomicsData PlateFilteredData => _plateFilteredData;
+        public ProteomicsData ProteinCutoffFilteredData => _proteinCutoffFilteredData;
         public ProteomicsData FilteredData => _filteredData;
         public Dictionary<string, int> RawFileToPlateId => _rawFileToPlateId;
         public List<HvpResult> HvpResults => _hvpResults;
+
+        /// <summary>
+        /// Runs excluded by the contaminant ratio cutoff.
+        /// These runs are removed from PCA/UMAP/classification but still shown as grey dots on the Explorer scatter.
+        /// </summary>
+        public HashSet<string> ContaminantRatioExcludedRuns { get; private set; } = new HashSet<string>();
 
         // Filter settings properties
         public int ProteinCutoff
@@ -57,6 +66,25 @@ namespace SCPBrowser.Services
         {
             get => _selectedPlateIds;
             set => _selectedPlateIds = value ?? new List<int>();
+        }
+
+        /// <summary>
+        /// Maximum contaminant ratio (0.0–1.0). Runs above this threshold are excluded
+        /// from PCA/UMAP/classification but greyed out on the Explorer scatter.
+        /// Default 1.0 = no filtering.
+        /// </summary>
+        public double ContaminantRatioCutoff
+        {
+            get => _contaminantRatioCutoff;
+            set
+            {
+                double clamped = Math.Clamp(value, 0.0, 1.0);
+                if (Math.Abs(_contaminantRatioCutoff - clamped) > 0.0001)
+                {
+                    _contaminantRatioCutoff = clamped;
+                    Console.WriteLine($"DataFilterService: Contaminant ratio cutoff set to {clamped * 100:F1}%");
+                }
+            }
         }
 
         /// <summary>
@@ -135,12 +163,16 @@ namespace SCPBrowser.Services
             _plateFilteredData = await FilterByPlatesAsync(parquetService, _selectedPlateIds);
 
             // Step 2: Filter by protein cutoff
-            _filteredData = FilterByProteinCutoff(_plateFilteredData, _proteinCutoff);
+            _proteinCutoffFilteredData = FilterByProteinCutoff(_plateFilteredData, _proteinCutoff);
 
-            // Step 3: Remove contaminant proteins from analyses
-            ExcludeContaminants();
+            // Step 3: Filter by contaminant ratio cutoff
+            _filteredData = FilterByContaminantRatio(_proteinCutoffFilteredData);
 
-            // Step 4: Compute HVP on filtered data
+            // Step 4: Remove contaminant proteins from both datasets
+            ExcludeContaminants(_proteinCutoffFilteredData);
+            ExcludeContaminants(_filteredData);
+
+            // Step 5: Compute HVP on filtered data
             ComputeHvpResults();
 
             Console.WriteLine($"DataFilterService: Filters applied - {_filteredData.TotalRawFiles} raw files pass all filters");
@@ -153,22 +185,22 @@ namespace SCPBrowser.Services
         /// Removes contaminant proteins from the filtered ProteinQuantMatrix.
         /// Contaminants are still used for ratio calculations but excluded from PCA, UMAP, classification, etc.
         /// </summary>
-        private void ExcludeContaminants()
+        private void ExcludeContaminants(ProteomicsData data)
         {
-            if (_filteredData == null || _originalData.ContaminantIds == null || _originalData.ContaminantIds.Count == 0)
+            if (data == null || _originalData.ContaminantIds == null || _originalData.ContaminantIds.Count == 0)
                 return;
 
             int removed = 0;
             foreach (var contaminantId in _originalData.ContaminantIds)
             {
-                if (_filteredData.ProteinQuantMatrix.Remove(contaminantId))
+                if (data.ProteinQuantMatrix.Remove(contaminantId))
                     removed++;
             }
 
             if (removed > 0)
             {
-                _filteredData.TotalProteinGroups = _filteredData.ProteinQuantMatrix.Count;
-                Console.WriteLine($"DataFilterService: Excluded {removed} contaminant proteins from analysis");
+                data.TotalProteinGroups = data.ProteinQuantMatrix.Count;
+                Console.WriteLine($"DataFilterService: Excluded {removed} contaminant proteins from {data.TotalRawFiles}-run dataset");
             }
         }
 
@@ -256,6 +288,38 @@ namespace SCPBrowser.Services
         }
 
         /// <summary>
+        /// Filters runs whose contaminant ratio exceeds the cutoff.
+        /// Excluded runs are tracked in ContaminantRatioExcludedRuns so the UI can grey them out.
+        /// Uses TargetProteinRatioPerFile from OriginalData (which stores ratios pre-filtering).
+        /// </summary>
+        private ProteomicsData FilterByContaminantRatio(ProteomicsData data)
+        {
+            ContaminantRatioExcludedRuns.Clear();
+
+            if (data == null || _contaminantRatioCutoff >= 1.0)
+                return data;
+
+            // Use ratios from OriginalData since they're computed before any filtering
+            var ratios = _originalData.TargetProteinRatioPerFile;
+            if (ratios == null || ratios.Count == 0)
+                return data;
+
+            var passingRawFiles = new HashSet<string>();
+            foreach (var rawFile in data.RawFileNames)
+            {
+                double ratio = ratios.TryGetValue(rawFile, out double r) ? r : 0;
+                if (ratio <= _contaminantRatioCutoff)
+                    passingRawFiles.Add(rawFile);
+                else
+                    ContaminantRatioExcludedRuns.Add(rawFile);
+            }
+
+            Console.WriteLine($"DataFilterService: Contaminant ratio filter - {passingRawFiles.Count}/{data.RawFileNames.Count} pass (cutoff {_contaminantRatioCutoff * 100:F1}%, excluded {ContaminantRatioExcludedRuns.Count})");
+
+            return FilterDataByRawFiles(data, passingRawFiles);
+        }
+
+        /// <summary>
         /// Filters proteomics data to only include specific raw files
         /// </summary>
         private ProteomicsData FilterDataByRawFiles(ProteomicsData source, HashSet<string> allowedRawFiles)
@@ -330,12 +394,15 @@ namespace SCPBrowser.Services
         {
             _originalData = null;
             _plateFilteredData = null;
+            _proteinCutoffFilteredData = null;
             _filteredData = null;
             _rawFileToPlateId = null;
             _plateIdToName = null;
             _hvpResults = null;
             _selectedPlateIds = new List<int>();
             _proteinCutoff = 800;
+            _contaminantRatioCutoff = 1.0;
+            ContaminantRatioExcludedRuns.Clear();
         }
     }
 }

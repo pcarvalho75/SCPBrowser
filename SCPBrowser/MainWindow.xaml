@@ -44,10 +44,10 @@
                   Click="ImportFasta_Click"
                   IsEnabled="False"/>
                 <Separator/>
-                <MenuItem Header="_Omic Profile (Transcriptomic)..." 
-                  x:Name="ImportOmicProfileMenuItem"
-                  Click="ImportOmicProfile_Click"
-                  IsEnabled="False"/>
+                <MenuItem Header="_Omic Profile (Transcriptomic / Proteomic)..." 
+                x:Name="ImportOmicProfileMenuItem"
+                Click="ImportOmicProfile_Click"
+                IsEnabled="False"/>
 
                 
             </MenuItem>

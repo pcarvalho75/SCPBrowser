@@ -22,7 +22,7 @@ namespace SCPBrowser.Models
 
         // UMAP
         public int UmapNeighbors { get; set; } = 15;
-        public bool UmapFixedSeed { get; set; } = true;
+        public int UmapSeed { get; set; } = 42;
 
         // Guided Embedding (optional, NOT default)
         public bool UseGuidedEmbedding { get; set; } = false;
@@ -52,7 +52,7 @@ namespace SCPBrowser.Models
             s.NumPcaComponents = await ReadIntAsync(db, "NumPcaComponents", s.NumPcaComponents);
             s.NumPcsForUmap = await ReadIntAsync(db, "NumPcsForUmap", s.NumPcsForUmap);
             s.UmapNeighbors = await ReadIntAsync(db, "UmapNeighbors", s.UmapNeighbors);
-            s.UmapFixedSeed = await ReadBoolAsync(db, "UmapFixedSeed", s.UmapFixedSeed);
+            s.UmapSeed = await ReadIntAsync(db, "UmapSeed", s.UmapSeed);
             s.UseGuidedEmbedding = await ReadBoolAsync(db, "UseGuidedEmbedding", s.UseGuidedEmbedding);
             s.GuidedWeight = await ReadDoubleAsync(db, "GuidedWeight", s.GuidedWeight);
             s.ShowPcaView = await ReadBoolAsync(db, "ShowPcaView", s.ShowPcaView);
@@ -75,7 +75,7 @@ namespace SCPBrowser.Models
             await db.SetSettingAsync(KeyPrefix + "NumPcaComponents", NumPcaComponents.ToString());
             await db.SetSettingAsync(KeyPrefix + "NumPcsForUmap", NumPcsForUmap.ToString());
             await db.SetSettingAsync(KeyPrefix + "UmapNeighbors", UmapNeighbors.ToString());
-            await db.SetSettingAsync(KeyPrefix + "UmapFixedSeed", UmapFixedSeed.ToString());
+            await db.SetSettingAsync(KeyPrefix + "UmapSeed", UmapSeed.ToString());
             await db.SetSettingAsync(KeyPrefix + "UseGuidedEmbedding", UseGuidedEmbedding.ToString());
             await db.SetSettingAsync(KeyPrefix + "GuidedWeight", GuidedWeight.ToString("R"));
             await db.SetSettingAsync(KeyPrefix + "ShowPcaView", ShowPcaView.ToString());
@@ -96,6 +96,7 @@ namespace SCPBrowser.Models
                 || NumPcaComponents != other.NumPcaComponents
                 || NumPcsForUmap != other.NumPcsForUmap
                 || UmapNeighbors != other.UmapNeighbors
+                || UmapSeed != other.UmapSeed
                 || UseGuidedEmbedding != other.UseGuidedEmbedding
                 || Math.Abs(GuidedWeight - other.GuidedWeight) > 1e-9
                 || UseHvpFilter != other.UseHvpFilter
@@ -114,7 +115,7 @@ namespace SCPBrowser.Models
                 NumPcaComponents = NumPcaComponents,
                 NumPcsForUmap = NumPcsForUmap,
                 UmapNeighbors = UmapNeighbors,
-                UmapFixedSeed = UmapFixedSeed,
+                UmapSeed = UmapSeed,
                 UseGuidedEmbedding = UseGuidedEmbedding,
                 GuidedWeight = GuidedWeight,
                 ShowPcaView = ShowPcaView,

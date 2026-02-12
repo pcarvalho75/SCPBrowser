@@ -15,6 +15,24 @@ using UMAP;
 
 namespace SCPBrowser
 {
+    /// <summary>
+    /// Seeded random generator for UMAP reproducibility.
+    /// </summary>
+    internal sealed class SeededRandom : IProvideRandomValues
+    {
+        private readonly Random _rng;
+        public SeededRandom(int seed) => _rng = new Random(seed);
+        public SeededRandom() => _rng = new Random();
+        public bool IsThreadSafe => false;
+        public float NextFloat() => (float)_rng.NextDouble();
+        public void NextFloats(Span<float> buffer)
+        {
+            for (int i = 0; i < buffer.Length; i++)
+                buffer[i] = (float)_rng.NextDouble();
+        }
+        public int Next(int minValue, int maxValue) => _rng.Next(minValue, maxValue);
+    }
+
     public class ScatterPlotOptions
     {
         // Plate coloring
@@ -52,6 +70,10 @@ namespace SCPBrowser
 
             // Dimensionality reduction settings
             public DimensionReductionSettings? DimRedSettings { get; set; }
+
+            // Runs excluded by contaminant ratio cutoff (greyed in Explorer, excluded from PCA/UMAP)
+            public HashSet<string> ContaminantRatioExcludedRuns { get; set; }
+            public double ContaminantRatioCutoff { get; set; } = 1.0;
         }
 
     public class PlotSelectionChangedEventArgs : EventArgs
@@ -75,6 +97,7 @@ namespace SCPBrowser
         private List<string> _pcaProteinNames;
         private float[][] _umapResult;
         private double? _labelPurity;
+        private List<string> _dimRedRawFiles;
         private SelectionManager _selectionManager;
         private bool _isRefreshing = false;
         private DimensionReductionSettings? _previousDimRedSettings;
@@ -84,6 +107,7 @@ namespace SCPBrowser
         public event EventHandler<PointInteractionEventArgs> PointHovered;
         public event EventHandler<PointInteractionEventArgs> PointClicked;
         public double? LabelPurity => _labelPurity;
+        public IReadOnlyList<DataPoint> DataPoints => _dataPoints;
         public bool NeedsPcaCompute => _pcaResult == null;
         public bool NeedsUmapCompute => _umapResult == null;
         public bool PreviousApplyBatchCorrection => _previousApplyBatchCorrection;
@@ -99,6 +123,7 @@ namespace SCPBrowser
             _pcaProteinNames = null;
             _umapResult = null;
             _labelPurity = null;
+            _dimRedRawFiles = null;
         }
         private bool _previousApplyBatchCorrection = false;
         private HashSet<string> _hvpProteinIds;
@@ -203,6 +228,7 @@ namespace SCPBrowser
                 _pcaProteinNames = null;
                 _umapResult = null;
                 _labelPurity = null;
+                _dimRedRawFiles = null;
             }
 
             // Update tracking fields so UpdatePlot won't re-invalidate
@@ -262,6 +288,7 @@ namespace SCPBrowser
                     _pcaProteinNames = null;
                     _umapResult = null;
                     _labelPurity = null;
+                    _dimRedRawFiles = null;
 
                     if (hvpChanged)
                     {
@@ -365,9 +392,17 @@ namespace SCPBrowser
                 out List<string> proteins,
                 out List<string> rawFiles)
             {
-                rawFiles = data.RawFileNames.ToList();
+                    rawFiles = data.RawFileNames.ToList();
 
-                // Determine which proteins to use - HVPs if available, otherwise all
+                    // Exclude contaminant-ratio-cutoff runs from dimensionality reduction
+                    var excluded = _currentOptions?.ContaminantRatioExcludedRuns;
+                    if (excluded != null && excluded.Count > 0)
+                    {
+                        rawFiles = rawFiles.Where(rf => !excluded.Contains(rf)).ToList();
+                        Console.WriteLine($"DimRed: Excluded {excluded.Count} contaminant-ratio runs, {rawFiles.Count} remaining");
+                    }
+
+                    // Determine which proteins to use - HVPs if available, otherwise all
                 if (_hvpProteinIds != null && _hvpProteinIds.Count > 0)
                 {
                     proteins = data.ProteinQuantMatrix.Keys
@@ -517,7 +552,7 @@ namespace SCPBrowser
                         _currentOptions?.CellTypePredictions != null &&
                         _currentOptions.CellTypePredictions.Count > 0)
                     {
-                        var rawFiles = data.RawFileNames.ToList();
+                        var rawFiles = _dimRedRawFiles ?? data.RawFileNames.ToList();
                         cellTypeLabels = new List<string>(nSamples);
                         for (int i = 0; i < nSamples; i++)
                         {
@@ -575,7 +610,7 @@ namespace SCPBrowser
                         distance: Umap.DistanceFunctions.Euclidean,
                         dimensions: 2,
                         numberOfNeighbors: neighbors,
-                        random: settings.UmapFixedSeed ? new DefaultRandomGenerator(42) : new DefaultRandomGenerator()
+                        random: settings.UmapSeed > 0 ? new SeededRandom(settings.UmapSeed) : new SeededRandom()
                     );
 
                     int epochs = umap.InitializeFit(umapMatrix);
@@ -588,7 +623,7 @@ namespace SCPBrowser
                             _labelPurity = null;
                             if (_currentOptions?.CellTypePredictions != null && _currentOptions.CellTypePredictions.Count > 0)
                             {
-                                var rawFiles = data.RawFileNames.ToList();
+                                var rawFiles = _dimRedRawFiles ?? data.RawFileNames.ToList();
                                 _labelPurity = ComputeLabelPurity(rawFiles, nPcsToUse, neighbors);
                             }
                         }
@@ -898,6 +933,7 @@ namespace SCPBrowser
                 var settings = _currentOptions?.DimRedSettings ?? DimensionReductionSettings.CreateDefaults();
                 var matrix = BuildPreprocessedMatrix(data, settings, out var proteins, out var rawFiles);
 
+                _dimRedRawFiles = rawFiles;
                 int nSamples = rawFiles.Count;
                 int nProteins = proteins.Count;
 
@@ -942,58 +978,90 @@ namespace SCPBrowser
                 return;
 
             // If all filter sets are empty and this isn't a user interaction, keep all points selected
+            bool hasContaminantExclusions = _currentOptions?.ContaminantRatioExcludedRuns != null &&
+                _currentOptions.ContaminantRatioExcludedRuns.Count > 0;
+
             bool hasNoFilters = (checkedCellTypes == null || checkedCellTypes.Count == 0) &&
                                (checkedBioConditions == null || checkedBioConditions.Count == 0) &&
                                (checkedPlates == null || checkedPlates.Count == 0) &&
-                               _selectionManager.PolygonPointsScreen.Count < 3;
+                               _selectionManager.PolygonPointsScreen.Count < 3 &&
+                               !hasContaminantExclusions;
 
             if (hasNoFilters && !userInteraction)
                 return;
 
             var selectedPoints = new List<DataPoint>();
             bool hasPolygonSelection = _selectionManager.PolygonPointsScreen.Count >= 3;
+            double cutoffPercent = (_currentOptions?.ContaminantRatioCutoff ?? 1.0) * 100;
 
             foreach (var point in _dataPoints)
             {
+                // Reset exclusion state
+                point.ExclusionReasons = ExclusionReason.None;
+                var details = new List<string>();
+
+                // Contaminant ratio check
+                bool isContaminantExcluded = _currentOptions?.ContaminantRatioExcludedRuns != null &&
+                    _currentOptions.ContaminantRatioExcludedRuns.Contains(point.RunName);
+                if (isContaminantExcluded)
+                {
+                    point.ExclusionReasons |= ExclusionReason.ContaminantRatio;
+                    details.Add($"Contaminant ratio {point.ContaminantRatio * 100:F1}% > {cutoffPercent:F0}% cutoff");
+                }
+
+                // Lasso check
                 bool isInPolygon = false;
                 if (hasPolygonSelection)
                 {
                     Point testPoint = new Point(point.XScreen, point.YScreen);
                     isInPolygon = _selectionManager.IsPointInSelection(testPoint);
+                    if (!isInPolygon)
+                    {
+                        point.ExclusionReasons |= ExclusionReason.LassoExcluded;
+                        details.Add("Outside lasso selection");
+                    }
                 }
 
-                bool matchesCellType = checkedCellTypes != null &&
-                                       checkedCellTypes.Count > 0 &&
-                                       !string.IsNullOrEmpty(point.PredictedCellType) &&
-                                       checkedCellTypes.Contains(point.PredictedCellType);
-
-                bool matchesBioCondition = checkedBioConditions != null &&
-                                           checkedBioConditions.Count > 0 &&
-                                           !string.IsNullOrEmpty(point.BiologicalCondition) &&
-                                           checkedBioConditions.Contains(point.BiologicalCondition);
-
-                bool matchesPlate = checkedPlates != null &&
-                                    checkedPlates.Count > 0 &&
-                                    !string.IsNullOrEmpty(point.PlateName) &&
-                                    checkedPlates.Contains(point.PlateName);
-
-                // For each category: determine if filter is "active" (data exists for this category)
-                // If filter is active but checked set is empty, nothing passes (user unchecked all)
-                // If filter is not active (no data), it passes by default
+                // Cell type check
                 bool hasCellTypeData = !string.IsNullOrEmpty(point.PredictedCellType);
-                bool hasBioConditionData = !string.IsNullOrEmpty(point.BiologicalCondition);
-                bool hasPlateData = !string.IsNullOrEmpty(point.PlateName);
-
-                // Pass filter if: no data for category, OR data exists and is in checked set
+                bool matchesCellType = checkedCellTypes != null && checkedCellTypes.Count > 0 &&
+                    hasCellTypeData && checkedCellTypes.Contains(point.PredictedCellType);
                 bool passesCellTypeFilter = !hasCellTypeData || matchesCellType;
+                if (!passesCellTypeFilter)
+                {
+                    point.ExclusionReasons |= ExclusionReason.UncheckedCellType;
+                    details.Add($"Unchecked cell type: {point.PredictedCellType}");
+                }
+
+                // Bio condition check
+                bool hasBioConditionData = !string.IsNullOrEmpty(point.BiologicalCondition);
+                bool matchesBioCondition = checkedBioConditions != null && checkedBioConditions.Count > 0 &&
+                    hasBioConditionData && checkedBioConditions.Contains(point.BiologicalCondition);
                 bool passesBioConditionFilter = !hasBioConditionData || matchesBioCondition;
+                if (!passesBioConditionFilter)
+                {
+                    point.ExclusionReasons |= ExclusionReason.UncheckedBioCondition;
+                    details.Add($"Unchecked condition: {point.BiologicalCondition}");
+                }
+
+                // Plate check
+                bool hasPlateData = !string.IsNullOrEmpty(point.PlateName);
+                bool matchesPlate = checkedPlates != null && checkedPlates.Count > 0 &&
+                    hasPlateData && checkedPlates.Contains(point.PlateName);
                 bool passesPlateFilter = !hasPlateData || matchesPlate;
+                if (!passesPlateFilter)
+                {
+                    point.ExclusionReasons |= ExclusionReason.UncheckedPlate;
+                    details.Add($"Unchecked plate: {point.PlateName}");
+                }
 
-                // Point must pass ALL checkbox filters (AND logic)
+                // Build detail string
+                point.ExclusionDetail = details.Count > 0 ? string.Join("; ", details) : null;
+
+                // Determine selection: contaminant-excluded always unselected; otherwise AND all filters
                 bool passesAllFilters = passesCellTypeFilter && passesBioConditionFilter && passesPlateFilter;
-
-                // Combine with polygon selection if present
-                bool shouldBeSelected = hasPolygonSelection ? (isInPolygon && passesAllFilters) : passesAllFilters;
+                bool shouldBeSelected = isContaminantExcluded ? false :
+                    (hasPolygonSelection ? (isInPolygon && passesAllFilters) : passesAllFilters);
 
                 point.IsSelected = shouldBeSelected;
 
@@ -1049,14 +1117,16 @@ namespace SCPBrowser
             // PCA mode
             if (options.UsePcaView && _pcaResult != null)
             {
-                DrawPcaChart(data, options, rawFiles, canvasWidth, canvasHeight);
+                var pcaRawFiles = _dimRedRawFiles ?? rawFiles;
+                DrawPcaChart(data, options, pcaRawFiles, canvasWidth, canvasHeight);
                 return;
             }
 
             // UMAP mode
             if (options.UseUmapView && _umapResult != null)
             {
-                DrawUmapChart(data, options, rawFiles, canvasWidth, canvasHeight);
+                var umapRawFiles = _dimRedRawFiles ?? rawFiles;
+                DrawUmapChart(data, options, umapRawFiles, canvasWidth, canvasHeight);
                 return;
             }
 
@@ -1068,15 +1138,8 @@ namespace SCPBrowser
             var contaminantRatios = rawFiles.Select(rf => data.TargetProteinRatioPerFile.ContainsKey(rf) ?
                 data.TargetProteinRatioPerFile[rf] : 0).ToList();
 
-            // Determine if we need space for internal legend (only for Contaminant Ratio mode)
-            bool showInternalLegend = !options.UseCellTypeColoring && !options.UseBioConditionColoring && !options.UsePlateColoring;
-            _plotRenderer.SetShowInternalLegend(showInternalLegend);
-
             _plotRenderer.CalculateAxisRanges(peptideCounts, ticValues, options.UseLogLog);
             _plotRenderer.DrawAxesAndGrid(PlotCanvas, canvasWidth, canvasHeight);
-
-            double maxRatio = contaminantRatios.Any() ? contaminantRatios.Max() : 0.05;
-            if (maxRatio < 0.01) maxRatio = 0.05;
 
             if (options.UseCellTypeColoring && options.CellTypePredictions != null)
             {
@@ -1100,7 +1163,6 @@ namespace SCPBrowser
             {
                 _dataPoints = _plotRenderer.DrawDataPoints(PlotCanvas, rawFiles, peptideCounts, ticValues,
                     proteinCounts, contaminantRatios, canvasWidth, canvasHeight);
-                _plotRenderer.DrawColorLegend(PlotCanvas, canvasWidth, canvasHeight, maxRatio);
             }
 
             if (_selectionManager.PolygonPointsData.Count > 0)
@@ -1778,6 +1840,11 @@ namespace SCPBrowser
             if (!string.IsNullOrEmpty(point.PlateName))
             {
                 tooltipText += $"\nPlate: {point.PlateName}";
+            }
+
+            if (!string.IsNullOrEmpty(point.ExclusionDetail))
+            {
+                tooltipText += $"\n\n⚠ Excluded: {point.ExclusionDetail}";
             }
 
             TooltipText.Text = tooltipText;

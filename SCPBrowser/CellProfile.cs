@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SCPBrowser
 {
@@ -34,9 +35,9 @@ namespace SCPBrowser
         public Dictionary<string, double> MeanExpression { get; set; } = new Dictionary<string, double>();
 
         /// <summary>
-        /// Total number of unique genes expressed in this cell type
+        /// Total number of unique genes expressed in this cell type (median > 0)
         /// </summary>
-        public int TotalGenesExpressed => MedianExpression.Count;
+        public int TotalGenesExpressed => MedianExpression.Count(kv => kv.Value > 0);
     }
 
     /// <summary>

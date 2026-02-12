@@ -139,10 +139,14 @@
                                                  ToolTip="k-nearest neighbors for UMAP graph.&#x0a;Range: 5–50. Default: 15.&#x0a;Also used for label purity kNN diagnostic."/>
                                      </StackPanel>
                                      <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <CheckBox x:Name="UmapFixedSeedCheckBox" IsChecked="True" VerticalAlignment="Center" Margin="0,0,6,0"
-                                    ToolTip="Use a fixed random seed (42) for reproducible results.&#x0a;Uncheck for a different random layout each time.&#x0a;Useful to verify that cluster structure is robust."/>
-                            <TextBlock Text="Fixed seed (reproducible)" Foreground="#C0C0D0" VerticalAlignment="Center"/>
-                        </StackPanel>
+                                             <TextBlock Text="Seed:" Foreground="#9090A0" VerticalAlignment="Center" Width="90"
+                                                             ToolTip="Random seed for UMAP initialization.&#x0a;Same seed = same layout every time.&#x0a;Set to 0 for a random seed each run.&#x0a;Change the value to explore different layouts."/>
+                                             <TextBox x:Name="UmapSeedTextBox" Text="42" Width="60" Height="22" FontSize="11"
+                                                             Background="#2A2A40" Foreground="#E0E0E0" BorderBrush="#4A4A60"
+                                                             BorderThickness="1" Padding="4,2" VerticalContentAlignment="Center"
+                                                             PreviewTextInput="NumericTextBox_PreviewTextInput"
+                                                             ToolTip="UMAP random seed. 0 = random each run. Default: 42."/>
+                                     </StackPanel>
 
                         <!-- Guided Embedding Section -->
                         <TextBlock Text="GUIDED EMBEDDING" FontSize="10" Foreground="#8888AA" FontWeight="SemiBold" Margin="0,0,0,6"/>
@@ -232,12 +236,13 @@
                     Padding="10,5"
                     IsEnabled="False"/>
             <CheckBox x:Name="HideGreyDotsCheckBox"
-                      Content="Hide Grey Dots"
-                      VerticalAlignment="Center"
-                      Margin="15,0,0,0"
-                      Checked="HideGreyDotsCheckBox_Changed"
-                      Unchecked="HideGreyDotsCheckBox_Changed"/>
-        </StackPanel>
+                                Content="Hide Grey Dots"
+                                VerticalAlignment="Center"
+                                Margin="15,0,0,0"
+                                Checked="HideGreyDotsCheckBox_Changed"
+                                Unchecked="HideGreyDotsCheckBox_Changed"/>
+
+            </StackPanel>
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
@@ -290,11 +295,38 @@
                     </StackPanel>
 
                     <!-- Checkboxes -->
-                    <ScrollViewer Grid.Row="1" 
-                      VerticalScrollBarVisibility="Auto" 
-                      MaxWidth="180">
-                        <StackPanel x:Name="BioConditionCheckboxes"/>
+                    <ScrollViewer x:Name="CheckboxScrollViewer" Grid.Row="1" 
+                    VerticalScrollBarVisibility="Auto" 
+                    MaxWidth="180">
+                      <StackPanel x:Name="BioConditionCheckboxes"/>
                     </ScrollViewer>
+
+                    <!-- Contaminant Ratio Legend (shown only in TargetRatio mode) -->
+                    <StackPanel x:Name="ContaminantRatioLegendPanel" Grid.Row="1" 
+                          Visibility="Collapsed" Margin="0,5,0,0">
+                      <!-- Gradient + labels -->
+                      <Canvas x:Name="GradientCanvas" Height="200" Width="160" Margin="0,0,0,8"/>
+                        
+                      <!-- Cutoff slider -->
+                      <TextBlock Text="Max Contaminant Ratio" FontSize="10" FontWeight="SemiBold" 
+                          Foreground="#475569" Margin="0,5,0,2"/>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Slider x:Name="ContaminantCutoffSlider" 
+                            Minimum="0" Maximum="100" Value="100"
+                            TickFrequency="5" IsSnapToTickEnabled="False"
+                            SmallChange="1" LargeChange="5"
+                            ValueChanged="ContaminantCutoffSlider_ValueChanged"/>
+                        <TextBlock x:Name="ContaminantCutoffValueLabel" 
+                            Grid.Column="1" Text="100%" 
+                            FontSize="11" FontWeight="SemiBold"
+                            VerticalAlignment="Center" Margin="5,0,0,0"
+                            MinWidth="40"/>
+                      </Grid>
+                    </StackPanel>
 
                     <!-- Pie Chart -->
                     <controls:PieChartControl x:Name="DistributionPieChart"
@@ -314,6 +346,58 @@
         <TabControl Grid.Row="3" Margin="0,5,0,0">
             <TabItem Header="Selected Points">
                 <local:SelectedPointsGridControl x:Name="SelectedPointsGridPanel"/>
+            </TabItem>
+            <TabItem Header="Excluded Runs" x:Name="ExcludedRunsTab">
+                <DataGrid x:Name="ExcludedRunsGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserReorderColumns="True"
+                          CanUserResizeColumns="True"
+                          CanUserSortColumns="True"
+                          GridLinesVisibility="All"
+                          HeadersVisibility="All"
+                          SelectionMode="Single"
+                          LoadingRow="ExcludedRunsGrid_LoadingRow"
+                          AlternatingRowBackground="#e8f0fe"
+                          RowBackground="White"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          VirtualizingPanel.ScrollUnit="Pixel"
+                          EnableRowVirtualization="True">
+                    <DataGrid.RowHeaderStyle>
+                        <Style TargetType="DataGridRowHeader">
+                            <Setter Property="Width" Value="40"/>
+                            <Setter Property="Background" Value="#e2e8f0"/>
+                            <Setter Property="Foreground" Value="#475569"/>
+                            <Setter Property="FontSize" Value="11"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                            <Setter Property="VerticalContentAlignment" Value="Center"/>
+                            <Setter Property="BorderBrush" Value="#cbd5e1"/>
+                            <Setter Property="BorderThickness" Value="0,0,1,0"/>
+                            <Setter Property="Padding" Value="4,0"/>
+                        </Style>
+                    </DataGrid.RowHeaderStyle>
+                    <DataGrid.ColumnHeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#e2e8f0"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="Padding" Value="8,5"/>
+                            <Setter Property="BorderBrush" Value="#cbd5e1"/>
+                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                        </Style>
+                    </DataGrid.ColumnHeaderStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Run Name" Binding="{Binding RunName}" Width="*"/>
+                        <DataGridTextColumn Header="Condition" Binding="{Binding BiologicalCondition}" Width="120"/>
+                        <DataGridTextColumn Header="Peptides" Binding="{Binding PeptideCount, StringFormat=N0}" Width="80"/>
+                        <DataGridTextColumn Header="TIC" Binding="{Binding TicValue, StringFormat=E2}" Width="100"/>
+                        <DataGridTextColumn Header="Proteins" Binding="{Binding ProteinCount, StringFormat=N0}" Width="80"/>
+                        <DataGridTextColumn Header="Contaminant Ratio" Binding="{Binding ContaminantRatioPercent}" Width="110"/>
+                        <DataGridTextColumn Header="Exclusion Reason" Binding="{Binding ExclusionReason}" Width="250"/>
+                    </DataGrid.Columns>
+                </DataGrid>
             </TabItem>
         </TabControl>
     </Grid>

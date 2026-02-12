@@ -220,51 +220,16 @@ namespace SCPBrowser
 
                     if (abundance > 0)
                     {
-                        // Try to get gene name from the mapping first
-                        if (proteomicsData.ProteinToGeneMap.TryGetValue(proteinGroup, out string genesString))
+                        var geneNames = GeneNameUtility.ExtractGeneNames(proteomicsData, proteinGroup);
+                        foreach (var geneName in geneNames)
                         {
-                            // genesString is like "RPL4_HUMAN" or "RPL4_HUMAN;ACTB_HUMAN"
-                            var geneEntries = genesString.Split(';');
-                            foreach (var geneEntry in geneEntries)
+                            if (!abundances.ContainsKey(geneName))
                             {
-                                var trimmed = geneEntry.Trim();
-                                if (string.IsNullOrEmpty(trimmed))
-                                    continue;
-
-                                // Extract gene name (remove _HUMAN, _MOUSE, etc.)
-                                string geneName = trimmed;
-                                if (trimmed.Contains('_'))
-                                {
-                                    geneName = trimmed.Substring(0, trimmed.IndexOf('_'));
-                                }
-
-                                if (!string.IsNullOrEmpty(geneName))
-                                {
-                                    if (!abundances.ContainsKey(geneName))
-                                    {
-                                        abundances[geneName] = abundance;
-                                    }
-                                    else
-                                    {
-                                        abundances[geneName] = Math.Max(abundances[geneName], abundance);
-                                    }
-                                }
+                                abundances[geneName] = abundance;
                             }
-                        }
-                        else
-                        {
-                            // Fallback: use old method if no gene mapping available
-                            var proteinNames = ExtractProteinNames(proteinGroup);
-                            foreach (var proteinName in proteinNames)
+                            else
                             {
-                                if (!abundances.ContainsKey(proteinName))
-                                {
-                                    abundances[proteinName] = abundance;
-                                }
-                                else
-                                {
-                                    abundances[proteinName] = Math.Max(abundances[proteinName], abundance);
-                                }
+                                abundances[geneName] = Math.Max(abundances[geneName], abundance);
                             }
                         }
                     }
@@ -280,55 +245,6 @@ namespace SCPBrowser
             }
 
             return abundances;
-        }
-
-        /// <summary>
-        /// Extracts individual protein names from a protein group string
-        /// </summary>
-        private List<string> ExtractProteinNames(string proteinGroup)
-        {
-            var names = new List<string>();
-
-            var parts = proteinGroup.Split(';', ',');
-            foreach (var part in parts)
-            {
-                var trimmed = part.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
-                {
-                    var geneName = ExtractGeneName(trimmed);
-                    if (!string.IsNullOrEmpty(geneName))
-                    {
-                        names.Add(geneName);
-                    }
-                }
-            }
-
-            return names;
-        }
-
-        /// <summary>
-        /// Extracts gene name from a protein identifier (handles various formats)
-        /// </summary>
-        private string ExtractGeneName(string proteinIdentifier)
-        {
-            if (string.IsNullOrEmpty(proteinIdentifier))
-                return null;
-
-            if (proteinIdentifier.Contains("_"))
-            {
-                var parts = proteinIdentifier.Split('_');
-                if (parts.Length > 0)
-                    return parts[0];
-            }
-
-            if (proteinIdentifier.Contains("|"))
-            {
-                var parts = proteinIdentifier.Split('|');
-                if (parts.Length >= 2)
-                    return parts[1];
-            }
-
-            return proteinIdentifier;
         }
 
         /// <summary>

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -82,6 +82,11 @@ namespace SCPBrowser
 
             bool hasExclusions = _currentGridData.Any(d => !d.IsIncluded);
             ClearExclusionsButton.Visibility = hasExclusions ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void SelectedPointsGrid_LoadingRow(object sender, DataGridRowEventArgs e)
+        {
+            e.Row.Header = (e.Row.GetIndex() + 1).ToString();
         }
 
         private void SelectedPointsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)

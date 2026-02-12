@@ -15,9 +15,7 @@ namespace SCPBrowser
     public class PlotRenderer
     {
         private const double PlotMarginLeft = 80;
-        private const double PlotMarginRightWithLegend = 120;
-        private const double PlotMarginRightNoLegend = 20;
-        private double _plotMarginRight = PlotMarginRightWithLegend;
+        private const double PlotMarginRight = 20;
         private const double PlotMarginTop = 20;
         private const double PlotMarginBottom = 60;
 
@@ -60,16 +58,12 @@ namespace SCPBrowser
             _maxY = maxY;
         }
 
-        public void SetShowInternalLegend(bool showLegend)
-        {
-            _plotMarginRight = showLegend ? PlotMarginRightWithLegend : PlotMarginRightNoLegend;
-        }
 
 
 
         public Point DataToScreen(double dataX, double dataY, double canvasWidth, double canvasHeight)
         {
-            double plotWidth = canvasWidth - PlotMarginLeft - _plotMarginRight;
+            double plotWidth = canvasWidth - PlotMarginLeft - PlotMarginRight;
             double plotHeight = canvasHeight - PlotMarginTop - PlotMarginBottom;
 
             if (_useLogLog)
@@ -86,7 +80,7 @@ namespace SCPBrowser
 
         public Point ScreenToData(Point screenPoint, double canvasWidth, double canvasHeight)
         {
-            double plotWidth = canvasWidth - PlotMarginLeft - _plotMarginRight;
+            double plotWidth = canvasWidth - PlotMarginLeft - PlotMarginRight;
             double plotHeight = canvasHeight - PlotMarginTop - PlotMarginBottom;
 
             double x = (screenPoint.X - PlotMarginLeft) / plotWidth * (_maxX - _minX) + _minX;
@@ -98,14 +92,14 @@ namespace SCPBrowser
         public bool IsPointInPlotArea(Point screenPoint, double canvasWidth, double canvasHeight)
         {
             return screenPoint.X >= PlotMarginLeft &&
-                   screenPoint.X <= canvasWidth - _plotMarginRight &&
+                   screenPoint.X <= canvasWidth - PlotMarginRight &&
                    screenPoint.Y >= PlotMarginTop &&
                    screenPoint.Y <= canvasHeight - PlotMarginBottom;
         }
 
         public void DrawAxesAndGrid(Canvas canvas, double canvasWidth, double canvasHeight)
         {
-            double plotWidth = canvasWidth - PlotMarginLeft - _plotMarginRight;
+            double plotWidth = canvasWidth - PlotMarginLeft - PlotMarginRight;
             double plotHeight = canvasHeight - PlotMarginTop - PlotMarginBottom;
 
             if (plotWidth <= 0 || plotHeight <= 0)
@@ -130,7 +124,7 @@ namespace SCPBrowser
             {
                 X1 = PlotMarginLeft,
                 Y1 = canvasHeight - PlotMarginBottom,
-                X2 = canvasWidth - _plotMarginRight,
+                X2 = canvasWidth - PlotMarginRight,
                 Y2 = canvasHeight - PlotMarginBottom,
                 Stroke = axisBrush,
                 StrokeThickness = 2
@@ -191,7 +185,7 @@ namespace SCPBrowser
                 {
                     X1 = PlotMarginLeft,
                     Y1 = y,
-                    X2 = canvasWidth - _plotMarginRight,
+                    X2 = canvasWidth - PlotMarginRight,
                     Y2 = y,
                     Stroke = gridBrush,
                     StrokeThickness = 1,
@@ -298,90 +292,6 @@ namespace SCPBrowser
             }
 
             return dataPoints;
-        }
-
-        public void DrawColorLegend(Canvas canvas, double canvasWidth, double canvasHeight, double maxRatio)
-        {
-            double legendX = canvasWidth - _plotMarginRight + 20;
-            double legendY = PlotMarginTop;
-            double legendWidth = 30;
-            double legendHeight = 200;
-
-            var titleText = new TextBlock
-            {
-                Text = "Contaminant Ratio",
-                FontSize = 11,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Colors.Black)
-            };
-
-            titleText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Canvas.SetLeft(titleText, legendX - 5);
-            Canvas.SetTop(titleText, legendY - 20);
-            canvas.Children.Add(titleText);
-
-            int segments = 50;
-            double segmentHeight = legendHeight / segments;
-
-            for (int i = 0; i < segments; i++)
-            {
-                double value = 1.0 - ((double)i / segments);
-                Color color = ColorMapper.GetViridisColor(value);
-
-                var rect = new Rectangle
-                {
-                    Width = legendWidth,
-                    Height = segmentHeight + 1,
-                    Fill = new SolidColorBrush(color),
-                    Stroke = null
-                };
-
-                Canvas.SetLeft(rect, legendX);
-                Canvas.SetTop(rect, legendY + i * segmentHeight);
-                canvas.Children.Add(rect);
-            }
-
-            var border = new Rectangle
-            {
-                Width = legendWidth,
-                Height = legendHeight,
-                Stroke = new SolidColorBrush(Colors.Black),
-                StrokeThickness = 1,
-                Fill = null
-            };
-            Canvas.SetLeft(border, legendX);
-            Canvas.SetTop(border, legendY);
-            canvas.Children.Add(border);
-
-            var maxLabel = new TextBlock
-            {
-                Text = $"{maxRatio * 100:F2}%",
-                FontSize = 10,
-                Foreground = new SolidColorBrush(Colors.Black)
-            };
-            Canvas.SetLeft(maxLabel, legendX + legendWidth + 5);
-            Canvas.SetTop(maxLabel, legendY - 5);
-            canvas.Children.Add(maxLabel);
-
-            var midLabel = new TextBlock
-            {
-                Text = $"{maxRatio * 50:F2}%",
-                FontSize = 10,
-                Foreground = new SolidColorBrush(Colors.Black)
-            };
-            Canvas.SetLeft(midLabel, legendX + legendWidth + 5);
-            Canvas.SetTop(midLabel, legendY + legendHeight / 2 - 5);
-            canvas.Children.Add(midLabel);
-
-            var minLabel = new TextBlock
-            {
-                Text = "0%",
-                FontSize = 10,
-                Foreground = new SolidColorBrush(Colors.Black)
-            };
-            Canvas.SetLeft(minLabel, legendX + legendWidth + 5);
-            Canvas.SetTop(minLabel, legendY + legendHeight - 5);
-            canvas.Children.Add(minLabel);
         }
     }
 }

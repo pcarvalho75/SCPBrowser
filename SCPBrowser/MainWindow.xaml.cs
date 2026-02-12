@@ -47,6 +47,7 @@ namespace SCPBrowser
             PeptideTicTab.RunInclusionChanged += PeptideTicTab_RunInclusionChanged;
             PeptideTicTab.ClearAllExclusionsRequested += PeptideTicTab_ClearAllExclusionsRequested;
             PeptideTicTab.ExportDiagnosticsRequested += PeptideTicTab_ExportDiagnosticsRequested;
+            PeptideTicTab.ContaminantRatioCutoffChanged += PeptideTicTab_ContaminantRatioCutoffChanged;
 
             // Subscribe to ProjectBrowser reclassify request
             ProjectBrowserDialog.ReclassifyRequested += ProjectBrowserDialog_ReclassifyRequested;
@@ -372,8 +373,12 @@ namespace SCPBrowser
             // Pass plate mapping for batch effect correction (plate = batch)
             PeptideTicTab.SetPlateMapping(_dataFilterService.RawFileToPlateId);
 
-            // Other tabs get fully filtered data (excluding below-cutoff)
-            PeptideTicTab.UpdateChart(_dataFilterService.FilteredData, clearSelections: false);
+            // PeptideTicTab gets protein-cutoff-filtered data (broader) so Explorer scatter
+            // can show contaminant-excluded runs as grey dots.
+            // PCA/UMAP will skip excluded runs via ContaminantRatioExcludedRuns in ScatterPlotOptions.
+            var dataForExplorer = _dataFilterService.ProteinCutoffFilteredData ?? _dataFilterService.FilteredData;
+            PeptideTicTab.SetContaminantRatioExcludedRuns(_dataFilterService.ContaminantRatioExcludedRuns);
+            PeptideTicTab.UpdateChart(dataForExplorer, clearSelections: false);
 
             _bioTesseraNeedsUpdate = true;
         }
@@ -720,19 +725,53 @@ namespace SCPBrowser
             // Get the project directory
             string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
 
-            // Step 1: Select Gene Expression Matrix file
-            var expressionDialog = new OpenFileDialog
+            // Unified file dialog accepting all supported reference formats
+            var fileDialog = new OpenFileDialog
             {
-                Filter = "TSV files (*.tsv)|*.tsv|Text files (*.txt)|*.txt|All files (*.*)|*.*",
-                Title = "Select Gene Expression Matrix TSV File",
+                Filter = "All supported formats|*.tsv;*.txt;*.parquet;*.pref|" +
+                        "TSV files (*.tsv)|*.tsv|" +
+                        "Parquet files (*.parquet)|*.parquet|" +
+                        "Proteomics Reference (*.pref)|*.pref|" +
+                        "Text files (*.txt)|*.txt|" +
+                        "All files (*.*)|*.*",
+                Title = "Select Omic Reference File",
                 InitialDirectory = projectDirectory
             };
 
-            if (expressionDialog.ShowDialog() != true)
+            if (fileDialog.ShowDialog() != true)
                 return;
 
-            string expressionFilePath = expressionDialog.FileName;
+            string selectedFilePath = fileDialog.FileName;
+            string extension = Path.GetExtension(selectedFilePath).ToLowerInvariant();
 
+            switch (extension)
+            {
+                case ".parquet":
+                    await ImportOmicProfile_FromParquet(selectedFilePath);
+                    break;
+
+                case ".pref":
+                    await ImportOmicProfile_FromPref(selectedFilePath);
+                    break;
+
+                case ".tsv":
+                case ".txt":
+                    await ImportOmicProfile_FromTsv(selectedFilePath, projectDirectory);
+                    break;
+
+                default:
+                    MessageBox.Show(
+                        $"Unrecognized file extension '{extension}'.\n\n" +
+                        "Supported formats: .tsv, .txt (transcriptomic), .parquet (proteomic), .pref (proteomics reference).",
+                        "Unsupported File",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    break;
+            }
+        }
+
+        private async Task ImportOmicProfile_FromTsv(string expressionFilePath, string projectDirectory)
+        {
             // Step 2: Select Cell Metadata file
             var metadataDialog = new OpenFileDialog
             {
@@ -752,8 +791,6 @@ namespace SCPBrowser
                 LoadingOverlay.Show();
 
                 var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
-
-                // The reference database is the project database itself
                 string referenceDatabasePath = _projectReferenceDatabasePath;
 
                 await TranscriptomicConverterUtility.ConvertTsvToSqliteAsync(
@@ -768,14 +805,14 @@ namespace SCPBrowser
                 var loadedDatabase = await referenceService.LoadTranscriptomicDataAsync(referenceDatabasePath);
 
                 MessageBox.Show(
-                                    $"Transcriptomic data imported successfully!\n\n" +
-                                    $"Cell Types: {loadedDatabase.TotalCellTypes}\n" +
-                                    $"Total Cells: {loadedDatabase.TotalCells:N0}\n" +
-                                    $"Unique Genes: {loadedDatabase.TotalGenes:N0}\n\n" +
-                                    $"Database: {Path.GetFileName(referenceDatabasePath)}",
-                                    "Import Complete",
-                                    MessageBoxButton.OK,
-                                    MessageBoxImage.Information);
+                                $"Transcriptomic data imported successfully!\n\n" +
+                                $"Cell Types: {loadedDatabase.TotalCellTypes}\n" +
+                                $"Total Cells: {loadedDatabase.TotalCells:N0}\n" +
+                                $"Unique Genes: {loadedDatabase.TotalGenes:N0}\n\n" +
+                                $"Database: {Path.GetFileName(referenceDatabasePath)}",
+                                "Import Complete",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Information);
 
                 Console.WriteLine($"Transcriptomic data imported to: {referenceDatabasePath}");
 
@@ -789,6 +826,116 @@ namespace SCPBrowser
                 MessageBox.Show(
                     $"Error importing transcriptomic data:\n\n{ex.Message}",
                     "Import Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private async Task ImportOmicProfile_FromPref(string prefFilePath)
+        {
+            try
+            {
+                LoadingOverlay.SetMessage("Importing Proteomics Reference (.pref)");
+                LoadingOverlay.Show();
+
+                var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
+                string referenceDatabasePath = _projectReferenceDatabasePath;
+
+                var referenceService = new ReferenceDataService();
+                await referenceService.WriteProteomicsReferenceAsync(
+                    referenceDatabasePath,
+                    prefFilePath,
+                    clearExistingData: true,
+                    progress: progressReporter);
+
+                LoadingOverlay.Hide();
+
+                var loadedDatabase = await referenceService.LoadTranscriptomicDataAsync(referenceDatabasePath);
+
+                MessageBox.Show(
+                    $"Proteomics reference imported successfully!\n\n" +
+                    $"Cell Types: {loadedDatabase.TotalCellTypes}\n" +
+                    $"Total Cells: {loadedDatabase.TotalCells:N0}\n" +
+                    $"Proteins: {loadedDatabase.TotalGenes:N0}\n\n" +
+                    $"Database: {Path.GetFileName(referenceDatabasePath)}",
+                    "Import Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+
+                Console.WriteLine($"Proteomics reference imported from: {prefFilePath}");
+
+                await MainControlTab.ReloadTranscriptomicReferenceAsync();
+            }
+            catch (Exception ex)
+            {
+                LoadingOverlay.Hide();
+                Console.WriteLine($"Error importing proteomics reference: {ex.Message}");
+                MessageBox.Show(
+                    $"Error importing proteomics reference:\n\n{ex.Message}",
+                    "Import Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private async Task ImportOmicProfile_FromParquet(string parquetFilePath)
+        {
+            var dialog = new ParquetReferenceLabelDialog(parquetFilePath)
+            {
+                Owner = this
+            };
+
+            if (dialog.ShowDialog() != true || !dialog.BuildSuccessful)
+                return;
+
+            try
+            {
+                LoadingOverlay.SetMessage("Building Proteomic Reference");
+                LoadingOverlay.Show();
+
+                var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
+                string referenceDatabasePath = _projectReferenceDatabasePath;
+
+                // Build CellTypeProfiles from labeled parquet data
+                progressReporter.ReportMessage("Computing expression profiles...");
+                var referenceService = new ReferenceDataService();
+                var parsedData = referenceService.BuildProteomicReference(dialog.LoadedData, dialog.RunCellTypeMap);
+
+                // Write to project DB (same path as TSV flow)
+                progressReporter.ReportMessage("Writing reference to database...");
+                await referenceService.WriteTranscriptomicDataAsync(
+                    referenceDatabasePath,
+                    parsedData,
+                    clearExistingData: true,
+                    progress: progressReporter);
+
+                LoadingOverlay.Hide();
+
+                int totalProteins = parsedData.CellTypeProfiles.Count > 0
+                    ? parsedData.CellTypeProfiles[0].MedianExpression.Count : 0;
+
+                MessageBox.Show(
+                    $"Proteomic reference built successfully!\n\n" +
+                    $"Cell Types: {parsedData.CellTypeProfiles.Count}\n" +
+                    $"Total Runs: {dialog.RunCellTypeMap.Count}\n" +
+                    $"Proteins: {totalProteins:N0}\n\n" +
+                    $"Database: {Path.GetFileName(referenceDatabasePath)}",
+                    "Import Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+
+                Console.WriteLine($"Proteomic reference built from parquet: {parquetFilePath}");
+
+                // Hot reload
+                await MainControlTab.ReloadTranscriptomicReferenceAsync();
+            }
+            catch (Exception ex)
+            {
+                LoadingOverlay.Hide();
+                Console.WriteLine($"Error building proteomic reference: {ex.Message}");
+                MessageBox.Show(
+                    $"Error building proteomic reference:\n\n{ex.Message}",
+                    "Build Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -1128,6 +1275,19 @@ namespace SCPBrowser
                 LoadingOverlay.Hide();
                 MessageBox.Show($"Error exporting diagnostics:\n\n{ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void PeptideTicTab_ContaminantRatioCutoffChanged(object sender, double cutoff)
+        {
+            try
+            {
+                _dataFilterService.ContaminantRatioCutoff = cutoff;
+                await _dataFilterService.ApplyFiltersAsync(_parquetService);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error applying contaminant ratio cutoff: {ex.Message}");
             }
         }
 

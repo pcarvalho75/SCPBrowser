@@ -8,6 +8,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 
@@ -33,6 +35,7 @@ namespace SCPBrowser
         public event EventHandler CellTypePredictionsRequested;
         public event EventHandler SelectionChangedForBioTessera;
         public event EventHandler<RunInclusionChangedEventArgs> RunInclusionChanged;
+        public event EventHandler<double> ContaminantRatioCutoffChanged;
         public event EventHandler ClearAllExclusionsRequested;
         public event EventHandler ExportDiagnosticsRequested;
         private bool _isLassoActive = false;
@@ -42,6 +45,8 @@ namespace SCPBrowser
         private HashSet<string> _checkedPlates = new HashSet<string>();
         private ProjectDatabaseService _databaseService;
         private DimensionReductionSettings? _dimRedSettings;
+        private HashSet<string> _contaminantRatioExcludedRuns = new HashSet<string>();
+        private double _lastAppliedContaminantCutoff = 1.0;
 
         public HashSet<string> CheckedBioConditions => _checkedBioConditions;
         public HashSet<string> CheckedCellTypes => _checkedCellTypes;
@@ -140,6 +145,11 @@ namespace SCPBrowser
             _plateMappingPerFile = plateMapping ?? new Dictionary<string, int>();
         }
 
+        public void SetContaminantRatioExcludedRuns(HashSet<string> excludedRuns)
+        {
+            _contaminantRatioExcludedRuns = excludedRuns ?? new HashSet<string>();
+        }
+
         /// <summary>
         /// Sets the excluded run names (loaded from database on project open)
         /// </summary>
@@ -175,7 +185,7 @@ namespace SCPBrowser
             PcaComponentsTextBox.Text = s.NumPcaComponents.ToString();
             PcsForUmapTextBox.Text = s.NumPcsForUmap.ToString();
             UmapNeighborsTextBox.Text = s.UmapNeighbors.ToString();
-            UmapFixedSeedCheckBox.IsChecked = s.UmapFixedSeed;
+            UmapSeedTextBox.Text = s.UmapSeed.ToString();
             GuidedEmbeddingCheckBox.IsChecked = s.UseGuidedEmbedding;
             GuidedWeightSlider.Value = s.GuidedWeight;
             GuidedWeightLabel.Text = s.GuidedWeight.ToString("F2");
@@ -209,7 +219,8 @@ namespace SCPBrowser
                 s.NumPcsForUmap = Math.Clamp(nPcsUmap, 2, 100);
             if (int.TryParse(UmapNeighborsTextBox.Text, out int neighbors))
                 s.UmapNeighbors = Math.Clamp(neighbors, 2, 200);
-            s.UmapFixedSeed = UmapFixedSeedCheckBox.IsChecked == true;
+            if (int.TryParse(UmapSeedTextBox.Text, out int seed))
+                s.UmapSeed = Math.Max(0, seed);
             s.UseGuidedEmbedding = GuidedEmbeddingCheckBox.IsChecked == true;
             s.GuidedWeight = GuidedWeightSlider.Value;
             s.ShowPcaView = ShowPcaViewCheckBox.IsChecked == true;
@@ -425,6 +436,9 @@ namespace SCPBrowser
                 }
 
                 LegendPanelTitle.Text = "Cell Types";
+                CheckboxScrollViewer.Visibility = Visibility.Visible;
+                ContaminantRatioLegendPanel.Visibility = Visibility.Collapsed;
+                DistributionPieChart.Visibility = Visibility.Visible;
                 PopulateCellTypeCheckboxes();
                 UpdatePieChart("CellType");
                 BioConditionPanel.Visibility = Visibility.Visible;
@@ -432,6 +446,9 @@ namespace SCPBrowser
             else if (mode == "BioCondition")
             {
                 LegendPanelTitle.Text = "Biological Conditions";
+                CheckboxScrollViewer.Visibility = Visibility.Visible;
+                ContaminantRatioLegendPanel.Visibility = Visibility.Collapsed;
+                DistributionPieChart.Visibility = Visibility.Visible;
                 PopulateBioConditionCheckboxes();
                 UpdatePieChart("BioCondition");
                 BioConditionPanel.Visibility = Visibility.Visible;
@@ -439,14 +456,22 @@ namespace SCPBrowser
             else if (mode == "Plate")
             {
                 LegendPanelTitle.Text = "Plates";
+                CheckboxScrollViewer.Visibility = Visibility.Visible;
+                ContaminantRatioLegendPanel.Visibility = Visibility.Collapsed;
+                DistributionPieChart.Visibility = Visibility.Visible;
                 PopulatePlateCheckboxes();
                 UpdatePieChart("Plate");
                 BioConditionPanel.Visibility = Visibility.Visible;
             }
             else
             {
-                BioConditionPanel.Visibility = Visibility.Collapsed;
-                DistributionPieChart.Clear();
+                // Contaminant Ratio mode — show right panel with gradient + slider
+                LegendPanelTitle.Text = "Contaminant Ratio";
+                CheckboxScrollViewer.Visibility = Visibility.Collapsed;
+                ContaminantRatioLegendPanel.Visibility = Visibility.Visible;
+                DistributionPieChart.Visibility = Visibility.Collapsed;
+                BioConditionPanel.Visibility = Visibility.Visible;
+                DrawContaminantGradient();
             }
 
             if (_currentData != null)
@@ -499,6 +524,7 @@ namespace SCPBrowser
                     {
                         _checkedPlates.Add(key);
                         ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates, userInteraction: true);
+                        UpdateExcludedRunsGrid();
                     }
                 };
 
@@ -511,6 +537,7 @@ namespace SCPBrowser
                     {
                         _checkedPlates.Remove(key);
                         ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates, userInteraction: true);
+                        UpdateExcludedRunsGrid();
                     }
                 };
 
@@ -678,6 +705,30 @@ namespace SCPBrowser
             PopulateColorCheckboxes(colorMap, _checkedBioConditions, counts);
         }
 
+        private static readonly Color[] _colorPalette = new Color[]
+        {
+            Color.FromRgb(231, 76, 60),    // Red
+            Color.FromRgb(230, 126, 34),   // Orange
+            Color.FromRgb(241, 196, 15),   // Yellow
+            Color.FromRgb(46, 204, 113),   // Green
+            Color.FromRgb(26, 188, 156),   // Teal
+            Color.FromRgb(52, 152, 219),   // Blue
+            Color.FromRgb(41, 128, 185),   // Dark Blue
+            Color.FromRgb(155, 89, 182),   // Purple
+            Color.FromRgb(142, 68, 173),   // Dark Purple
+            Color.FromRgb(233, 30, 99),    // Pink
+            Color.FromRgb(0, 150, 136),    // Dark Teal
+            Color.FromRgb(76, 175, 80),    // Medium Green
+            Color.FromRgb(255, 152, 0),    // Amber
+            Color.FromRgb(121, 85, 72),    // Brown
+            Color.FromRgb(96, 125, 139),   // Blue Grey
+            Color.FromRgb(244, 67, 54),    // Bright Red
+            Color.FromRgb(0, 188, 212),    // Cyan
+            Color.FromRgb(63, 81, 181),    // Indigo
+            Color.FromRgb(205, 220, 57),   // Lime
+            Color.FromRgb(180, 180, 180),  // Grey
+        };
+
         private void PopulateColorCheckboxes(Dictionary<string, Color> colorMap, HashSet<string> checkedItems, Dictionary<string, int> counts = null)
         {
             BioConditionCheckboxes.Children.Clear();
@@ -721,6 +772,7 @@ namespace SCPBrowser
                     {
                         checkedItems.Add(key);
                         ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates, userInteraction: true);
+                        UpdateExcludedRunsGrid();
                     }
                 };
 
@@ -733,6 +785,7 @@ namespace SCPBrowser
                     {
                         checkedItems.Remove(key);
                         ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates, userInteraction: true);
+                        UpdateExcludedRunsGrid();
                     }
                 };
 
@@ -748,7 +801,17 @@ namespace SCPBrowser
                     Stroke = new SolidColorBrush(Colors.Black),
                     StrokeThickness = 1,
                     Margin = new Thickness(0, 0, 6, 0),
-                    VerticalAlignment = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Cursor = Cursors.Hand,
+                    ToolTip = "Right-click to change color"
+                };
+
+                // Right-click color picker
+                string itemKey = item.Key;
+                colorRect.MouseRightButtonUp += (s, e) =>
+                {
+                    e.Handled = true;
+                    ShowColorPicker(colorRect, itemKey, colorMap);
                 };
 
                 var label = new TextBlock
@@ -765,6 +828,84 @@ namespace SCPBrowser
 
                 BioConditionCheckboxes.Children.Add(checkBox);
             }
+        }
+
+        private Popup _colorPickerPopup;
+
+        private Brush GetCellTypeBrush(string cellType)
+        {
+            if (string.IsNullOrEmpty(cellType) || _cellTypeColorMap == null)
+                return Brushes.Black;
+
+            if (_cellTypeColorMap.TryGetValue(cellType, out var color))
+                return new SolidColorBrush(color);
+
+            return Brushes.Black;
+        }
+
+        private void ShowColorPicker(Rectangle targetRect, string itemKey, Dictionary<string, Color> colorMap)
+        {
+            // Close any existing popup
+            if (_colorPickerPopup != null)
+                _colorPickerPopup.IsOpen = false;
+
+            var wrapPanel = new WrapPanel { Width = 120, Margin = new Thickness(4) };
+
+            foreach (var paletteColor in _colorPalette)
+            {
+                var swatch = new Rectangle
+                {
+                    Width = 18,
+                    Height = 18,
+                    Fill = new SolidColorBrush(paletteColor),
+                    Stroke = new SolidColorBrush(Colors.DarkGray),
+                    StrokeThickness = 1,
+                    Margin = new Thickness(2),
+                    Cursor = Cursors.Hand
+                };
+
+                Color capturedColor = paletteColor;
+                swatch.MouseLeftButtonUp += (s, e) =>
+                {
+                    // Update the color map
+                    colorMap[itemKey] = capturedColor;
+
+                    // Update the rectangle in the legend
+                    targetRect.Fill = new SolidColorBrush(capturedColor);
+
+                    // Close popup and refresh chart
+                    _colorPickerPopup.IsOpen = false;
+                    if (_currentData != null)
+                        RefreshChart();
+                };
+
+                // Hover highlight
+                swatch.MouseEnter += (s, e) => swatch.StrokeThickness = 2;
+                swatch.MouseLeave += (s, e) => swatch.StrokeThickness = 1;
+
+                wrapPanel.Children.Add(swatch);
+            }
+
+            var border = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(27, 27, 47)),  // #1B1B2F
+                BorderBrush = new SolidColorBrush(Color.FromRgb(108, 99, 255)), // #6C63FF
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(4),
+                Child = wrapPanel
+            };
+
+            _colorPickerPopup = new Popup
+            {
+                PlacementTarget = targetRect,
+                Placement = PlacementMode.Right,
+                StaysOpen = false,
+                AllowsTransparency = true,
+                Child = border
+            };
+
+            _colorPickerPopup.IsOpen = true;
         }
         private async void RefreshChart()
         {
@@ -811,6 +952,9 @@ namespace SCPBrowser
             if (colorMode == "BioCondition")
             {
                 LegendPanelTitle.Text = "Biological Conditions";
+                CheckboxScrollViewer.Visibility = Visibility.Visible;
+                ContaminantRatioLegendPanel.Visibility = Visibility.Collapsed;
+                DistributionPieChart.Visibility = Visibility.Visible;
                 if (BioConditionCheckboxes.Children.Count == 0)
                     PopulateBioConditionCheckboxes();
                 UpdatePieChart("BioCondition");
@@ -819,6 +963,9 @@ namespace SCPBrowser
             else if (colorMode == "CellType" && _cellTypeColorMap != null)
             {
                 LegendPanelTitle.Text = "Cell Types";
+                CheckboxScrollViewer.Visibility = Visibility.Visible;
+                ContaminantRatioLegendPanel.Visibility = Visibility.Collapsed;
+                DistributionPieChart.Visibility = Visibility.Visible;
                 if (BioConditionCheckboxes.Children.Count == 0)
                     PopulateCellTypeCheckboxes();
                 UpdatePieChart("CellType");
@@ -827,10 +974,23 @@ namespace SCPBrowser
             else if (colorMode == "Plate")
             {
                 LegendPanelTitle.Text = "Plates";
+                CheckboxScrollViewer.Visibility = Visibility.Visible;
+                ContaminantRatioLegendPanel.Visibility = Visibility.Collapsed;
+                DistributionPieChart.Visibility = Visibility.Visible;
                 if (BioConditionCheckboxes.Children.Count == 0)
                     PopulatePlateCheckboxes();
                 UpdatePieChart("Plate");
                 BioConditionPanel.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                // Contaminant Ratio mode
+                LegendPanelTitle.Text = "Contaminant Ratio";
+                CheckboxScrollViewer.Visibility = Visibility.Collapsed;
+                ContaminantRatioLegendPanel.Visibility = Visibility.Visible;
+                DistributionPieChart.Visibility = Visibility.Collapsed;
+                BioConditionPanel.Visibility = Visibility.Visible;
+                DrawContaminantGradient();
             }
 
             var options = new ScatterPlotOptions
@@ -854,9 +1014,11 @@ namespace SCPBrowser
                 CheckedCellTypes = _checkedCellTypes,
                 CheckedBioConditions = _checkedBioConditions,
                     CheckedPlates = _checkedPlates,
-                    HvpResults = GetFilteredHvpResults(),
-                    DimRedSettings = _dimRedSettings
-                };
+                        HvpResults = GetFilteredHvpResults(),
+                        DimRedSettings = _dimRedSettings,
+                        ContaminantRatioExcludedRuns = _contaminantRatioExcludedRuns,
+                        ContaminantRatioCutoff = _lastAppliedContaminantCutoff
+                    };
 
             // Run heavy PCA/UMAP on background thread with loading overlay
             bool willInvalidate = false;
@@ -906,7 +1068,12 @@ namespace SCPBrowser
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates);
+                    UpdateExcludedRunsGrid();
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+            else
+            {
+                UpdateExcludedRunsGrid();
             }
         }
 
@@ -1069,6 +1236,116 @@ namespace SCPBrowser
             ScatterPlot.SetHideUnselected(HideGreyDotsCheckBox.IsChecked == true);
         }
 
+        private void ContaminantCutoffSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (!_isInitialized) return;
+
+            double percent = ContaminantCutoffSlider.Value;
+            ContaminantCutoffValueLabel.Text = percent >= 100 ? "Off" : $"{percent:F0}%";
+
+            double newCutoff = percent / 100.0;
+            if (Math.Abs(newCutoff - _lastAppliedContaminantCutoff) < 0.005)
+                return;
+
+            _lastAppliedContaminantCutoff = newCutoff;
+            ContaminantRatioCutoffChanged?.Invoke(this, newCutoff);
+        }
+
+        private void DrawContaminantGradient()
+        {
+            GradientCanvas.Children.Clear();
+
+            double gradientWidth = 25;
+            double gradientHeight = 180;
+            double offsetX = 10;
+            double offsetY = 5;
+            int segments = 50;
+            double segmentHeight = gradientHeight / segments;
+
+            // Find max ratio from current data
+            double maxRatio = 0;
+            if (_currentData?.TargetProteinRatioPerFile != null && _currentData.TargetProteinRatioPerFile.Count > 0)
+            {
+                maxRatio = _currentData.TargetProteinRatioPerFile.Values.Max();
+            }
+            if (maxRatio <= 0) maxRatio = 1.0;
+
+            // Draw gradient bar
+            for (int i = 0; i < segments; i++)
+            {
+                double value = 1.0 - ((double)i / segments);
+                var color = ColorMapper.GetViridisColor(value);
+                var rect = new System.Windows.Shapes.Rectangle
+                {
+                    Width = gradientWidth,
+                    Height = segmentHeight + 1,
+                    Fill = new System.Windows.Media.SolidColorBrush(color)
+                };
+                Canvas.SetLeft(rect, offsetX);
+                Canvas.SetTop(rect, offsetY + i * segmentHeight);
+                GradientCanvas.Children.Add(rect);
+            }
+
+            // Border
+            var border = new System.Windows.Shapes.Rectangle
+            {
+                Width = gradientWidth,
+                Height = gradientHeight,
+                Stroke = System.Windows.Media.Brushes.Black,
+                StrokeThickness = 1,
+                Fill = null
+            };
+            Canvas.SetLeft(border, offsetX);
+            Canvas.SetTop(border, offsetY);
+            GradientCanvas.Children.Add(border);
+
+            // Labels
+            double labelX = offsetX + gradientWidth + 5;
+            AddGradientLabel($"{maxRatio * 100:F1}%", labelX, offsetY - 3);
+            AddGradientLabel($"{maxRatio * 50:F1}%", labelX, offsetY + gradientHeight / 2 - 5);
+            AddGradientLabel("0%", labelX, offsetY + gradientHeight - 8);
+        }
+
+        private void AddGradientLabel(string text, double x, double y)
+        {
+            var label = new TextBlock
+            {
+                Text = text,
+                FontSize = 10,
+                Foreground = new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromRgb(71, 85, 105))
+            };
+            Canvas.SetLeft(label, x);
+            Canvas.SetTop(label, y);
+            GradientCanvas.Children.Add(label);
+        }
+
+        private void ExcludedRunsGrid_LoadingRow(object sender, DataGridRowEventArgs e)
+        {
+            e.Row.Header = (e.Row.GetIndex() + 1).ToString();
+        }
+
+        private void UpdateExcludedRunsGrid()
+        {
+            var excludedData = ScatterPlot.DataPoints
+                .Where(p => p.ExclusionReasons != ExclusionReason.None)
+                .Select(p => new SelectedPointData
+                {
+                    RunName = p.RunName,
+                    BiologicalCondition = p.BiologicalCondition ?? "",
+                    PeptideCount = p.PeptideCount,
+                    TicValue = p.TicValue,
+                    ProteinCount = p.ProteinCount,
+                    ContaminantRatioPercent = $"{p.ContaminantRatio * 100:F2}%",
+                    ExclusionReason = p.ExclusionDetail ?? ""
+                }).ToList();
+
+            ExcludedRunsGrid.ItemsSource = excludedData;
+            ExcludedRunsTab.Header = excludedData.Count > 0
+                ? $"Excluded Runs ({excludedData.Count})"
+                : "Excluded Runs";
+        }
+
         private void ScatterPlot_SelectionChanged(object sender, PlotSelectionChangedEventArgs e)
         {
             _currentSelectedPoints = e.SelectedPoints;
@@ -1106,6 +1383,7 @@ namespace SCPBrowser
                     ProteinCount = p.ProteinCount,
                     ContaminantRatioPercent = $"{p.ContaminantRatio * 100:F2}%",
                     CellType = p.PredictedCellType ?? "",
+                    CellTypeBrush = GetCellTypeBrush(p.PredictedCellType),
                     BiologicalCondition = p.BiologicalCondition ?? "",
                     CompositeScore = p.PredictionScore != null ? $"{p.PredictionScore.CompositeScore:F3}" : "",
                     IsIncluded = !_excludedRunNames.Contains(p.RunName)

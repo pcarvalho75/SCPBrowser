@@ -798,6 +798,13 @@ namespace SCPBrowser
             Canvas.SetTop(yLabel, MarginTop + plotHeight / 2 + 25);
             PlotCanvas.Children.Add(yLabel);
 
+            // Pre-compute max contaminant ratio for Viridis gradient (default coloring)
+            double maxContaminantRatio = rawFiles
+                .Select(rf => data.TargetProteinRatioPerFile.TryGetValue(rf, out double r) ? r : 0)
+                .DefaultIfEmpty(0)
+                .Max();
+            if (maxContaminantRatio < 0.01) maxContaminantRatio = 0.05;
+
             // Draw data points
             _dataPoints = new List<DataPoint>();
             const double MarkerSize = 10;
@@ -850,6 +857,13 @@ namespace SCPBrowser
                             markerColor = color;
                         }
                     }
+                }
+                else
+                {
+                    // Default: Color by Contaminant Ratio (Viridis gradient)
+                    double ratio = data.TargetProteinRatioPerFile.TryGetValue(rawFiles[i], out double r) ? r : 0;
+                    double normalizedRatio = ratio / maxContaminantRatio;
+                    markerColor = ColorMapper.GetViridisColor(normalizedRatio);
                 }
 
                 var ellipse = new Ellipse
@@ -1260,6 +1274,13 @@ namespace SCPBrowser
             Canvas.SetTop(yLabel, MarginTop + plotHeight / 2 + 40);
             PlotCanvas.Children.Add(yLabel);
 
+            // Pre-compute max contaminant ratio for Viridis gradient (default coloring)
+            double maxContaminantRatio = rawFiles
+                .Select(rf => data.TargetProteinRatioPerFile.TryGetValue(rf, out double r) ? r : 0)
+                .DefaultIfEmpty(0)
+                .Max();
+            if (maxContaminantRatio < 0.01) maxContaminantRatio = 0.05;
+
             // Draw data points
             _dataPoints = new List<DataPoint>();
             const double MarkerSize = 10;
@@ -1312,6 +1333,13 @@ namespace SCPBrowser
                             markerColor = color;
                         }
                     }
+                }
+                else
+                {
+                    // Default: Color by Contaminant Ratio (Viridis gradient)
+                    double ratio = data.TargetProteinRatioPerFile.TryGetValue(rawFiles[i], out double r) ? r : 0;
+                    double normalizedRatio = ratio / maxContaminantRatio;
+                    markerColor = ColorMapper.GetViridisColor(normalizedRatio);
                 }
 
                 var ellipse = new Ellipse

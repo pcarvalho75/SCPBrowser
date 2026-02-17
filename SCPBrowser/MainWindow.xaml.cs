@@ -1477,18 +1477,38 @@ namespace SCPBrowser
             Console.WriteLine($"Added to recent projects: {projectPath}");
         }
 
-        private List<string> GetRecentProjects()
+        private List<RecentProjectItem> GetRecentProjects()
         {
-            var recentProjects = new List<string>();
+            var recentProjects = new List<RecentProjectItem>();
 
             if (Settings.Default.RecentProjects != null)
             {
                 foreach (string projectPath in Settings.Default.RecentProjects)
                 {
-                    // Only include projects that still exist
                     if (File.Exists(projectPath))
                     {
-                        recentProjects.Add(projectPath);
+                        string description = "";
+                        string name = "";
+                        try
+                        {
+                            var service = new ProjectDatabaseService(projectPath);
+                            var info = service.GetProjectInfoAsync().Result;
+                            if (info != null)
+                            {
+                                if (!string.IsNullOrEmpty(info.Description))
+                                    description = info.Description;
+                                if (!string.IsNullOrEmpty(info.ProjectName))
+                                    name = info.ProjectName;
+                            }
+                        }
+                        catch { }
+
+                        recentProjects.Add(new RecentProjectItem
+                        {
+                            Path = projectPath,
+                            Name = string.IsNullOrEmpty(name) ? System.IO.Path.GetFileName(projectPath) : name,
+                            Description = string.IsNullOrEmpty(description) ? null : description
+                        });
                     }
                 }
             }
@@ -1518,8 +1538,9 @@ namespace SCPBrowser
         {
             try
             {
-                if (sender is Button button && button.Tag is string projectPath)
+                if (sender is Button button && button.Tag is RecentProjectItem item)
                 {
+                    string projectPath = item.Path;
                     Console.WriteLine($"Recent project clicked: {projectPath}");
 
                     // Check if the file still exists
@@ -1561,8 +1582,9 @@ namespace SCPBrowser
 
         private void RemoveRecentProject_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.Tag is string projectPath)
+            if (sender is Button button && button.Tag is RecentProjectItem item)
             {
+                string projectPath = item.Path;
                 // Remove from settings
                 if (Settings.Default.RecentProjects != null && Settings.Default.RecentProjects.Contains(projectPath))
                 {
@@ -1572,6 +1594,43 @@ namespace SCPBrowser
 
                 // Refresh the UI
                 LoadRecentProjectsUI();
+            }
+        }
+
+        private async void EditRecentProject_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                RecentProjectItem item = null;
+
+                if (sender is MenuItem menuItem)
+                {
+                    // Try Tag first, then walk up to the ContextMenu's PlacementTarget
+                    if (menuItem.Tag is RecentProjectItem tagItem)
+                        item = tagItem;
+                    else if (menuItem.Parent is ContextMenu ctx && ctx.PlacementTarget is Button btn && btn.Tag is RecentProjectItem btnItem)
+                        item = btnItem;
+                }
+
+                if (item == null) return;
+
+                var service = new ProjectDatabaseService(item.Path);
+                var info = await service.GetProjectInfoAsync();
+
+                var dialog = new EditProjectDialog(info?.ProjectName ?? item.Name, info?.Description ?? "");
+                dialog.Owner = this;
+
+                if (dialog.ShowDialog() == true)
+                {
+                    await service.UpdateProjectInfoAsync(dialog.ProjectName, dialog.ProjectDescription);
+                    LoadRecentProjectsUI();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error editing project: {ex.Message}");
+                MessageBox.Show($"Error editing project:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

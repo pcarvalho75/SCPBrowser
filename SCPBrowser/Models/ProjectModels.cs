@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 
 namespace SCPBrowser.Models
@@ -220,6 +220,16 @@ namespace SCPBrowser.Models
         public int ProteinCount { get; set; }
         public int CellCount { get; set; }
         public string ColumnMappingJson { get; set; }
+    }
+
+    /// <summary>
+    /// Lightweight model for the Recent Projects sidebar
+    /// </summary>
+    public class RecentProjectItem
+    {
+        public string Path { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
     }
 
     /// <summary>

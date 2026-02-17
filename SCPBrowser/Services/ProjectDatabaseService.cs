@@ -324,6 +324,28 @@ namespace SCPBrowser.Services
             return null;
         }
 
+        public async Task UpdateProjectInfoAsync(string projectName, string description)
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                        UPDATE project_info 
+                        SET project_name = @name, description = @description, last_modified = @modified
+                    ";
+                    command.Parameters.AddWithValue("@name", projectName);
+                    command.Parameters.AddWithValue("@description", description ?? "");
+                    command.Parameters.AddWithValue("@modified", DateTime.Now.ToString("o"));
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
         /// <summary>
         /// Ensures the cell type classifications table exists (for existing databases created before this feature)
         /// </summary>

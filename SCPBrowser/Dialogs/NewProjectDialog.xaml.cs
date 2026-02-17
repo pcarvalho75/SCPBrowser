@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Windows;
 using Microsoft.Win32;
@@ -44,10 +44,16 @@ namespace SCPBrowser
             ValidateInputs();
         }
 
+        private void Description_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        {
+            ValidateInputs();
+        }
+
         private void ValidateInputs()
         {
             bool isValid = !string.IsNullOrWhiteSpace(ProjectNameTextBox.Text) &&
-                          !string.IsNullOrWhiteSpace(ProjectLocationTextBox.Text);
+                          !string.IsNullOrWhiteSpace(ProjectLocationTextBox.Text) &&
+                          !string.IsNullOrWhiteSpace(DescriptionTextBox.Text);
 
             CreateButton.IsEnabled = isValid;
         }

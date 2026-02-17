@@ -266,7 +266,13 @@ This adds the PlateFilterControl above the TabControl
                                 BorderBrush="#cbd5e1"
                                 BorderThickness="1"
                                 Padding="12,12,28,12"
-                                Cursor="Hand">
+                                Cursor="Hand"
+                                ToolTip="{Binding Description}">
+                                                        <Button.ContextMenu>
+                                                            <ContextMenu>
+                                                                <MenuItem Header="Edit Project..." Click="EditRecentProject_Click" Tag="{Binding}"/>
+                                                            </ContextMenu>
+                                                        </Button.ContextMenu>
                                                         <Button.Template>
                                                             <ControlTemplate TargetType="Button">
                                                                 <Border Background="{TemplateBinding Background}"
@@ -280,17 +286,18 @@ This adds the PlateFilterControl above the TabControl
                                                                             <RowDefinition Height="Auto"/>
                                                                         </Grid.RowDefinitions>
                                                                         <TextBlock Grid.Row="0"
-                                                       Text="{Binding Converter={StaticResource FileNameConverter}}"
+                                                       Text="{Binding Name}"
                                                        FontWeight="SemiBold"
                                                        FontSize="12"
                                                        Foreground="#0f172a"
                                                        TextTrimming="CharacterEllipsis"/>
                                                                         <TextBlock Grid.Row="1"
-                                                       Text="{Binding Converter={StaticResource DirectoryConverter}}"
+                                                       Text="{Binding Path, Converter={StaticResource DirectoryConverter}}"
                                                        FontSize="10"
                                                        Foreground="#94a3b8"
                                                        TextTrimming="CharacterEllipsis"
                                                        Margin="0,3,0,0"/>
+
                                                                     </Grid>
                                                                 </Border>
                                                                 <ControlTemplate.Triggers>

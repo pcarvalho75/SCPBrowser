@@ -101,7 +101,7 @@ namespace SCPBrowser
 
                 if (mainWindow != null)
                 {
-                    mainWindow.LoadingOverlay.SetProgress("Loading transcriptomic data...");
+                    mainWindow.LoadingOverlay.SetProgress("Loading reference data...");
                 }
                 await OmicBrowser.LoadDataAsync(databasePath);
                 Console.WriteLine("  ✓ Omic Browser loaded");

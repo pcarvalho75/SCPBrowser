@@ -177,16 +177,23 @@ namespace SCPBrowser
         }
 
         /// <summary>
-        /// Loads transcriptomic data from the database and populates the UI
+        /// Loads reference data from the database and populates the UI
         /// </summary>
         public async Task LoadDataAsync(string databasePath)
         {
             try
             {
-                Console.WriteLine($"OmicBrowserControl: Loading transcriptomic data from {databasePath}");
+                Console.WriteLine($"OmicBrowserControl: Loading reference data from {databasePath}");
 
-                // Load transcriptomic data
+                // Load reference data (returns null if no profiles imported yet)
                 _transcriptomicData = await _referenceService.LoadTranscriptomicDataAsync(databasePath);
+
+                if (_transcriptomicData == null)
+                {
+                    Console.WriteLine("OmicBrowserControl: No reference profiles imported yet.");
+                    PopulateTranscriptomicUI();
+                    return;
+                }
 
                 // Calculate gene specificity for all genes
                 CalculateGeneSpecificity();
@@ -194,7 +201,7 @@ namespace SCPBrowser
                 // Populate the UI
                 PopulateTranscriptomicUI();
 
-                Console.WriteLine("OmicBrowserControl: Transcriptomic data loaded successfully");
+                Console.WriteLine("OmicBrowserControl: Reference data loaded successfully");
             }
             catch (Exception ex)
             {

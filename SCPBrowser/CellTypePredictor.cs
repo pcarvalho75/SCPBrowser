@@ -29,7 +29,7 @@ namespace SCPBrowser
             _database = database ?? throw new ArgumentNullException(nameof(database));
 
             if (_database.CellTypeProfiles == null || _database.CellTypeProfiles.Count == 0)
-                throw new ArgumentException("Database must contain cell type profiles", nameof(database));
+                throw new ArgumentException("No cell type profiles found in the reference database. Import omic reference data first.", nameof(database));
 
             // Pre-calculate gene specificity and marker sets for efficient prediction
             _geneSpecificity = CalculateGeneSpecificity();

@@ -38,9 +38,18 @@ namespace SCPBrowser
                 throw new FileNotFoundException("Reference database not found", databasePath);
 
             _database = await _referenceService.LoadTranscriptomicDataAsync(databasePath);
+
+            // Null means the database exists but has no reference profiles imported yet — normal initial state
+            if (_database == null)
+            {
+                _predictor = null;
+                Console.WriteLine("Reference database has no cell type profiles imported yet.");
+                return;
+            }
+
             _predictor = new CellTypePredictor(_database);
 
-            Console.WriteLine($"Transcriptomic database loaded: {_database.TotalCellTypes} cell types, {_database.TotalGenes} genes");
+            Console.WriteLine($"Reference database loaded: {_database.TotalCellTypes} cell types, {_database.TotalGenes} features");
         }
 
         /// <summary>
@@ -71,7 +80,7 @@ namespace SCPBrowser
             // 2. Check if transcriptomic database is loaded
             if (!IsLoaded)
             {
-                throw new InvalidOperationException("Transcriptomic reference database is not loaded. Please import transcriptomic data first.");
+                throw new InvalidOperationException("Reference database is not loaded. Please import omic reference data first.");
             }
 
             // 3. Try to load from database (skip if forcing recompute)
@@ -128,7 +137,7 @@ namespace SCPBrowser
             Dictionary<string, double> priorWeights = null)
         {
             if (!IsLoaded)
-                throw new InvalidOperationException("Transcriptomic database not loaded");
+                throw new InvalidOperationException("Reference database not loaded");
 
             var predictions = new Dictionary<string, CellTypePredictionResult>();
 
@@ -391,7 +400,7 @@ namespace SCPBrowser
             if (!IsLoaded)
             {
                 Console.WriteLine($"");
-                Console.WriteLine($"ERROR: Transcriptomic database not loaded");
+                Console.WriteLine($"ERROR: Reference database not loaded");
                 return;
             }
 
@@ -483,7 +492,7 @@ namespace SCPBrowser
 
             if (!IsLoaded || _predictor == null)
             {
-                throw new InvalidOperationException("Transcriptomic database not loaded");
+                throw new InvalidOperationException("Reference database not loaded");
             }
 
             progress?.ReportMessage("Preparing classification diagnostics export...");
@@ -625,7 +634,7 @@ namespace SCPBrowser
             if (predictions == null || predictions.Count == 0)
                 throw new InvalidOperationException("No predictions available");
             if (!IsLoaded)
-                throw new InvalidOperationException("Transcriptomic database not loaded");
+                throw new InvalidOperationException("Reference database not loaded");
 
             progress?.ReportMessage("Building gene presence matrix...");
 

@@ -762,7 +762,7 @@ namespace SCPBrowser
                 default:
                     MessageBox.Show(
                         $"Unrecognized file extension '{extension}'.\n\n" +
-                        "Supported formats: .tsv, .txt (transcriptomic), .parquet (proteomic), .pref (proteomics reference).",
+                        "Supported formats: .tsv, .txt (transcriptomic/metabolomic), .parquet (proteomic), .pref (proteomics reference).",
                         "Unsupported File",
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
@@ -787,7 +787,7 @@ namespace SCPBrowser
 
             try
             {
-                LoadingOverlay.SetMessage("Importing Transcriptomic Data");
+                LoadingOverlay.SetMessage("Importing Omic Reference Data");
                 LoadingOverlay.Show();
 
                 var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
@@ -804,17 +804,25 @@ namespace SCPBrowser
                 var referenceService = new ReferenceDataService();
                 var loadedDatabase = await referenceService.LoadTranscriptomicDataAsync(referenceDatabasePath);
 
-                MessageBox.Show(
-                                $"Transcriptomic data imported successfully!\n\n" +
-                                $"Cell Types: {loadedDatabase.TotalCellTypes}\n" +
-                                $"Total Cells: {loadedDatabase.TotalCells:N0}\n" +
-                                $"Unique Genes: {loadedDatabase.TotalGenes:N0}\n\n" +
-                                $"Database: {Path.GetFileName(referenceDatabasePath)}",
-                                "Import Complete",
-                                MessageBoxButton.OK,
-                                MessageBoxImage.Information);
+                if (loadedDatabase == null)
+                {
+                    MessageBox.Show("Import completed but no cell type profiles were found in the data.",
+                        "Import Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        $"Reference data imported successfully!\n\n" +
+                        $"Cell Types: {loadedDatabase.TotalCellTypes}\n" +
+                        $"Total Cells: {loadedDatabase.TotalCells:N0}\n" +
+                        $"Unique Features: {loadedDatabase.TotalGenes:N0}\n\n" +
+                        $"Database: {Path.GetFileName(referenceDatabasePath)}",
+                        "Import Complete",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
 
-                Console.WriteLine($"Transcriptomic data imported to: {referenceDatabasePath}");
+                Console.WriteLine($"Reference data imported to: {referenceDatabasePath}");
 
                 // Hot reload: Update MainControl's transcriptomic reference
                 await MainControlTab.ReloadTranscriptomicReferenceAsync();
@@ -822,9 +830,9 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 LoadingOverlay.Hide();
-                Console.WriteLine($"Error importing transcriptomic data: {ex.Message}");
+                Console.WriteLine($"Error importing reference data: {ex.Message}");
                 MessageBox.Show(
-                    $"Error importing transcriptomic data:\n\n{ex.Message}",
+                    $"Error importing reference data:\n\n{ex.Message}",
                     "Import Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);

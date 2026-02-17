@@ -55,7 +55,7 @@ namespace SCPBrowser
         }
 
         /// <summary>
-        /// Reloads the transcriptomic reference database (call after importing new omic data)
+        /// Reloads the reference database (call after importing new omic data)
         /// </summary>
         public async System.Threading.Tasks.Task ReloadTranscriptomicReferenceAsync()
         {
@@ -69,11 +69,18 @@ namespace SCPBrowser
             {
                 try
                 {
-                    StatusText.Text = "Reloading transcriptomic reference database...";
+                    StatusText.Text = "Reloading reference database...";
                     await _cellTypeClassificationManager.LoadDatabaseAsync(databasePath);
 
-                    var db = _cellTypeClassificationManager.Database;
-                    StatusText.Text = $"Reference reloaded: {db.TotalGenes:N0} genes, {db.TotalCells:N0} cells, {db.TotalCellTypes} cell types";
+                    if (_cellTypeClassificationManager.IsLoaded)
+                    {
+                        var db = _cellTypeClassificationManager.Database;
+                        StatusText.Text = $"Reference reloaded: {db.TotalGenes:N0} features, {db.TotalCells:N0} cells, {db.TotalCellTypes} cell types";
+                    }
+                    else
+                    {
+                        StatusText.Text = "No reference profiles imported yet.";
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -104,21 +111,30 @@ namespace SCPBrowser
             {
                 try
                 {
-                    StatusText.Text = "Loading transcriptomic reference database...";
+                    StatusText.Text = "Loading reference database...";
                     await _cellTypeClassificationManager.LoadDatabaseAsync(databasePath);
 
-                    var db = _cellTypeClassificationManager.Database;
-                    StatusText.Text = $"Reference loaded: {db.TotalGenes:N0} genes, {db.TotalCells:N0} cells, {db.TotalCellTypes} cell types";
+                    if (_cellTypeClassificationManager.IsLoaded)
+                    {
+                        var db = _cellTypeClassificationManager.Database;
+                        StatusText.Text = $"Reference loaded: {db.TotalGenes:N0} features, {db.TotalCells:N0} cells, {db.TotalCellTypes} cell types";
+                    }
+                    else
+                    {
+                        // No reference profiles imported yet — normal initial state, no error dialog
+                        _cellTypePredictions = null;
+                        StatusText.Text = "No reference profiles imported — use Reference menu to import omic data.";
+                    }
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Could not load transcriptomic reference: {ex.Message}\n\nContinuing without cell type predictions.",
+                    MessageBox.Show($"Could not load reference database: {ex.Message}\n\nContinuing without cell type predictions.",
                         "Reference Load Error",
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
 
                     _cellTypePredictions = null;
-                    StatusText.Text = "Transcriptomic reference not available";
+                    StatusText.Text = "Reference database not available";
                 }
             }
             else

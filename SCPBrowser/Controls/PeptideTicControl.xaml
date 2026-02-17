@@ -228,7 +228,10 @@
                   <ComboBoxItem Content="Contaminant Ratio" Tag="TargetRatio"/>
                   <ComboBoxItem x:Name="ColorByBioConditionItem" Content="Biological Condition" Tag="BioCondition" IsEnabled="False" IsSelected="True"/>
                   <ComboBoxItem x:Name="ColorByPlateItem" Content="Plate" Tag="Plate"/>
-                  <ComboBoxItem x:Name="ColorByCellTypeItem" Content="Cell Type" Tag="CellType" IsEnabled="False"/>
+                  <ComboBoxItem x:Name="ColorByCellTypeItem" Content="Cell Type" Tag="CellType" IsEnabled="False"
+                               ToolTipService.ShowOnDisabled="True"
+                               ToolTip="Import a transcriptomic or proteomic reference via the Reference menu to enable cell type classification."
+                               Background="#FFECEC"/>
             </ComboBox>
             <Button x:Name="ClearSelectionButton"
                     Content="Clear Selection"

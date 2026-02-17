@@ -354,7 +354,9 @@ namespace SCPBrowser
         {
             _cellTypePredictions = predictions;
             _cellTypeColorMap = colorMap;
-            ColorByCellTypeItem.IsEnabled = predictions != null && predictions.Count > 0;
+            bool hasPredictions = predictions != null && predictions.Count > 0;
+            ColorByCellTypeItem.IsEnabled = hasPredictions;
+            UpdateCellTypeItemAppearance(hasPredictions);
             
             // Show/hide the export diagnostics button
             ExportDiagnosticsButton.Visibility = (predictions != null && predictions.Count > 0) 
@@ -386,6 +388,21 @@ namespace SCPBrowser
         public void EnableCellTypeClassification(bool isAvailable)
         {
             ColorByCellTypeItem.IsEnabled = isAvailable;
+            UpdateCellTypeItemAppearance(isAvailable);
+        }
+
+        private void UpdateCellTypeItemAppearance(bool isAvailable)
+        {
+            if (isAvailable)
+            {
+                ColorByCellTypeItem.Background = null;
+                ColorByCellTypeItem.ToolTip = "Color data points by predicted cell type";
+            }
+            else
+            {
+                ColorByCellTypeItem.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xEC, 0xEC));
+                ColorByCellTypeItem.ToolTip = "Import a transcriptomic or proteomic reference via the Reference menu to enable cell type classification.";
+            }
         }
 
         public void SetGoEnrichmentResults(Dictionary<string, RunGoEnrichmentResult> results, Dictionary<string, Color> colorMap)

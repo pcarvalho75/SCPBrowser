@@ -497,8 +497,12 @@ namespace SCPBrowser.Services
                     }
                 }
 
-                progress?.ReportMessage($"Database loaded: {database.TotalCellTypes} cell types, {database.TotalCells:N0} cells, {database.TotalGenes:N0} genes");
+                progress?.ReportMessage($"Database loaded: {database.TotalCellTypes} cell types, {database.TotalCells:N0} cells, {database.TotalGenes:N0} features");
             }
+
+                        // Return null if no reference profiles have been imported yet (normal initial state)
+                        if (database.CellTypeProfiles == null || database.CellTypeProfiles.Count == 0)
+                            return null;
 
                         return database;
                     }

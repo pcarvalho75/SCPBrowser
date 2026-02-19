@@ -826,6 +826,7 @@ namespace SCPBrowser
 
                 // Hot reload: Update MainControl's transcriptomic reference
                 await MainControlTab.ReloadTranscriptomicReferenceAsync();
+                PeptideTicTab.EnableCellTypeClassification(MainControlTab.IsTranscriptomicDatabaseLoaded());
             }
             catch (Exception ex)
             {
@@ -873,6 +874,7 @@ namespace SCPBrowser
                 Console.WriteLine($"Proteomics reference imported from: {prefFilePath}");
 
                 await MainControlTab.ReloadTranscriptomicReferenceAsync();
+                PeptideTicTab.EnableCellTypeClassification(MainControlTab.IsTranscriptomicDatabaseLoaded());
             }
             catch (Exception ex)
             {
@@ -936,6 +938,7 @@ namespace SCPBrowser
 
                 // Hot reload
                 await MainControlTab.ReloadTranscriptomicReferenceAsync();
+                PeptideTicTab.EnableCellTypeClassification(MainControlTab.IsTranscriptomicDatabaseLoaded());
             }
             catch (Exception ex)
             {

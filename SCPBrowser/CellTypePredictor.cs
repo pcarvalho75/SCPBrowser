@@ -267,7 +267,8 @@ namespace SCPBrowser
             {
                 Scores = orderedResults,
                 TopCellType = orderedResults.FirstOrDefault().Key,
-                TopScore = orderedResults.FirstOrDefault().Value
+                TopScore = orderedResults.FirstOrDefault().Value,
+                Confidence = ComputeSoftmaxConfidence(orderedResults)
             };
         }
 
@@ -514,56 +515,37 @@ namespace SCPBrowser
         }
 
         /// <summary>
-        /// Post-processes predictions to mark low-confidence ones as "Undetermined".
-        /// Uses an adaptive approach: computes the margin (1st - 2nd score) for each run,
-        /// then marks the weakest predictions as Undetermined, capped at maxUndeterminedPercent.
-        /// A run is considered weak if its margin is below the 25th percentile of all margins.
+        /// Computes the softmax probability of the top-scoring cell type.
+        /// Softmax converts composite scores into a proper probability distribution (sum = 1).
+        /// The confidence is P(top) = exp(s_top) / Σ exp(s_i), with numerical stability via max subtraction.
         /// </summary>
-        /// <param name="predictions">All predictions (modified in-place)</param>
-        /// <param name="maxUndeterminedPercent">Maximum fraction of runs to mark as Undetermined (0.0 to 1.0, default 0.10)</param>
-        public static void ApplyUndeterminedClassification(
-            Dictionary<string, CellTypePredictionResult> predictions,
-            double maxUndeterminedPercent = 0.10)
+        public static double ComputeSoftmaxConfidence(Dictionary<string, CellTypeScore> scores)
         {
-            if (predictions == null || predictions.Count < 4)
-                return;
+            if (scores == null || scores.Count == 0)
+                return 0.0;
 
-            // Calculate margin for each run
-            var margins = new List<(string RunName, double Margin)>();
-            foreach (var kvp in predictions)
-            {
-                var scores = kvp.Value.Scores;
-                if (scores.Count < 2) continue;
+            if (scores.Count == 1)
+                return 1.0;
 
-                var sortedScores = scores.Values.OrderByDescending(s => s.CompositeScore).ToList();
-                var top = sortedScores[0];
-                var second = sortedScores[1];
-                margins.Add((kvp.Key, top.CompositeScore - second.CompositeScore));
-            }
+            var composites = scores.Values.Select(s => s.CompositeScore).ToArray();
 
-            if (margins.Count == 0) return;
+            // Filter out NaN scores
+            var valid = composites.Where(c => !double.IsNaN(c)).ToArray();
+            if (valid.Length == 0)
+                return 0.0;
+            if (valid.Length == 1)
+                return 1.0;
 
-            // Sort by margin ascending (weakest first)
-            margins.Sort((a, b) => a.Margin.CompareTo(b.Margin));
+            // Subtract max for numerical stability (prevents overflow in exp)
+            double max = valid.Max();
+            double sumExp = 0.0;
+            for (int i = 0; i < valid.Length; i++)
+                sumExp += Math.Exp(valid[i] - max);
 
-            // Find the 25th percentile margin as the natural cutoff
-            int p25Index = (int)(margins.Count * 0.25);
-            double p25Margin = margins[p25Index].Margin;
-
-            // Count how many runs fall below this cutoff
-            int belowCutoff = margins.Count(m => m.Margin < p25Margin);
-
-            // Cap at maxUndeterminedPercent
-            int maxUndetermined = (int)(predictions.Count * maxUndeterminedPercent);
-            int toMark = Math.Min(belowCutoff, maxUndetermined);
-
-            // Mark the weakest runs as Undetermined
-            for (int i = 0; i < toMark; i++)
-            {
-                var run = margins[i].RunName;
-                predictions[run].TopCellType = "Undetermined";
-            }
+            // P(top) = exp(max - max) / sumExp = 1.0 / sumExp
+            return 1.0 / sumExp;
         }
+
 
 
     }
@@ -576,6 +558,12 @@ namespace SCPBrowser
         public Dictionary<string, CellTypeScore> Scores { get; set; } = new Dictionary<string, CellTypeScore>();
         public string TopCellType { get; set; }
         public CellTypeScore TopScore { get; set; }
+
+        /// <summary>
+        /// Softmax probability of the top cell type (0–1). 
+        /// Higher values indicate stronger classification confidence.
+        /// </summary>
+        public double Confidence { get; set; }
     }
 
     /// <summary>

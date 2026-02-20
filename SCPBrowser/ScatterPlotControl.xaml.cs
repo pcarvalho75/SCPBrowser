@@ -1823,7 +1823,10 @@ namespace SCPBrowser
 
             if (!string.IsNullOrEmpty(point.PredictedCellType))
             {
-                tooltipText += $"\nCell Type: {point.PredictedCellType}";
+                string confidenceStr = point.FullPrediction != null 
+                    ? $" — {point.FullPrediction.Confidence:P1} confidence" 
+                    : "";
+                tooltipText += $"\nCell Type: {point.PredictedCellType}{confidenceStr}";
                 
                 // Show scores and marker details for all cell types if available
                 if (point.FullPrediction?.Scores != null)

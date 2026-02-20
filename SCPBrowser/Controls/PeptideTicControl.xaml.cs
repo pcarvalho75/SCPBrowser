@@ -357,7 +357,26 @@ namespace SCPBrowser
             bool hasPredictions = predictions != null && predictions.Count > 0;
             ColorByCellTypeItem.IsEnabled = hasPredictions;
             UpdateCellTypeItemAppearance(hasPredictions);
-            
+
+            // Re-apply confidence threshold from slider to sync with current UI state
+            if (hasPredictions)
+            {
+                double threshold = ConfidenceThresholdSlider.Value;
+                foreach (var kvp in predictions)
+                {
+                    var prediction = kvp.Value;
+                    // Restore original cell type from scores before applying threshold
+                    if (prediction.Scores != null && prediction.Scores.Count > 0)
+                    {
+                        string originalTop = prediction.Scores.First().Key;
+                        if (originalTop != "Undetermined")
+                            prediction.TopCellType = originalTop;
+                    }
+                    if (prediction.Confidence < threshold)
+                        prediction.TopCellType = "Undetermined";
+                }
+            }
+
             // Show/hide the export diagnostics button
             ExportDiagnosticsButton.Visibility = (predictions != null && predictions.Count > 0) 
                 ? Visibility.Visible 
@@ -402,6 +421,45 @@ namespace SCPBrowser
             {
                 ColorByCellTypeItem.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xEC, 0xEC));
                 ColorByCellTypeItem.ToolTip = "Import a transcriptomic or proteomic reference via the Reference menu to enable cell type classification.";
+            }
+        }
+
+        private void ConfidenceThresholdSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (!_isInitialized || _cellTypePredictions == null || _cellTypePredictions.Count == 0)
+                return;
+
+            double threshold = ConfidenceThresholdSlider.Value;
+            ConfidenceThresholdLabel.Text = $"{threshold:P0}";
+
+            // Re-apply threshold: restore original cell type from Scores, then mark Undetermined if below threshold
+            foreach (var kvp in _cellTypePredictions)
+            {
+                var prediction = kvp.Value;
+                if (prediction.Scores != null && prediction.Scores.Count > 0)
+                {
+                    // Restore original top cell type from ordered scores
+                    // Note: for DB-loaded predictions, Scores only has one entry — 
+                    // if it was saved as "Undetermined", we can't recover the original cell type name.
+                    // User must force-recompute to get full scores and benefit from threshold adjustment.
+                    string originalTop = prediction.Scores.First().Key;
+                    if (originalTop != "Undetermined")
+                        prediction.TopCellType = originalTop;
+                }
+                if (prediction.Confidence < threshold)
+                {
+                    prediction.TopCellType = "Undetermined";
+                }
+            }
+
+            // Refresh UI
+            var selectedItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
+            if (selectedItem?.Tag?.ToString() == "CellType")
+            {
+                PopulateCellTypeCheckboxes();
+                UpdatePieChart("CellType");
+                if (_currentData != null)
+                    RefreshChart();
             }
         }
 
@@ -456,6 +514,7 @@ namespace SCPBrowser
                 CheckboxScrollViewer.Visibility = Visibility.Visible;
                 ContaminantRatioLegendPanel.Visibility = Visibility.Collapsed;
                 DistributionPieChart.Visibility = Visibility.Visible;
+                ConfidenceThresholdPanel.Visibility = Visibility.Visible;
                 PopulateCellTypeCheckboxes();
                 UpdatePieChart("CellType");
                 BioConditionPanel.Visibility = Visibility.Visible;
@@ -466,6 +525,7 @@ namespace SCPBrowser
                 CheckboxScrollViewer.Visibility = Visibility.Visible;
                 ContaminantRatioLegendPanel.Visibility = Visibility.Collapsed;
                 DistributionPieChart.Visibility = Visibility.Visible;
+                ConfidenceThresholdPanel.Visibility = Visibility.Collapsed;
                 PopulateBioConditionCheckboxes();
                 UpdatePieChart("BioCondition");
                 BioConditionPanel.Visibility = Visibility.Visible;
@@ -476,6 +536,7 @@ namespace SCPBrowser
                 CheckboxScrollViewer.Visibility = Visibility.Visible;
                 ContaminantRatioLegendPanel.Visibility = Visibility.Collapsed;
                 DistributionPieChart.Visibility = Visibility.Visible;
+                ConfidenceThresholdPanel.Visibility = Visibility.Collapsed;
                 PopulatePlateCheckboxes();
                 UpdatePieChart("Plate");
                 BioConditionPanel.Visibility = Visibility.Visible;
@@ -487,6 +548,7 @@ namespace SCPBrowser
                 CheckboxScrollViewer.Visibility = Visibility.Collapsed;
                 ContaminantRatioLegendPanel.Visibility = Visibility.Visible;
                 DistributionPieChart.Visibility = Visibility.Collapsed;
+                ConfidenceThresholdPanel.Visibility = Visibility.Collapsed;
                 BioConditionPanel.Visibility = Visibility.Visible;
                 DrawContaminantGradient();
             }

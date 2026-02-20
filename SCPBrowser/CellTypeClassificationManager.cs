@@ -158,9 +158,6 @@ namespace SCPBrowser
                 predictions[runName] = prediction;
             }
 
-            // Post-process: mark low-confidence predictions as Undetermined (max 10%)
-            CellTypePredictor.ApplyUndeterminedClassification(predictions, 0.10);
-
             return predictions;
         }
 
@@ -516,6 +513,7 @@ namespace SCPBrowser
             {
                 "RawFile",
                 "PredictedCellType",
+                "Confidence",
                 "CompositeScore",
                 "SpearmanCorr",
                 "SpecificityScore",
@@ -562,6 +560,7 @@ namespace SCPBrowser
                 {
                     runName,
                     result.TopCellType ?? "Unknown",
+                    result.Confidence.ToString("F4"),
                     result.TopScore?.CompositeScore.ToString("F4") ?? "",
                     result.TopScore?.SpearmanCorrelation.ToString("F4") ?? "",
                     result.TopScore?.SpecificityScore.ToString("F4") ?? "",

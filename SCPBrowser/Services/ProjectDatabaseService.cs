@@ -240,6 +240,7 @@ namespace SCPBrowser.Services
                 spearman_correlation REAL NOT NULL,
                 specificity_score REAL NOT NULL,
                 hypergeometric_pvalue REAL NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0.0,
                 classified_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
             );
@@ -368,12 +369,24 @@ namespace SCPBrowser.Services
                     spearman_correlation REAL NOT NULL,
                     specificity_score REAL NOT NULL,
                     hypergeometric_pvalue REAL NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 0.0,
                     classified_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
                 );
             ";
                     await command.ExecuteNonQueryAsync();
                 }
+
+                // Migration: add confidence column to existing tables
+                try
+                {
+                    using (var alterCmd = connection.CreateCommand())
+                    {
+                        alterCmd.CommandText = "ALTER TABLE raw_file_cell_type_classifications ADD COLUMN confidence REAL NOT NULL DEFAULT 0.0";
+                        await alterCmd.ExecuteNonQueryAsync();
+                    }
+                }
+                catch (Exception) { /* Column already exists */ }
             }
         }
 

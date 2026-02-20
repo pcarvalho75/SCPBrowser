@@ -899,13 +899,9 @@ namespace SCPBrowser
             // Count total markers across all cell types
             int totalMarkers = _keyMarkers.Values.Sum(m => m.Count);
             
+            // If checkbox is on but no markers defined, classify without markers
             if (applyMarkers && totalMarkers == 0)
-            {
-                _reclassifyStatusText.Text = "No key markers defined. Add markers first, or uncheck the option.";
-                _reclassifyStatusText.Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38)); // red
-                _reclassifyStatusText.Visibility = Visibility.Visible;
-                return;
-            }
+                applyMarkers = false;
 
             if (applyMarkers)
             {

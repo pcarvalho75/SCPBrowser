@@ -43,8 +43,8 @@ namespace SCPBrowser.Services
                         {
                             insertCmd.CommandText = @"
                                 INSERT OR REPLACE INTO raw_file_cell_type_classifications 
-                                (raw_file_id, predicted_cell_type, composite_score, spearman_correlation, specificity_score, hypergeometric_pvalue, classified_at)
-                                VALUES (@rawFileId, @cellType, @compositeScore, @spearman, @specificity, @pvalue, @timestamp)";
+                                (raw_file_id, predicted_cell_type, composite_score, spearman_correlation, specificity_score, hypergeometric_pvalue, confidence, classified_at)
+                                VALUES (@rawFileId, @cellType, @compositeScore, @spearman, @specificity, @pvalue, @confidence, @timestamp)";
 
                             foreach (var kvp in predictions)
                             {
@@ -75,6 +75,7 @@ namespace SCPBrowser.Services
                                 insertCmd.Parameters.AddWithValue("@spearman", spearman);
                                 insertCmd.Parameters.AddWithValue("@specificity", specificity);
                                 insertCmd.Parameters.AddWithValue("@pvalue", pvalue);
+                                insertCmd.Parameters.AddWithValue("@confidence", double.IsNaN(prediction.Confidence) ? 0.0 : prediction.Confidence);
                                 insertCmd.Parameters.AddWithValue("@timestamp", DateTime.UtcNow.ToString("o"));
 
                                 await insertCmd.ExecuteNonQueryAsync();
@@ -102,7 +103,8 @@ namespace SCPBrowser.Services
             var rows = await QueryAsync(@"
                 SELECT rf.raw_file_name, c.predicted_cell_type, 
                     c.composite_score, c.spearman_correlation, 
-                    c.specificity_score, c.hypergeometric_pvalue
+                    c.specificity_score, c.hypergeometric_pvalue,
+                    c.confidence
                 FROM raw_file_cell_type_classifications c
                 JOIN raw_files rf ON c.raw_file_id = rf.raw_file_id",
                 reader =>
@@ -119,6 +121,7 @@ namespace SCPBrowser.Services
                     {
                         TopCellType = cellType,
                         TopScore = topScore,
+                        Confidence = reader.GetDouble(6),
                         Scores = new Dictionary<string, CellTypeScore> { { cellType, topScore } }
                     });
                 });

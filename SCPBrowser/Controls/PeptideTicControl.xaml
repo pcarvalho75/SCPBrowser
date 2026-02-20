@@ -233,6 +233,19 @@
                                ToolTip="Import a transcriptomic or proteomic reference via the Reference menu to enable cell type classification."
                                Background="#FFECEC"/>
             </ComboBox>
+
+            <StackPanel x:Name="ConfidenceThresholdPanel" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,15,0">
+                <TextBlock Text="Min Confidence:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <Slider x:Name="ConfidenceThresholdSlider"
+                        Minimum="0" Maximum="1" Value="0.50"
+                        Width="80" VerticalAlignment="Center"
+                        TickFrequency="0.05" IsSnapToTickEnabled="True"
+                        ValueChanged="ConfidenceThresholdSlider_ValueChanged"
+                        ToolTip="Runs below this confidence are marked Undetermined"/>
+                <TextBlock x:Name="ConfidenceThresholdLabel" Text="50%" 
+                           VerticalAlignment="Center" Margin="5,0,0,0" FontWeight="SemiBold"/>
+            </StackPanel>
+
             <Button x:Name="ClearSelectionButton"
                     Content="Clear Selection"
                     Click="ClearSelectionButton_Click"

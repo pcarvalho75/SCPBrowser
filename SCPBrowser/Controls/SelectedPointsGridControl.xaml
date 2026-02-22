@@ -108,7 +108,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Score" Binding="{Binding CompositeScore}" Width="70" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Classification Score" Binding="{Binding CompositeScore}" Width="70" IsReadOnly="True"/>
             </DataGrid.Columns>
         </DataGrid>
 

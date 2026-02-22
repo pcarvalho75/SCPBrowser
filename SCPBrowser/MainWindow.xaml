@@ -71,6 +71,8 @@
       IsEnabled="False"/>
             </MenuItem>
             <MenuItem Header="_Help">
+                <MenuItem Header="Submit _Feedback..." Click="SubmitFeedback_Click"/>
+                <Separator/>
                 <MenuItem Header="_About" Click="About_Click"/>
             </MenuItem>
         </Menu>

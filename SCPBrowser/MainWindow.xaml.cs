@@ -691,6 +691,20 @@ namespace SCPBrowser
             }
         }
 
+        private void SubmitFeedback_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var dialog = new FeedbackDialog { Owner = this };
+                dialog.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not open feedback dialog: {ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void About_Click(object sender, RoutedEventArgs e)
         {
             MessageBox.Show(

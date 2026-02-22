@@ -186,90 +186,113 @@ namespace SCPBrowser
                 results[cellType] = score;
             }
 
-            // 2. Gather populations for statistics
-            // Note: using MathNet.Numerics.Statistics for Mean() and StandardDeviation()
-            var spearmanValues = results.Values.Select(x => x.SpearmanCorrelation).ToList();
-            var specificityValues = results.Values.Select(x => x.SpecificityScore).ToList();
-            // Convert P-Value to -log10(p) so "higher is better" with better separation at significant values
-            // Clamp minimum p-value to 1e-300 to avoid infinity
-            var enrichmentValues = results.Values.Select(x => -Math.Log10(Math.Max(x.HypergeometricPValue, 1e-300))).ToList();
-            var coverageValues = results.Values.Select(x => x.MarkerCoverage).ToList();
-
-            // 3. Calculate Statistics (Mean and StdDev)
-            double meanSpearman = spearmanValues.Mean();
-            double stdSpearman = spearmanValues.StandardDeviation();
-
-            double meanSpec = specificityValues.Mean();
-            double stdSpec = specificityValues.StandardDeviation();
-
-            double meanEnrich = enrichmentValues.Mean();
-            double stdEnrich = enrichmentValues.StandardDeviation();
-
-            double meanCoverage = coverageValues.Mean();
-            double stdCoverage = coverageValues.StandardDeviation();
-
-            // 4. Second Pass: Calculate Z-Scores and Final Composite Score
+            // 2. Calculate Key Marker Adjustments (populates MarkersFound/Missing on each score)
             foreach (var kvp in results)
             {
-                var cellType = kvp.Key;
-                var score = kvp.Value;
-
-                // Calculate Z-Scores: (Value - Mean) / StdDev
-                // Guard against divide-by-zero if all scores are identical (StdDev ~ 0)
-                double zSpearman = stdSpearman > 1e-9 ? (score.SpearmanCorrelation - meanSpearman) / stdSpearman : 0;
-                double zSpecificity = stdSpec > 1e-9 ? (score.SpecificityScore - meanSpec) / stdSpec : 0;
-                double zEnrichment = stdEnrich > 1e-9 ? (-Math.Log10(Math.Max(score.HypergeometricPValue, 1e-300)) - meanEnrich) / stdEnrich : 0;
-                double zCoverage = stdCoverage > 1e-9 ? (score.MarkerCoverage - meanCoverage) / stdCoverage : 0;
-
-                // Base Composite Score is the average of the Z-Scores (4 components)
-                double baseComposite = (zSpearman + zSpecificity + zEnrichment + zCoverage) / 4.0;
-
-                // 5. Apply Key Marker Adjustments (if user defined markers for this cell type)
-                // Pass the score object to populate marker found/missing info
                 double keyMarkerAdjustment = CalculateKeyMarkerAdjustment(
-                    cellType, proteinAbundances, userKeyMarkers, medianAbundance, score);
-
-                score.KeyMarkerAdjustment = keyMarkerAdjustment;
-                score.CompositeScore = baseComposite + keyMarkerAdjustment;
+                    kvp.Key, proteinAbundances, userKeyMarkers, medianAbundance, kvp.Value);
+                kvp.Value.KeyMarkerAdjustment = keyMarkerAdjustment;
             }
 
-            // 6. Apply Prior Weight Adjustments (if user defined prior weights)
-            // Auto-normalize weights to sum=1, then add ln(normalized / uniform) to composite
+            // 3. Per-metric softmax probabilities
+            // Temperature controls sensitivity: smaller T = more decisive, larger T = more uniform
+            // Spearman (-1 to 1): T=0.1 means 0.1 difference → ~2.7x likelihood ratio
+            // Specificity (unbounded): auto-scale T = median of values (floor 1.0)
+            // Enrichment -log10(p) (0+): T=2.0 means 100x p-value diff → ~2.7x ratio  
+            // Coverage (0 to 1): T=0.15 means 15% coverage diff → ~2.7x ratio
+            var cellTypes = results.Keys.ToList();
+
+            double tSpearman = 0.1;
+            double tEnrichment = 2.0;
+            double tCoverage = 0.15;
+
+            // Auto-scale specificity temperature to median of values (prevents extreme softmax with large scores)
+            var specValues = results.Values.Select(s => s.SpecificityScore).OrderBy(v => v).ToList();
+            double medianSpec = specValues[specValues.Count / 2];
+            double tSpecificity = Math.Max(medianSpec * 0.2, 1.0);
+
+            var pSpearman = SoftmaxOverMetric(cellTypes, ct => results[ct].SpearmanCorrelation, tSpearman);
+            var pSpecificity = SoftmaxOverMetric(cellTypes, ct => results[ct].SpecificityScore, tSpecificity);
+            var pEnrichment = SoftmaxOverMetric(cellTypes, ct => -Math.Log10(Math.Max(results[ct].HypergeometricPValue, 1e-300)), tEnrichment);
+            var pCoverage = SoftmaxOverMetric(cellTypes, ct => results[ct].MarkerCoverage, tCoverage);
+
+            // 4. Average per-metric probabilities → base CompositeScore (0–1, sums to 1 across cell types)
+            foreach (var ct in cellTypes)
+            {
+                results[ct].CompositeScore = (pSpearman[ct] + pSpecificity[ct] + pEnrichment[ct] + pCoverage[ct]) / 4.0;
+            }
+
+            // 5. Apply Key Marker and Prior adjustments as multiplicative boosts, then re-normalize
+            // exp(adjustment) scales the probability: +0.3 → 1.35x boost, -0.3 → 0.74x penalty
             if (priorWeights != null && priorWeights.Count > 0)
             {
-                // Clamp weights: minimum 0.01 to avoid ln(0)
+                double totalWeight = 0;
                 var clampedWeights = new Dictionary<string, double>();
-                foreach (var cellType in cellTypesToConsider)
+                foreach (var ct in cellTypes)
                 {
-                    double w = priorWeights.TryGetValue(cellType, out double val) ? val : 1.0;
-                    clampedWeights[cellType] = Math.Max(w, 0.01);
+                    double w = priorWeights.TryGetValue(ct, out double val) ? val : 1.0;
+                    clampedWeights[ct] = Math.Max(w, 0.01);
+                    totalWeight += clampedWeights[ct];
                 }
-
-                // Normalize to sum = 1
-                double totalWeight = clampedWeights.Values.Sum();
-                double uniform = 1.0 / cellTypesToConsider.Count;
-
-                foreach (var kvp in results)
+                double uniform = 1.0 / cellTypes.Count;
+                foreach (var ct in cellTypes)
                 {
-                    double normalized = clampedWeights[kvp.Key] / totalWeight;
-                    double priorAdjustment = Math.Log(normalized / uniform);
-                    kvp.Value.PriorAdjustment = priorAdjustment;
-                    kvp.Value.CompositeScore += priorAdjustment;
+                    double normalized = clampedWeights[ct] / totalWeight;
+                    results[ct].PriorAdjustment = Math.Log(normalized / uniform);
                 }
             }
 
-            // 7. Order by the adjusted composite score (Highest score is best)
+            double sumAdjusted = 0;
+            foreach (var ct in cellTypes)
+            {
+                double adjustment = results[ct].KeyMarkerAdjustment + results[ct].PriorAdjustment;
+                results[ct].CompositeScore *= Math.Exp(adjustment);
+                sumAdjusted += results[ct].CompositeScore;
+            }
+
+            // Re-normalize so CompositeScores sum to 1 (true probabilities)
+            if (sumAdjusted > 1e-15)
+            {
+                foreach (var ct in cellTypes)
+                    results[ct].CompositeScore /= sumAdjusted;
+            }
+
+            // 6. Order by probability (highest first)
             var orderedResults = results
                 .OrderByDescending(kvp => kvp.Value.CompositeScore)
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
+            var topEntry = orderedResults.First();
             return new CellTypePredictionResult
             {
                 Scores = orderedResults,
-                TopCellType = orderedResults.FirstOrDefault().Key,
-                TopScore = orderedResults.FirstOrDefault().Value,
-                Confidence = ComputeSoftmaxConfidence(orderedResults)
+                TopCellType = topEntry.Key,
+                TopScore = topEntry.Value,
+                Confidence = topEntry.Value.CompositeScore  // Already a probability (0–1)
             };
+        }
+
+        /// <summary>
+        /// Computes softmax probabilities for a single metric across all cell types.
+        /// P(ct) = exp(value_ct / T) / Σ exp(value_i / T)
+        /// Max subtraction used for numerical stability.
+        /// </summary>
+        private Dictionary<string, double> SoftmaxOverMetric(
+            List<string> cellTypes, Func<string, double> metricSelector, double temperature)
+        {
+            var values = cellTypes.Select(ct => metricSelector(ct) / temperature).ToArray();
+
+            // Subtract max for numerical stability
+            double maxVal = values.Max();
+            double sumExp = 0;
+            for (int i = 0; i < values.Length; i++)
+                sumExp += Math.Exp(values[i] - maxVal);
+
+            var result = new Dictionary<string, double>();
+            for (int i = 0; i < cellTypes.Count; i++)
+                result[cellTypes[i]] = Math.Exp(values[i] - maxVal) / sumExp;
+
+            return result;
         }
 
         /// <summary>
@@ -377,8 +400,8 @@ namespace SCPBrowser
             // 3. Hypergeometric p-value (Probability 0-1)
             double hypergeometricPValue = CalculateHypergeometricPValue(proteinAbundances.Keys.ToList(), cellType);
 
-            // Return raw values only. CompositeScore is intentionally left as 0 
-            // because it requires the population context (Z-Score) to be calculated correctly.
+            // Return raw values only. CompositeScore is left as 0 
+            // because it requires the softmax context (all cell types) to be calculated correctly.
             return new CellTypeScore
             {
                 SpearmanCorrelation = spearmanCorr,
@@ -514,37 +537,7 @@ namespace SCPBrowser
             return 1.0 - hypergeometric.CumulativeDistribution(k - 1);
         }
 
-        /// <summary>
-        /// Computes the softmax probability of the top-scoring cell type.
-        /// Softmax converts composite scores into a proper probability distribution (sum = 1).
-        /// The confidence is P(top) = exp(s_top) / Σ exp(s_i), with numerical stability via max subtraction.
-        /// </summary>
-        public static double ComputeSoftmaxConfidence(Dictionary<string, CellTypeScore> scores)
-        {
-            if (scores == null || scores.Count == 0)
-                return 0.0;
 
-            if (scores.Count == 1)
-                return 1.0;
-
-            var composites = scores.Values.Select(s => s.CompositeScore).ToArray();
-
-            // Filter out NaN scores
-            var valid = composites.Where(c => !double.IsNaN(c)).ToArray();
-            if (valid.Length == 0)
-                return 0.0;
-            if (valid.Length == 1)
-                return 1.0;
-
-            // Subtract max for numerical stability (prevents overflow in exp)
-            double max = valid.Max();
-            double sumExp = 0.0;
-            for (int i = 0; i < valid.Length; i++)
-                sumExp += Math.Exp(valid[i] - max);
-
-            // P(top) = exp(max - max) / sumExp = 1.0 / sumExp
-            return 1.0 / sumExp;
-        }
 
 
 
@@ -608,8 +601,8 @@ namespace SCPBrowser
         public double MarkerCoverage { get; set; }
 
         /// <summary>
-        /// Z-score based composite combining all metrics plus key marker adjustment (unbounded, can be negative)
-        /// Higher = better overall match relative to other cell types
+        /// Softmax probability for this cell type (0–1, all cell types sum to 1)
+        /// Higher = better overall match. Directly interpretable as classification probability.
         /// </summary>
         public double CompositeScore { get; set; }
 
@@ -627,7 +620,7 @@ namespace SCPBrowser
         {
             return $"Spearman: {SpearmanCorrelation:F3}, Specificity: {SpecificityScore:F3}, " +
                    $"P-value: {HypergeometricPValue:E2}, Coverage: {MarkerCoverage:F3}, " +
-                   $"KeyMarker: {KeyMarkerAdjustment:+0.00;-0.00;0}, Prior: {PriorAdjustment:+0.00;-0.00;0}, Composite: {CompositeScore:F3}";
+                   $"KeyMarker: {KeyMarkerAdjustment:+0.00;-0.00;0}, Prior: {PriorAdjustment:+0.00;-0.00;0}, Prob: {CompositeScore:P1}";
         }
 
         /// <summary>

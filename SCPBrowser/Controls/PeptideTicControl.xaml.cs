@@ -31,6 +31,7 @@ namespace SCPBrowser
         private HashSet<string> _checkedBioConditions = new HashSet<string>();
         private HashSet<string> _checkedCellTypes = new HashSet<string>();
         private bool _suppressCheckboxEvents = false;
+        private bool _suppressSettingsSave = false;
 
         public event EventHandler CellTypePredictionsRequested;
         public event EventHandler SelectionChangedForBioTessera;
@@ -68,6 +69,9 @@ namespace SCPBrowser
                 GuidedWeightSlider.IsEnabled = true;
             GuidedEmbeddingCheckBox.Unchecked += (s, e) =>
                 GuidedWeightSlider.IsEnabled = false;
+
+            ConfidenceThresholdSlider.Value = Settings.Default.ClassificationConfidenceThreshold;
+            ConfidenceThresholdLabel.Text = $"{Settings.Default.ClassificationConfidenceThreshold:P0}";
 
             _isInitialized = true;
         }
@@ -362,19 +366,7 @@ namespace SCPBrowser
             if (hasPredictions)
             {
                 double threshold = ConfidenceThresholdSlider.Value;
-                foreach (var kvp in predictions)
-                {
-                    var prediction = kvp.Value;
-                    // Restore original cell type from scores before applying threshold
-                    if (prediction.Scores != null && prediction.Scores.Count > 0)
-                    {
-                        string originalTop = prediction.Scores.First().Key;
-                        if (originalTop != "Undetermined")
-                            prediction.TopCellType = originalTop;
-                    }
-                    if (prediction.Confidence < threshold)
-                        prediction.TopCellType = "Undetermined";
-                }
+                ApplyConfidenceThreshold(threshold);
             }
 
             // Show/hide the export diagnostics button
@@ -387,7 +379,7 @@ namespace SCPBrowser
                 // Auto-select Cell Type mode if requested and predictions are available
                 if (selectCellTypeMode && predictions != null && predictions.Count > 0)
                 {
-                    ColorModeComboBox.SelectedIndex = 1; // Cell Type
+                    ColorModeComboBox.SelectedIndex = 3; // Cell Type
                     // ColorModeComboBox_SelectionChanged will be triggered automatically, which populates checkboxes
                 }
 
@@ -398,6 +390,7 @@ namespace SCPBrowser
                 {
                     PopulateCellTypeCheckboxes();
                     BioConditionPanel.Visibility = Visibility.Visible;
+                    ConfidenceThresholdPanel.Visibility = Visibility.Visible;
                 }
 
                 RefreshChart();
@@ -432,16 +425,38 @@ namespace SCPBrowser
             double threshold = ConfidenceThresholdSlider.Value;
             ConfidenceThresholdLabel.Text = $"{threshold:P0}";
 
-            // Re-apply threshold: restore original cell type from Scores, then mark Undetermined if below threshold
+            if (!_suppressSettingsSave)
+            {
+                Settings.Default.ClassificationConfidenceThreshold = threshold;
+                Settings.Default.Save();
+            }
+
+            ApplyConfidenceThreshold(threshold);
+        }
+
+        public void ApplyConfidenceThresholdFromSettings()
+        {
+            double threshold = Settings.Default.ClassificationConfidenceThreshold;
+
+            _suppressSettingsSave = true;
+            ConfidenceThresholdSlider.Value = threshold;
+            _suppressSettingsSave = false;
+
+            ConfidenceThresholdLabel.Text = $"{threshold:P0}";
+
+            if (_cellTypePredictions == null || _cellTypePredictions.Count == 0)
+                return;
+
+            ApplyConfidenceThreshold(threshold);
+        }
+
+        private void ApplyConfidenceThreshold(double threshold)
+        {
             foreach (var kvp in _cellTypePredictions)
             {
                 var prediction = kvp.Value;
                 if (prediction.Scores != null && prediction.Scores.Count > 0)
                 {
-                    // Restore original top cell type from ordered scores
-                    // Note: for DB-loaded predictions, Scores only has one entry — 
-                    // if it was saved as "Undetermined", we can't recover the original cell type name.
-                    // User must force-recompute to get full scores and benefit from threshold adjustment.
                     string originalTop = prediction.Scores.First().Key;
                     if (originalTop != "Undetermined")
                         prediction.TopCellType = originalTop;
@@ -452,7 +467,6 @@ namespace SCPBrowser
                 }
             }
 
-            // Refresh UI
             var selectedItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
             if (selectedItem?.Tag?.ToString() == "CellType")
             {
@@ -1303,6 +1317,47 @@ namespace SCPBrowser
                 // Reset lasso state and re-enable checkboxes
                 _isLassoActive = false;
                 SetCellTypeCheckboxesEnabled(true);
+            }
+            finally
+            {
+                _suppressCheckboxEvents = false;
+            }
+        }
+
+        private void SelectAllButton_Click(object sender, RoutedEventArgs e)
+        {
+            _suppressCheckboxEvents = true;
+
+            try
+            {
+                ScatterPlot.SelectAll();
+
+                // Determine which checked set the current checkboxes belong to
+                var selectedItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
+                string colorMode = selectedItem?.Tag?.ToString() ?? "TargetRatio";
+
+                HashSet<string> activeSet = colorMode switch
+                {
+                    "CellType" => _checkedCellTypes,
+                    "Plate" => _checkedPlates,
+                    _ => _checkedBioConditions
+                };
+
+                activeSet.Clear();
+
+                foreach (var child in BioConditionCheckboxes.Children)
+                {
+                    if (child is CheckBox cb)
+                    {
+                        cb.IsChecked = true;
+                        if (cb.Tag is string tag)
+                            activeSet.Add(tag);
+                    }
+                }
+
+                _isLassoActive = false;
+                SetCellTypeCheckboxesEnabled(true);
+                ClearSelectionButton.IsEnabled = false;
             }
             finally
             {

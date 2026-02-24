@@ -237,7 +237,7 @@
             <StackPanel x:Name="ConfidenceThresholdPanel" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,15,0">
                 <TextBlock Text="Min Confidence:" VerticalAlignment="Center" Margin="0,0,5,0"/>
                 <Slider x:Name="ConfidenceThresholdSlider"
-                        Minimum="0" Maximum="1" Value="0.50"
+                        Minimum="0" Maximum="1"
                         Width="80" VerticalAlignment="Center"
                         TickFrequency="0.05" IsSnapToTickEnabled="True"
                         ValueChanged="ConfidenceThresholdSlider_ValueChanged"
@@ -251,6 +251,11 @@
                     Click="ClearSelectionButton_Click"
                     Padding="10,5"
                     IsEnabled="False"/>
+            <Button x:Name="SelectAllButton"
+                    Content="Select All"
+                    Click="SelectAllButton_Click"
+                    Padding="10,5"
+                    Margin="5,0,0,0"/>
             <CheckBox x:Name="HideGreyDotsCheckBox"
                                 Content="Hide Grey Dots"
                                 VerticalAlignment="Center"

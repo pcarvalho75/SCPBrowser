@@ -8,6 +8,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
@@ -72,8 +73,40 @@
                 </StackPanel>
             </GroupBox>
 
+            <!-- Classification Settings Group -->
+            <GroupBox Grid.Row="2" Style="{StaticResource ModernGroupBox}">
+                <GroupBox.Header>
+                    <TextBlock Text="Cell Type Classification" 
+                               Style="{StaticResource SubheaderText}"/>
+                </GroupBox.Header>
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220"/>
+                            <ColumnDefinition Width="200"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" 
+                                   Text="Confidence Threshold:" 
+                                   Style="{StaticResource LabelText}"/>
+                        <xctk:DoubleUpDown Grid.Column="1" 
+                                           x:Name="ConfidenceThresholdUpDown"
+                                           Minimum="0"
+                                           Maximum="1"
+                                           Increment="0.05"
+                                           FormatString="P0"
+                                           VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" 
+                                   Text="Cells below this score are marked Undetermined (default 50%)"
+                                   Style="{StaticResource HelpText}"
+                                   VerticalAlignment="Center"
+                                   Margin="15,0,0,0"/>
+                    </Grid>
+                </StackPanel>
+            </GroupBox>
+
             <!-- Action Buttons and Status -->
-            <Grid Grid.Row="2" VerticalAlignment="Top" Margin="0,10,0,0">
+            <Grid Grid.Row="3" VerticalAlignment="Top" Margin="0,10,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>

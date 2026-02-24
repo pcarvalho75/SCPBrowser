@@ -9,8 +9,11 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.IO;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using Microsoft.Win32;
 using UMAP;
 
 namespace SCPBrowser
@@ -105,7 +108,6 @@ namespace SCPBrowser
         private bool _suppressSelectionEvents = false;
         public event EventHandler<PlotSelectionChangedEventArgs> SelectionChanged;
         public event EventHandler<PointInteractionEventArgs> PointHovered;
-        public event EventHandler<PointInteractionEventArgs> PointClicked;
         public double? LabelPurity => _labelPurity;
         public IReadOnlyList<DataPoint> DataPoints => _dataPoints;
         public bool NeedsPcaCompute => _pcaResult == null;
@@ -1103,6 +1105,21 @@ namespace SCPBrowser
             SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = new List<DataPoint>() });
         }
 
+        public void SelectAll()
+        {
+            _selectionManager.ClearSelection();
+
+            foreach (var point in _dataPoints)
+            {
+                point.IsSelected = true;
+                point.ExclusionReasons = ExclusionReason.None;
+                point.ExclusionDetail = null;
+                ApplySelectionStyling(point, true);
+            }
+
+            SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = _dataPoints.ToList() });
+        }
+
         public void HighlightPoints(List<string> runNames)
         {
             if (runNames == null || runNames.Count == 0)
@@ -1774,24 +1791,7 @@ namespace SCPBrowser
             }
         }
 
-        private void PlotCanvas_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            var mousePos = e.GetPosition(PlotCanvas);
 
-            foreach (var point in _dataPoints)
-            {
-                double dx = point.XScreen - mousePos.X;
-                double dy = point.YScreen - mousePos.Y;
-                double distance = Math.Sqrt(dx * dx + dy * dy);
-
-                if (distance <= HoverTolerance)
-                {
-                    PointClicked?.Invoke(this, new PointInteractionEventArgs { DataPoint = point });
-                    e.Handled = true;
-                    return;
-                }
-            }
-        }
 
         private void ShowHoverEffectAndTooltip(DataPoint point, Point mousePos)
         {
@@ -1918,6 +1918,54 @@ namespace SCPBrowser
 
             ClearHoverEffect();
             TooltipBorder.Visibility = Visibility.Collapsed;
+        }
+
+        private void MenuSavePlotImage_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new SaveFileDialog
+            {
+                Filter = "PNG Image|*.png",
+                DefaultExt = ".png",
+                FileName = "plot"
+            };
+
+            if (dlg.ShowDialog() != true)
+                return;
+
+            const int scale = 3;
+            int width = (int)PlotCanvas.ActualWidth;
+            int height = (int)PlotCanvas.ActualHeight;
+
+            if (width <= 0 || height <= 0)
+                return;
+
+            // Hide tooltip so it doesn't render in the saved image
+            var previousVisibility = TooltipBorder.Visibility;
+            TooltipBorder.Visibility = Visibility.Collapsed;
+
+            try
+            {
+                var rtb = new RenderTargetBitmap(
+                    width * scale, height * scale, 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+                rtb.Render(PlotCanvas);
+
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(rtb));
+
+                using (var stream = File.Create(dlg.FileName))
+                {
+                    encoder.Save(stream);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to save image: {ex.Message}", "Save Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                TooltipBorder.Visibility = previousVisibility;
+            }
         }
 
         /// <summary>

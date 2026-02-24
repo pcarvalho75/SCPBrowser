@@ -52,6 +52,9 @@ namespace SCPBrowser
             // Subscribe to ProjectBrowser reclassify request
             ProjectBrowserDialog.ReclassifyRequested += ProjectBrowserDialog_ReclassifyRequested;
 
+            // Subscribe to Settings changes
+            SettingsDialog.SettingsSaved += (s, args) => PeptideTicTab.ApplyConfidenceThresholdFromSettings();
+
             _goTermResolver = new GoTermResolver(9606); // Human default
             UpdateWindowTitle();
 

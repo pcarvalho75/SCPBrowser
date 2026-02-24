@@ -1,17 +1,18 @@
 using System;
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
-using Microsoft.Win32;
 
 namespace SCPBrowser
 {
     public partial class SettingsControl : UserControl
     {
+        public event EventHandler SettingsSaved;
+
         public SettingsControl()
         {
             InitializeComponent();
+            IsVisibleChanged += SettingsControl_IsVisibleChanged;
             LoadSettings();
         }
 
@@ -19,6 +20,7 @@ namespace SCPBrowser
         {
             PValueUpDown.Value = Settings.Default.GOPValueCutoff;
             MinOverlapUpDown.Value = Settings.Default.GOMinimumOverlap;
+            ConfidenceThresholdUpDown.Value = Settings.Default.ClassificationConfidenceThreshold;
         }
 
         private void SaveSettings_Click(object sender, RoutedEventArgs e)
@@ -39,13 +41,24 @@ namespace SCPBrowser
                 return;
             }
 
+            // Validate confidence threshold
+            if (!ConfidenceThresholdUpDown.Value.HasValue || ConfidenceThresholdUpDown.Value.Value < 0 || ConfidenceThresholdUpDown.Value.Value > 1)
+            {
+                MessageBox.Show("Confidence Threshold must be between 0 and 1", "Invalid Value",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             // Save settings
             Settings.Default.GOPValueCutoff = PValueUpDown.Value.Value;
             Settings.Default.GOMinimumOverlap = MinOverlapUpDown.Value.Value;
+            Settings.Default.ClassificationConfidenceThreshold = ConfidenceThresholdUpDown.Value ?? 0.5;
             Settings.Default.Save();
 
             // Show success message
             ShowStatusMessage("✓ Settings saved successfully!", true);
+
+            SettingsSaved?.Invoke(this, EventArgs.Empty);
         }
 
         private void ResetDefaults_Click(object sender, RoutedEventArgs e)
@@ -60,6 +73,7 @@ namespace SCPBrowser
             {
                 PValueUpDown.Value = 0.05;
                 MinOverlapUpDown.Value = 2;
+                ConfidenceThresholdUpDown.Value = 0.5;
 
                 ShowStatusMessage("Settings reset to defaults (click Save to apply)", false);
             }
@@ -68,6 +82,12 @@ namespace SCPBrowser
         private void Close_Click(object sender, RoutedEventArgs e)
         {
             this.Visibility = Visibility.Collapsed;
+        }
+
+        private void SettingsControl_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (Visibility == Visibility.Visible)
+                LoadSettings();
         }
 
         private void ShowStatusMessage(string message, bool isSuccess)

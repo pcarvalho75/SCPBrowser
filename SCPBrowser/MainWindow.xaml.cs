@@ -1045,6 +1045,12 @@ namespace SCPBrowser
                 PeptideTicTab.SetGoEnrichmentResults(goResults, goColorMap);
 
                 Console.WriteLine($"GO enrichment results passed: {goResults?.Count ?? 0} runs");
+
+                // Auto-run cell type classification if reference database is loaded
+                if (cellTypeAvailable)
+                {
+                    await AutoRunCellTypeClassificationAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -1053,6 +1059,7 @@ namespace SCPBrowser
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
 
         private void PeptideTicTab_SelectionChangedForBioTessera(object sender, EventArgs e)
         {

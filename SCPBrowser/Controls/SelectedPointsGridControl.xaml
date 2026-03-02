@@ -67,6 +67,11 @@
                   EnableColumnVirtualization="True"
                   ScrollViewer.IsDeferredScrollingEnabled="True"
                   ScrollViewer.CanContentScroll="True">
+            <DataGrid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Copy to Clipboard" Click="CopyToClipboard_Click"/>
+                </ContextMenu>
+            </DataGrid.ContextMenu>
             <DataGrid.RowHeaderStyle>
                 <Style TargetType="DataGridRowHeader">
                     <Setter Property="Width" Value="40"/>

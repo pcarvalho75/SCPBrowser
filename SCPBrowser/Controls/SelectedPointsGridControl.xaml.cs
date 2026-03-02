@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -10,13 +11,8 @@ namespace SCPBrowser
     {
         private List<SelectedPointData> _currentGridData;
 
-        // Event that fires when a row is selected in the grid
         public event EventHandler<SelectedPointData> GridSelectionChanged;
-
-        // Event that fires when a run's inclusion status changes
         public event EventHandler<RunInclusionChangedEventArgs> RunInclusionChanged;
-
-        // Event that fires when "Clear All Exclusions" is clicked
         public event EventHandler ClearAllExclusionsRequested;
 
         public SelectedPointsGridControl()
@@ -24,9 +20,6 @@ namespace SCPBrowser
             InitializeComponent();
         }
 
-        /// <summary>
-        /// Updates the grid with a new list of selected points
-        /// </summary>
         public void UpdateGrid(List<SelectedPointData> gridData)
         {
             _currentGridData = gridData;
@@ -41,29 +34,19 @@ namespace SCPBrowser
                 SelectionStatusText.Text = "Click a point or drag to select multiple points. Right-click a point to view details.";
             }
 
-            // Show/hide clear exclusions button based on whether there are exclusions
             UpdateClearExclusionsVisibility();
         }
 
-        /// <summary>
-        /// Updates the selection rule text display
-        /// </summary>
         public void UpdateSelectionRuleText(string ruleText)
         {
             SelectionRuleText.Text = ruleText;
         }
 
-        /// <summary>
-        /// Shows or hides the Clear Exclusions button
-        /// </summary>
         public void SetHasExclusions(bool hasExclusions)
         {
             ClearExclusionsButton.Visibility = hasExclusions ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        /// <summary>
-        /// Clears the grid and resets status text
-        /// </summary>
         public void ClearGrid()
         {
             Console.WriteLine("GridCleared");
@@ -93,11 +76,9 @@ namespace SCPBrowser
         {
             if (SelectedPointsGrid.SelectedItem is SelectedPointData selectedData)
             {
-                // Fire the event to notify the parent (PeptideTicControl)
                 GridSelectionChanged?.Invoke(this, selectedData);
             }
 
-            // Check for checkbox changes (IsIncluded property)
             if (e.AddedItems.Count > 0 || e.RemovedItems.Count > 0)
             {
                 CheckForInclusionChanges();
@@ -106,8 +87,6 @@ namespace SCPBrowser
 
         private void CheckForInclusionChanges()
         {
-            // This gets called on selection change, but we need to detect checkbox changes
-            // We'll handle this through the CellEditEnding event instead
         }
 
         protected override void OnInitialized(EventArgs e)
@@ -120,12 +99,10 @@ namespace SCPBrowser
         {
             if (e.Column.Header?.ToString() == "✓" && e.Row.Item is SelectedPointData data)
             {
-                // Get the checkbox value
                 if (e.EditingElement is CheckBox checkBox)
                 {
                     bool isIncluded = checkBox.IsChecked ?? true;
 
-                    // Fire event to notify parent
                     RunInclusionChanged?.Invoke(this, new RunInclusionChangedEventArgs
                     {
                         RawFileId = data.RawFileId,
@@ -133,7 +110,6 @@ namespace SCPBrowser
                         IsIncluded = isIncluded
                     });
 
-                    // Update button visibility after a short delay to let binding update
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
                         UpdateClearExclusionsVisibility();
@@ -144,7 +120,6 @@ namespace SCPBrowser
 
         private void ClearExclusionsButton_Click(object sender, RoutedEventArgs e)
         {
-            // Re-check all items in the grid
             if (_currentGridData != null)
             {
                 foreach (var item in _currentGridData)
@@ -155,15 +130,26 @@ namespace SCPBrowser
             }
 
             ClearExclusionsButton.Visibility = Visibility.Collapsed;
-
-            // Notify parent to clear exclusions in database
             ClearAllExclusionsRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void CopyToClipboard_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentGridData == null || _currentGridData.Count == 0)
+                return;
+
+            var sb = new StringBuilder();
+            sb.AppendLine("Run Name\tCondition\tPeptides\tTIC\tProteins\tContaminant Ratio\tCell Type\tClassification Score");
+
+            foreach (var row in _currentGridData)
+            {
+                sb.AppendLine($"{row.RunName}\t{row.BiologicalCondition}\t{row.PeptideCount}\t{row.TicValue:E2}\t{row.ProteinCount}\t{row.ContaminantRatioPercent}\t{row.CellType}\t{row.CompositeScore}");
+            }
+
+            Clipboard.SetText(sb.ToString());
         }
     }
 
-    /// <summary>
-    /// Event args for run inclusion changes
-    /// </summary>
     public class RunInclusionChangedEventArgs : EventArgs
     {
         public int RawFileId { get; set; }

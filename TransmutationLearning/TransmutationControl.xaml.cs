@@ -98,11 +98,11 @@ namespace TransmutationLearning
             if (!string.IsNullOrEmpty(ParquetPathTextBox.Text) && !string.IsNullOrEmpty(MetadataPathTextBox.Text))
             {
                 // Both files selected - auto-load
-                LoadData();
+                _ = LoadData();
             }
         }
 
-        private async void LoadData()
+        private async Task LoadData()
         {
             try
             {

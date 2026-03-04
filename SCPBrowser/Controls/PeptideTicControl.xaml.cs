@@ -27,6 +27,7 @@ namespace SCPBrowser
         private Dictionary<string, int> _runNameToRawFileId = new Dictionary<string, int>();
         private HashSet<string> _excludedRunNames = new HashSet<string>();
         private Dictionary<string, Color> _plateColorMap;
+        private Dictionary<string, Color> _bioConditionColorMap;
 
         private HashSet<string> _checkedBioConditions = new HashSet<string>();
         private HashSet<string> _checkedCellTypes = new HashSet<string>();
@@ -52,6 +53,121 @@ namespace SCPBrowser
         public HashSet<string> CheckedBioConditions => _checkedBioConditions;
         public HashSet<string> CheckedCellTypes => _checkedCellTypes;
         public HashSet<string> CheckedPlates => _checkedPlates;
+
+        private async void SaveCheckedStatesAsync()
+        {
+            if (_databaseService == null) return;
+            await _databaseService.SetSettingAsync("CheckedCellTypes", string.Join(",", _checkedCellTypes));
+            await _databaseService.SetSettingAsync("CheckedBioConditions", string.Join(",", _checkedBioConditions));
+            await _databaseService.SetSettingAsync("CheckedPlates", string.Join(",", _checkedPlates));
+        }
+
+        private async void SaveColorMapsAsync()
+        {
+            if (_databaseService == null) return;
+
+            static string SerializeColorMap(Dictionary<string, Color> map)
+            {
+                if (map == null || map.Count == 0) return string.Empty;
+                return string.Join(",", map.Select(kvp =>
+                    $"{Uri.EscapeDataString(kvp.Key)}={kvp.Value.R:X2}{kvp.Value.G:X2}{kvp.Value.B:X2}"));
+            }
+
+            await _databaseService.SetSettingAsync("CellTypeColors", SerializeColorMap(_cellTypeColorMap));
+            await _databaseService.SetSettingAsync("BioConditionColors", SerializeColorMap(_bioConditionColorMap));
+            await _databaseService.SetSettingAsync("PlateColors", SerializeColorMap(_plateColorMap));
+        }
+
+        public void RestoreColorMaps(string cellTypeColors, string bioConditionColors, string plateColors)
+        {
+            static Dictionary<string, Color> Deserialize(string raw)
+            {
+                var map = new Dictionary<string, Color>();
+                if (string.IsNullOrEmpty(raw)) return map;
+                foreach (var entry in raw.Split(','))
+                {
+                    var eq = entry.LastIndexOf('=');
+                    if (eq < 0) continue;
+                    var key = Uri.UnescapeDataString(entry.Substring(0, eq));
+                    var hex = entry.Substring(eq + 1);
+                    if (hex.Length != 6) continue;
+                    byte r = Convert.ToByte(hex.Substring(0, 2), 16);
+                    byte g = Convert.ToByte(hex.Substring(2, 2), 16);
+                    byte b = Convert.ToByte(hex.Substring(4, 2), 16);
+                    map[key] = Color.FromRgb(r, g, b);
+                }
+                return map;
+            }
+
+            var ct = Deserialize(cellTypeColors);
+            var bc = Deserialize(bioConditionColors);
+            var pl = Deserialize(plateColors);
+
+            // Merge saved colors over generated defaults - only override keys that exist in both
+            if (ct.Count > 0 && _cellTypeColorMap != null)
+                foreach (var kvp in ct)
+                    if (_cellTypeColorMap.ContainsKey(kvp.Key))
+                        _cellTypeColorMap[kvp.Key] = kvp.Value;
+
+            if (bc.Count > 0)
+            {
+                // Ensure bio condition map is initialized before merging
+                GenerateBioConditionColorMap();
+                if (_bioConditionColorMap != null)
+                    foreach (var kvp in bc)
+                        if (_bioConditionColorMap.ContainsKey(kvp.Key))
+                            _bioConditionColorMap[kvp.Key] = kvp.Value;
+            }
+
+            if (pl.Count > 0 && _plateColorMap != null)
+                foreach (var kvp in pl)
+                    if (_plateColorMap.ContainsKey(kvp.Key))
+                        _plateColorMap[kvp.Key] = kvp.Value;
+        }
+
+        public void RefreshCheckboxUI()
+        {
+            var selectedItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
+            string colorMode = selectedItem?.Tag?.ToString() ?? "TargetRatio";
+
+            _suppressCheckboxEvents = true;
+            try
+            {
+                switch (colorMode)
+                {
+                    case "CellType":
+                        PopulateCellTypeCheckboxes();
+                        break;
+                    case "Plate":
+                        PopulatePlateCheckboxes();
+                        break;
+                    case "BioCondition":
+                        PopulateBioConditionCheckboxes();
+                        break;
+                }
+            }
+            finally
+            {
+                _suppressCheckboxEvents = false;
+            }
+        }
+
+        public void RestoreCheckedStates(HashSet<string> cellTypes, HashSet<string> bioConditions, HashSet<string> plates)
+        {
+            _suppressCheckboxEvents = true;
+            try
+            {
+                if (cellTypes != null) _checkedCellTypes = cellTypes;
+                if (bioConditions != null) _checkedBioConditions = bioConditions;
+                if (plates != null) _checkedPlates = plates;
+            }
+            finally
+            {
+                _suppressCheckboxEvents = false;
+            }
+
+            ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates, userInteraction: false);
+        }
 
         public PeptideTicControl()
         {
@@ -342,7 +458,9 @@ namespace SCPBrowser
                 // Clear old selections when loading new data
                 _checkedCellTypes.Clear();
                 _checkedBioConditions.Clear();
+                _checkedPlates.Clear();
                 _currentSelectedPoints.Clear();
+                _bioConditionColorMap = null;
             }
 
             _currentData = data;
@@ -439,8 +557,14 @@ namespace SCPBrowser
             double threshold = Settings.Default.ClassificationConfidenceThreshold;
 
             _suppressSettingsSave = true;
-            ConfidenceThresholdSlider.Value = threshold;
-            _suppressSettingsSave = false;
+            try
+            {
+                ConfidenceThresholdSlider.Value = threshold;
+            }
+            finally
+            {
+                _suppressSettingsSave = false;
+            }
 
             ConfidenceThresholdLabel.Text = $"{threshold:P0}";
 
@@ -618,6 +742,7 @@ namespace SCPBrowser
                         _checkedPlates.Add(key);
                         ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates, userInteraction: true);
                         UpdateExcludedRunsGrid();
+                        SaveCheckedStatesAsync();
                     }
                 };
 
@@ -631,6 +756,7 @@ namespace SCPBrowser
                         _checkedPlates.Remove(key);
                         ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates, userInteraction: true);
                         UpdateExcludedRunsGrid();
+                        SaveCheckedStatesAsync();
                     }
                 };
 
@@ -671,8 +797,11 @@ namespace SCPBrowser
 
             if (coloringMode == "CellType" && _cellTypePredictions != null)
             {
+                var filteredRunNames = new HashSet<string>(_currentData.RawFileNames);
                 foreach (var kvp in _cellTypePredictions)
                 {
+                    if (!filteredRunNames.Contains(kvp.Key))
+                        continue;
                     string cellType = kvp.Value.TopCellType ?? "Unknown";
                     if (!counts.ContainsKey(cellType))
                         counts[cellType] = 0;
@@ -734,6 +863,9 @@ namespace SCPBrowser
 
         private Dictionary<string, Color> GenerateBioConditionColorMap()
         {
+            if (_bioConditionColorMap != null && _bioConditionColorMap.Count > 0)
+                return _bioConditionColorMap;
+
             if (_currentData == null || _currentData.BiologicalConditionPerFile.Count == 0)
                 return new Dictionary<string, Color>();
 
@@ -743,14 +875,13 @@ namespace SCPBrowser
                 .OrderBy(c => c)
                 .ToList();
 
-            var colorMap = new Dictionary<string, Color>();
+            _bioConditionColorMap = new Dictionary<string, Color>();
             for (int i = 0; i < uniqueConditions.Count; i++)
             {
-                // Simple hue-based color generation
                 double hue = (double)i / uniqueConditions.Count * 360.0;
-                colorMap[uniqueConditions[i]] = ColorMapper.HsvToRgb(hue, 0.7, 0.9);
+                _bioConditionColorMap[uniqueConditions[i]] = ColorMapper.HsvToRgb(hue, 0.7, 0.9);
             }
-            return colorMap;
+            return _bioConditionColorMap;
         }
 
         private Dictionary<string, Color> GeneratePlateColorMap()
@@ -866,6 +997,7 @@ namespace SCPBrowser
                         checkedItems.Add(key);
                         ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates, userInteraction: true);
                         UpdateExcludedRunsGrid();
+                        SaveCheckedStatesAsync();
                     }
                 };
 
@@ -879,6 +1011,7 @@ namespace SCPBrowser
                         checkedItems.Remove(key);
                         ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates, userInteraction: true);
                         UpdateExcludedRunsGrid();
+                        SaveCheckedStatesAsync();
                     }
                 };
 
@@ -970,6 +1103,7 @@ namespace SCPBrowser
                     _colorPickerPopup.IsOpen = false;
                     if (_currentData != null)
                         RefreshChart();
+                    SaveColorMapsAsync();
                 };
 
                 // Hover highlight
@@ -1299,6 +1433,7 @@ namespace SCPBrowser
                 // Clear checkbox selections
                 _checkedCellTypes.Clear();
                 _checkedBioConditions.Clear();
+                _checkedPlates.Clear();
 
                 // Uncheck all checkboxes visually
                 foreach (var child in BioConditionCheckboxes.Children)

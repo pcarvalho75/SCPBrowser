@@ -62,7 +62,7 @@ namespace SCPBrowser
             LoadingOverlay.Hide();
 
             // Load recent projects
-            LoadRecentProjectsUI();
+            _ = LoadRecentProjectsUI();
 
             // Check GO database status
             CheckGoStatus();
@@ -1051,6 +1051,9 @@ namespace SCPBrowser
                 {
                     await AutoRunCellTypeClassificationAsync();
                 }
+
+                // Restore checkbox states from database
+                await RestoreCheckedStatesAsync();
             }
             catch (Exception ex)
             {
@@ -1103,6 +1106,44 @@ namespace SCPBrowser
 
             // Refresh the Explorer chart with updated ratios
             PeptideTicTab.UpdateChart(_dataFilterService.FilteredData);
+        }
+
+        private async Task RestoreCheckedStatesAsync()
+        {
+            if (_projectDatabaseService == null) return;
+
+            var cellTypes = await _projectDatabaseService.GetSettingAsync("CheckedCellTypes");
+            var bioConditions = await _projectDatabaseService.GetSettingAsync("CheckedBioConditions");
+            var plates = await _projectDatabaseService.GetSettingAsync("CheckedPlates");
+
+            var cellTypeColors = await _projectDatabaseService.GetSettingAsync("CellTypeColors");
+            var bioConditionColors = await _projectDatabaseService.GetSettingAsync("BioConditionColors");
+            var plateColors = await _projectDatabaseService.GetSettingAsync("PlateColors");
+
+            // Restore checkbox states
+            if (cellTypes != null || bioConditions != null || plates != null)
+            {
+                var checkedCellTypes = cellTypes != null
+                    ? new HashSet<string>(cellTypes.Split(',').Where(s => !string.IsNullOrEmpty(s)))
+                    : null;
+                var checkedBioConditions = bioConditions != null
+                    ? new HashSet<string>(bioConditions.Split(',').Where(s => !string.IsNullOrEmpty(s)))
+                    : null;
+                var checkedPlates = plates != null
+                    ? new HashSet<string>(plates.Split(',').Where(s => !string.IsNullOrEmpty(s)))
+                    : null;
+
+                PeptideTicTab.RestoreCheckedStates(checkedCellTypes, checkedBioConditions, checkedPlates);
+            }
+
+            // Restore color maps
+            if (cellTypeColors != null || bioConditionColors != null || plateColors != null)
+            {
+                PeptideTicTab.RestoreColorMaps(cellTypeColors, bioConditionColors, plateColors);
+            }
+
+            // Refresh checkbox/legend UI to reflect restored states and colors
+            PeptideTicTab.RefreshCheckboxUI();
         }
 
         /// <summary>
@@ -1420,19 +1461,17 @@ namespace SCPBrowser
 
             public void ReportMessage(string message)
             {
-                _loadingOverlay.Dispatcher.InvokeAsync(async () =>
+                _loadingOverlay.Dispatcher.InvokeAsync(() =>
                 {
                     _loadingOverlay.SetMessage(message);
-                    await Task.Delay(10);
                 }, System.Windows.Threading.DispatcherPriority.Render);
             }
 
             public void ReportProgress(string progressDetail)
             {
-                _loadingOverlay.Dispatcher.InvokeAsync(async () =>
+                _loadingOverlay.Dispatcher.InvokeAsync(() =>
                 {
                     _loadingOverlay.SetProgress(progressDetail);
-                    await Task.Delay(10);
                 }, System.Windows.Threading.DispatcherPriority.Render);
             }
         }
@@ -1512,7 +1551,7 @@ namespace SCPBrowser
             Console.WriteLine($"Added to recent projects: {projectPath}");
         }
 
-        private List<RecentProjectItem> GetRecentProjects()
+        private async Task<List<RecentProjectItem>> GetRecentProjectsAsync()
         {
             var recentProjects = new List<RecentProjectItem>();
 
@@ -1527,7 +1566,7 @@ namespace SCPBrowser
                         try
                         {
                             var service = new ProjectDatabaseService(projectPath);
-                            var info = service.GetProjectInfoAsync().Result;
+                            var info = await service.GetProjectInfoAsync();
                             if (info != null)
                             {
                                 if (!string.IsNullOrEmpty(info.Description))
@@ -1551,9 +1590,9 @@ namespace SCPBrowser
             return recentProjects;
         }
 
-        private void LoadRecentProjectsUI()
+        private async Task LoadRecentProjectsUI()
         {
-            var recentProjects = GetRecentProjects();
+            var recentProjects = await GetRecentProjectsAsync();
 
             if (recentProjects.Count > 0)
             {
@@ -1597,7 +1636,7 @@ namespace SCPBrowser
                             }
 
                             // Refresh the UI
-                            LoadRecentProjectsUI();
+                            await LoadRecentProjectsUI();
                         }
 
                         return;
@@ -1615,7 +1654,7 @@ namespace SCPBrowser
             }
         }
 
-        private void RemoveRecentProject_Click(object sender, RoutedEventArgs e)
+        private async void RemoveRecentProject_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button button && button.Tag is RecentProjectItem item)
             {
@@ -1628,7 +1667,7 @@ namespace SCPBrowser
                 }
 
                 // Refresh the UI
-                LoadRecentProjectsUI();
+                await LoadRecentProjectsUI();
             }
         }
 
@@ -1658,7 +1697,7 @@ namespace SCPBrowser
                 if (dialog.ShowDialog() == true)
                 {
                     await service.UpdateProjectInfoAsync(dialog.ProjectName, dialog.ProjectDescription);
-                    LoadRecentProjectsUI();
+                    await LoadRecentProjectsUI();
                 }
             }
             catch (Exception ex)

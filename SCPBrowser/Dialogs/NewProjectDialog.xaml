@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="New Project" 
-        Height="400" 
+        Height="530" 
         Width="550"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
@@ -91,7 +91,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
@@ -163,29 +163,25 @@
 
         <!-- Description -->
         <Grid Grid.Row="5" Margin="0,0,0,0">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="140"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Row="0" Grid.Column="0"
+            <TextBlock Grid.Column="0"
                        Text="Description:" 
                        Style="{StaticResource LabelText}"
                        VerticalAlignment="Top"
                        Margin="0,8,10,0"/>
 
-            <TextBox Grid.Row="1" Grid.Column="1"
+            <TextBox Grid.Column="1"
                      x:Name="DescriptionTextBox"
                      AcceptsReturn="True"
                      TextWrapping="Wrap"
                      VerticalScrollBarVisibility="Auto"
                      Padding="8"
                      FontSize="13"
-                     MinHeight="80"
+                     Height="90"
                      TextChanged="Description_TextChanged"/>
         </Grid>
 

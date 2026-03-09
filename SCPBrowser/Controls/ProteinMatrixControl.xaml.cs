@@ -20,7 +20,6 @@ namespace SCPBrowser
         private Dictionary<string, double> _hvpLookup;
         private Dictionary<string, Color> _bioConditionHeaderColors;
         private DataTable _fullDataTable;
-        private DataTable _filteredDataTable;
         private Dictionary<string, FastaParserService.ProteinAnnotation> _proteinAnnotations;
         private HashSet<string> _contaminantIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private string _projectDbPath;
@@ -252,9 +251,8 @@ namespace SCPBrowser
                 _fullDataTable.Rows.Add(row);
             }
 
-            _filteredDataTable = _fullDataTable.Copy();
             ProteinMatrixGrid.Columns.Clear();
-            ProteinMatrixGrid.ItemsSource = _filteredDataTable.DefaultView;
+            ProteinMatrixGrid.ItemsSource = _fullDataTable.DefaultView;
 
             int hvpCount = _hvpResults?.Count(h => h.IsHighlyVariable) ?? 0;
             string hvpInfo = hasHvpData ? $" | {hvpCount} HVPs" : "";
@@ -428,19 +426,14 @@ namespace SCPBrowser
 
         private void ProteinCell_MouseEnter(object sender, MouseEventArgs e)
         {
-            if (sender is TextBlock textBlock && _proteinAnnotations != null && _proteinAnnotations.Count > 0)
+            if (sender is TextBlock textBlock && textBlock.DataContext is System.Data.DataRowView rowView)
             {
-                string proteinGroup = textBlock.Text;
-                string tooltip = BuildProteinTooltip(proteinGroup);
+                string proteinGroup = rowView["Protein Group"]?.ToString() ?? "";
+                string tooltip = _proteinAnnotations != null && _proteinAnnotations.Count > 0
+                    ? BuildProteinTooltip(proteinGroup)
+                    : null;
 
-                if (!string.IsNullOrEmpty(tooltip))
-                {
-                    textBlock.ToolTip = tooltip;
-                }
-                else
-                {
-                    textBlock.ToolTip = proteinGroup;
-                }
+                textBlock.ToolTip = !string.IsNullOrEmpty(tooltip) ? tooltip : proteinGroup;
             }
         }
 
@@ -495,27 +488,17 @@ namespace SCPBrowser
 
         private void SetContaminantOnAllVisible(bool mark)
         {
-            if (_filteredDataTable == null) return;
+            if (_fullDataTable == null) return;
 
-            foreach (DataRow row in _filteredDataTable.Rows)
+            foreach (DataRowView rowView in _fullDataTable.DefaultView)
             {
-                string proteinGroup = row["Protein Group"].ToString();
-                row["Contaminant"] = mark;
+                string proteinGroup = rowView["Protein Group"].ToString();
+                rowView["Contaminant"] = mark;
 
                 if (mark)
                     _contaminantIds.Add(proteinGroup);
                 else
                     _contaminantIds.Remove(proteinGroup);
-
-                // Sync to full table
-                foreach (DataRow fullRow in _fullDataTable.Rows)
-                {
-                    if (fullRow["Protein Group"].ToString() == proteinGroup)
-                    {
-                        fullRow["Contaminant"] = mark;
-                        break;
-                    }
-                }
             }
 
             ProteinMatrixGrid.Items.Refresh();
@@ -526,7 +509,7 @@ namespace SCPBrowser
         {
             // Sync _contaminantIds from the current DataTable checkbox state
             _contaminantIds.Clear();
-            if (_filteredDataTable != null)
+            if (_fullDataTable != null)
             {
                 foreach (DataRow row in _fullDataTable.Rows)
                 {
@@ -659,7 +642,7 @@ namespace SCPBrowser
             bool hasHvpData = _hvpLookup != null && _hvpLookup.Count > 0;
             string hvpInfo = hasHvpData ? $" | {hvpCount} HVPs" : "";
             string contaminantInfo = contaminantCount > 0 ? $" | {contaminantCount} contaminants marked" : "";
-            StatusText.Text = $"Displaying {_filteredDataTable.Rows.Count} proteins across {_currentData.RawFileNames.Count} raw files{hvpInfo}{contaminantInfo}";
+            StatusText.Text = $"Displaying {_fullDataTable?.DefaultView.Count ?? 0} proteins across {_currentData?.RawFileNames.Count ?? 0} raw files{hvpInfo}{contaminantInfo}";
         }
 
         private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -671,28 +654,18 @@ namespace SCPBrowser
 
             if (string.IsNullOrWhiteSpace(searchText))
             {
-                _filteredDataTable = _fullDataTable.Copy();
+                _fullDataTable.DefaultView.RowFilter = "";
             }
             else
             {
-                _filteredDataTable = _fullDataTable.Clone();
-
-                foreach (DataRow row in _fullDataTable.Rows)
-                {
-                    var proteinName = row["Protein Group"].ToString();
-                    var description = row["Description"].ToString();
-                    var gene = row["Gene"].ToString();
-                    if (proteinName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        description.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        gene.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        _filteredDataTable.ImportRow(row);
-                    }
-                }
+                // Escape single quotes to prevent RowFilter injection
+                var escaped = searchText.Replace("'", "''");
+                _fullDataTable.DefaultView.RowFilter =
+                    $"[Protein Group] LIKE '%{escaped}%' OR [Description] LIKE '%{escaped}%' OR [Gene] LIKE '%{escaped}%'";
             }
 
-            ProteinMatrixGrid.Columns.Clear();
-            ProteinMatrixGrid.ItemsSource = _filteredDataTable.DefaultView;
+            // Force all rows to re-render so LoadingRow fires and contaminant highlighting is correct
+            ProteinMatrixGrid.Items.Refresh();
             UpdateContaminantStatusText();
         }
 
@@ -703,7 +676,7 @@ namespace SCPBrowser
 
         private void ExportButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_filteredDataTable == null || _filteredDataTable.Rows.Count == 0)
+            if (_fullDataTable == null || _fullDataTable.DefaultView.Count == 0)
             {
                 MessageBox.Show("No data to export", "Export", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
@@ -723,22 +696,18 @@ namespace SCPBrowser
             {
                 using (var writer = new StreamWriter(dialog.FileName))
                 {
-                    var columnNames = _filteredDataTable.Columns.Cast<DataColumn>()
+                    var columnNames = _fullDataTable.Columns.Cast<DataColumn>()
                         .Select(column => EscapeCsvField(column.ColumnName));
                     writer.WriteLine(string.Join(",", columnNames));
 
-                    foreach (DataRow row in _filteredDataTable.Rows)
+                    foreach (DataRowView rowView in _fullDataTable.DefaultView)
                     {
-                        var fields = row.ItemArray.Select(field =>
+                        var fields = rowView.Row.ItemArray.Select(field =>
                         {
                             if (field == DBNull.Value)
-                            {
-                                return ""; // Export missing values as empty
-                            }
+                                return "";
                             if (field is double doubleValue)
-                            {
                                 return doubleValue.ToString("G");
-                            }
                             return EscapeCsvField(field.ToString());
                         });
                         writer.WriteLine(string.Join(",", fields));

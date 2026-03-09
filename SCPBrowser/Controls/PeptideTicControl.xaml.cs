@@ -1,6 +1,7 @@
 using SCPBrowser.GOTools;
 using SCPBrowser.Models;
 using SCPBrowser.Services;
+using SCPBrowser.Controls;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -297,6 +298,45 @@ namespace SCPBrowser
             ApplySettingsToUI(_dimRedSettings);
         }
 
+        /// <summary>
+        /// Initializes the Protein Coverage panel with the data sources it needs.
+        /// </summary>
+        public void InitializeProteinCoverage(
+            string fastaPath,
+            List<string> parquetPaths,
+            Dictionary<string, FastaParserService.ProteinAnnotation> annotations)
+        {
+            if (_currentData == null)
+                return;
+
+            ProteinCoveragePanel.Initialize(
+                fastaPath,
+                parquetPaths,
+                _currentData,
+                annotations,
+                () => GetSelectedRunNames());
+        }
+
+        /// <summary>
+        /// Refreshes the protein coverage panel when selection changes.
+        /// Only repopulates if the control is visible to avoid unnecessary work.
+        /// </summary>
+        private void RefreshProteinCoverageList()
+        {
+            if (ProteinCoveragePanel.IsVisible)
+                ProteinCoveragePanel.RefreshForSelection();
+        }
+
+        private void BottomTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.Source != BottomTabControl)
+                return;
+
+            // Refresh protein list when switching to the coverage tab
+            if (BottomTabControl.SelectedIndex == 2 && _currentData != null)
+                ProteinCoveragePanel.RefreshForSelection();
+        }
+
         private void ApplySettingsToUI(DimensionReductionSettings s)
         {
             if (s == null) return;
@@ -464,6 +504,10 @@ namespace SCPBrowser
             }
 
             _currentData = data;
+
+            // Keep coverage panel in sync with current data
+            ProteinCoveragePanel.UpdateProteomicsData(data);
+
             RefreshChart();
         }
 
@@ -1693,6 +1737,9 @@ namespace SCPBrowser
                 UpdateSelectionRuleText();
                 ClearSelectionButton.IsEnabled = false;
             }
+
+            // Refresh protein coverage list for the new selection
+            RefreshProteinCoverageList();
 
             // Notify MainWindow for BioTessera update
             SelectionChangedForBioTessera?.Invoke(this, EventArgs.Empty);

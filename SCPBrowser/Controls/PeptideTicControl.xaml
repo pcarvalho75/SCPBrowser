@@ -364,7 +364,8 @@
                       VerticalAlignment="Stretch"
                       Background="#e2e8f0"/>
 
-        <TabControl Grid.Row="3" Margin="0,5,0,0">
+        <TabControl Grid.Row="3" Margin="0,5,0,0" x:Name="BottomTabControl"
+                    SelectionChanged="BottomTabControl_SelectionChanged">
             <TabItem Header="Selected Points">
                 <local:SelectedPointsGridControl x:Name="SelectedPointsGridPanel"/>
             </TabItem>
@@ -419,6 +420,9 @@
                         <DataGridTextColumn Header="Exclusion Reason" Binding="{Binding ExclusionReason}" Width="250"/>
                     </DataGrid.Columns>
                 </DataGrid>
+            </TabItem>
+            <TabItem Header="Protein Coverage">
+                <controls:ProteinCoverageControl x:Name="ProteinCoveragePanel"/>
             </TabItem>
         </TabControl>
     </Grid>

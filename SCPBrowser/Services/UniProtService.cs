@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -184,7 +184,9 @@ namespace SCPBrowser.Services
                     PathwayIds = GetPathwayIds(root),
                     PubMedIds = GetPubMedIds(root),
                     ProteinExistence = GetProteinExistence(root),
-                    LastModified = GetLastModified(root)
+                    LastModified = GetLastModified(root),
+                    SequenceString = GetSequenceString(root),
+                    Features = GetFeatures(root)
                 };
 
                 return entry;
@@ -510,6 +512,89 @@ namespace SCPBrowser.Services
             return null;
         }
 
+        private string GetSequenceString(JsonElement root)
+        {
+            try
+            {
+                if (root.TryGetProperty("sequence", out var seq))
+                {
+                    if (seq.TryGetProperty("value", out var value))
+                        return value.GetString();
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private List<ProteinFeature> GetFeatures(JsonElement root)
+        {
+            var result = new List<ProteinFeature>();
+            try
+            {
+                if (root.TryGetProperty("features", out var features))
+                {
+                    foreach (var feature in features.EnumerateArray())
+                    {
+                        string type = null;
+                        if (feature.TryGetProperty("type", out var typeProp))
+                            type = typeProp.GetString();
+
+                        if (string.IsNullOrEmpty(type))
+                            continue;
+
+                        // Only keep structurally relevant features
+                        if (!IsRelevantFeatureType(type))
+                            continue;
+
+                        var pf = new ProteinFeature { Type = type };
+
+                        if (feature.TryGetProperty("description", out var desc))
+                            pf.Description = desc.GetString();
+
+                        if (feature.TryGetProperty("location", out var location))
+                        {
+                            if (location.TryGetProperty("start", out var start) &&
+                                start.TryGetProperty("value", out var startVal))
+                                pf.Start = startVal.GetInt32();
+
+                            if (location.TryGetProperty("end", out var end) &&
+                                end.TryGetProperty("value", out var endVal))
+                                pf.End = endVal.GetInt32();
+                        }
+
+                        if (pf.Start.HasValue && pf.End.HasValue)
+                            result.Add(pf);
+                    }
+                }
+            }
+            catch { }
+            return result;
+        }
+
+        private static bool IsRelevantFeatureType(string type)
+        {
+            return type switch
+            {
+                "Domain" => true,
+                "Region" => true,
+                "Repeat" => true,
+                "Motif" => true,
+                "Compositional bias" => true,
+                "Signal peptide" => true,
+                "Transit peptide" => true,
+                "Transmembrane" => true,
+                "Topological domain" => true,
+                "Active site" => true,
+                "Binding site" => true,
+                "Site" => true,
+                "Disulfide bond" => true,
+                "Modified residue" => true,
+                "Chain" => true,
+                "Propeptide" => true,
+                _ => false
+            };
+        }
+
         private List<string> GetKeywords(JsonElement root)
         {
             var result = new List<string>();
@@ -792,6 +877,10 @@ namespace SCPBrowser.Services
         // Sequence info
         public int? SequenceLength { get; set; }
         public double? MolecularWeight { get; set; }
+        public string SequenceString { get; set; }
+
+        // Structural features (domains, regions, sites from UniProt)
+        public List<ProteinFeature> Features { get; set; } = new();
 
         // Annotations
         public List<string> Keywords { get; set; } = new();
@@ -909,6 +998,49 @@ namespace SCPBrowser.Services
             "KEGG" => $"https://www.kegg.jp/entry/{Id}",
             _ => null
         };
+    }
+
+    /// <summary>
+    /// A structural or functional feature from UniProt (domain, region, binding site, etc.)
+    /// with residue-level positions for overlay on coverage maps.
+    /// </summary>
+    public class ProteinFeature
+    {
+        /// <summary>
+        /// Feature type (Domain, Region, Transmembrane, Active site, Signal peptide, etc.)
+        /// </summary>
+        public string Type { get; set; }
+
+        /// <summary>
+        /// Human-readable description (e.g. "Kinase domain", "ATP binding")
+        /// </summary>
+        public string Description { get; set; }
+
+        /// <summary>
+        /// 1-based start position in the protein sequence
+        /// </summary>
+        public int? Start { get; set; }
+
+        /// <summary>
+        /// 1-based end position in the protein sequence
+        /// </summary>
+        public int? End { get; set; }
+
+        /// <summary>
+        /// Length of this feature in residues
+        /// </summary>
+        public int Length => (Start.HasValue && End.HasValue) ? End.Value - Start.Value + 1 : 0;
+
+        /// <summary>
+        /// Whether this is a range feature (domain, region) or a point feature (active site, modified residue)
+        /// </summary>
+        public bool IsRange => Start.HasValue && End.HasValue && End.Value > Start.Value;
+
+        public override string ToString()
+        {
+            string pos = Start == End ? $"pos {Start}" : $"{Start}-{End}";
+            return $"{Type}: {Description} ({pos})";
+        }
     }
 
     #endregion

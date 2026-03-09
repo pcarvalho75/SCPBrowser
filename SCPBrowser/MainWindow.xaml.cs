@@ -423,6 +423,52 @@ namespace SCPBrowser
             }
         }
 
+        /// <summary>
+        /// Initializes the protein coverage panel with FASTA path, parquet paths, and annotations.
+        /// </summary>
+        private async Task InitializeProteinCoverageAsync()
+        {
+            try
+            {
+                // Get FASTA path from project settings
+                string fastaPath = await _projectDatabaseService.GetSettingAsync("fasta_path", "");
+
+                if (string.IsNullOrEmpty(fastaPath) || !System.IO.File.Exists(fastaPath))
+                {
+                    Console.WriteLine("[ProteinCoverage] FASTA path not set or file not found. Coverage will be unavailable.");
+                    return;
+                }
+
+                // Build parquet paths
+                var allImportedFiles = await _parquetService.GetAllImportedParquetFilesAsync();
+                var parquetPaths = new List<string>();
+                string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
+
+                if (allImportedFiles != null)
+                {
+                    foreach (var fileName in allImportedFiles)
+                    {
+                        string path = Path.Combine(projectDirectory, "imports", fileName);
+                        if (System.IO.File.Exists(path))
+                            parquetPaths.Add(path);
+                    }
+                }
+
+                // Get annotations from ProteinMatrixTab
+                var fastaService = new FastaParserService(_currentProjectPath);
+                var annotations = await fastaService.GetAllAnnotationsAsync();
+
+                // Initialize the coverage panel
+                PeptideTicTab.InitializeProteinCoverage(fastaPath, parquetPaths, annotations);
+
+                Console.WriteLine($"[ProteinCoverage] Initialized with FASTA={Path.GetFileName(fastaPath)}, {parquetPaths.Count} parquet files, {annotations.Count} annotations");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ProteinCoverage] Error initializing: {ex.Message}");
+            }
+        }
+
         private async void ClearCellTypeClassifications_Click(object sender, RoutedEventArgs e)
         {
             var result = MessageBox.Show(
@@ -1021,6 +1067,9 @@ namespace SCPBrowser
                 await ProteinMatrixTab.LoadProteinAnnotationsAsync(_currentProjectPath);
 
                 ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
+
+                // Initialize protein coverage panel
+                await InitializeProteinCoverageAsync();
 
             // Recalculate contaminant ratios on OriginalData (handles pre-loaded contaminants from DB)
             ProteinMatrixTab_ContaminantsUpdated(this, EventArgs.Empty);
@@ -1784,12 +1833,18 @@ namespace SCPBrowser
 
                 int count = await fastaService.ImportFastaAsync(dialog.FileName, progress);
 
+                // Save FASTA file path for protein coverage viewer
+                await _projectDatabaseService.SetSettingAsync("fasta_path", dialog.FileName);
+
                 // Reload annotations into memory and refresh the matrix
                 await ProteinMatrixTab.LoadProteinAnnotationsAsync(_currentProjectPath);
                 if (_dataFilterService?.FilteredData != null)
                 {
                     ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
                 }
+
+                // Re-initialize protein coverage with new FASTA
+                await InitializeProteinCoverageAsync();
 
                 LoadingOverlay.Hide();
 

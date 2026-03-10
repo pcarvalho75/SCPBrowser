@@ -13,7 +13,6 @@ namespace SCPBrowser.Controls
     {
         private int _currentCutoff = 800;
         private int _currentUpperCutoff = 99999;
-        private bool _lineChartMode = false;
 
         // Tooltip and bar tracking data
         private double[] _barPositions;
@@ -133,15 +132,6 @@ namespace SCPBrowser.Controls
             e.Handled = true;
         }
 
-        private void LineChartToggle_Click(object sender, RoutedEventArgs e)
-        {
-            _lineChartMode = LineChartToggle.IsChecked == true;
-            if (_cachedData != null)
-            {
-                UpdateChart(_cachedData, _currentCutoff, _cachedRawFileToPlateId, _cachedPlateIdToName, _currentUpperCutoff);
-            }
-        }
-
         private void ResetViewButton_Click(object sender, RoutedEventArgs e)
         {
             ProteinChart.Plot.Axes.AutoScale();
@@ -194,11 +184,7 @@ namespace SCPBrowser.Controls
                 }
             }
 
-            // Show/hide line chart toggle based on plate count
-            LineChartToggle.Visibility = plateIdToColorIndex.Count >= 2 ? Visibility.Visible : Visibility.Collapsed;
-            if (plateIdToColorIndex.Count < 2)
-                _lineChartMode = false;
-
+            // Draw bars
             double xMin = -0.5;
             double xMax = _barPositions.Length - 0.5;
 
@@ -216,14 +202,7 @@ namespace SCPBrowser.Controls
                 upperOverlay.LineWidth = 0;
             }
 
-            if (_lineChartMode && plateIdToColorIndex.Count >= 2)
-            {
-                DrawLineChart(rawFileToPlateId, plateIdToName, plateIdToColorIndex, cutoff, upperCutoff);
-            }
-            else
-            {
-                DrawBarChart(rawFileToPlateId, plateIdToColorIndex, cutoff, upperCutoff);
-            }
+            DrawBarChart(rawFileToPlateId, plateIdToColorIndex, cutoff, upperCutoff);
 
             // Draw lower cutoff line (dashed, amber)
             var cutoffLine = ProteinChart.Plot.Add.HorizontalLine(cutoff);
@@ -313,43 +292,6 @@ namespace SCPBrowser.Controls
                     }
                     barPlot.Bars[i].FillColor = ScottPlot.Color.FromHex(colorHex);
                 }
-            }
-        }
-
-        private void DrawLineChart(Dictionary<string, int> rawFileToPlateId, Dictionary<int, string> plateIdToName, Dictionary<int, int> plateIdToColorIndex, int cutoff, int upperCutoff)
-        {
-            if (rawFileToPlateId == null)
-                return;
-
-            // Group bars by plate, each plate gets its own line
-            var plateGroups = new Dictionary<int, List<(double x, double y)>>();
-
-            for (int i = 0; i < _barLabels.Length; i++)
-            {
-                if (rawFileToPlateId.TryGetValue(_barLabels[i], out int plateId))
-                {
-                    if (!plateGroups.ContainsKey(plateId))
-                        plateGroups[plateId] = new List<(double x, double y)>();
-
-                    plateGroups[plateId].Add((_barPositions[i], _barValues[i]));
-                }
-            }
-
-            foreach (var kvp in plateGroups.OrderBy(x => x.Key))
-            {
-                int plateId = kvp.Key;
-                var points = kvp.Value;
-
-                double[] xs = points.Select(p => p.x).ToArray();
-                double[] ys = points.Select(p => p.y).ToArray();
-
-                string colorHex = "#2563eb";
-                if (plateIdToColorIndex.TryGetValue(plateId, out int colorIndex))
-                    colorHex = PlateColors[colorIndex];
-
-                var scatter = ProteinChart.Plot.Add.ScatterLine(xs, ys);
-                scatter.Color = ScottPlot.Color.FromHex(colorHex);
-                scatter.LineWidth = 2;
             }
         }
 

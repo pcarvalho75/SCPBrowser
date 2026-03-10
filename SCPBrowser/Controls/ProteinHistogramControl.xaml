@@ -14,18 +14,9 @@
 
         <!-- Toolbar -->
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="4,2,4,2">
-            <ToggleButton x:Name="LineChartToggle"
-                          Click="LineChartToggle_Click"
-                          Padding="6,3"
-                          FontSize="11"
-                          Cursor="Hand"
-                          ToolTip="Toggle between bar chart and line chart (per plate)"
-                          Content="Line Chart"
-                          Visibility="Collapsed"/>
             <Button x:Name="ResetViewButton"
                     Click="ResetViewButton_Click"
                     Padding="6,3"
-                    Margin="6,0,0,0"
                     FontSize="11"
                     Cursor="Hand"
                     ToolTip="Reset chart zoom and pan to default view"

@@ -441,6 +441,25 @@ namespace SCPBrowser
             }
 
             ProteinHistogram.UpdateChart(data, ProteinCutoffControl.Value, rawFileToPlateId, plateIdToName, MaxProteinCutoffControl.Value);
+            ProteinDistribution.UpdateChart(data, rawFileToPlateId, plateIdToName);
+        }
+
+        private void ChartViewRadio_Checked(object sender, System.Windows.RoutedEventArgs e)
+        {
+            // Guard against calls during InitializeComponent before controls exist
+            if (ProteinHistogram == null || ProteinDistribution == null)
+                return;
+
+            if (PerRunViewRadio.IsChecked == true)
+            {
+                ProteinHistogram.Visibility = System.Windows.Visibility.Visible;
+                ProteinDistribution.Visibility = System.Windows.Visibility.Collapsed;
+            }
+            else
+            {
+                ProteinHistogram.Visibility = System.Windows.Visibility.Collapsed;
+                ProteinDistribution.Visibility = System.Windows.Visibility.Visible;
+            }
         }
 
         public void SetExcludedRuns(HashSet<string> excludedRuns)

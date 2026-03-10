@@ -43,6 +43,14 @@ namespace SCPBrowser
         {
             InitializeComponent();
 
+            // Migrate settings from previous version after ClickOnce update
+            if (Settings.Default.UpgradeRequired)
+            {
+                Settings.Default.Upgrade();
+                Settings.Default.UpgradeRequired = false;
+                Settings.Default.Save();
+            }
+
             // Subscribe to PeptideTicTab events
             PeptideTicTab.CellTypePredictionsRequested += PeptideTicTab_CellTypePredictionsRequested;
             PeptideTicTab.SelectionChangedForBioTessera += PeptideTicTab_SelectionChangedForBioTessera;
@@ -575,13 +583,17 @@ namespace SCPBrowser
 
         private void UpdateWindowTitle(string projectName = null)
         {
+            string version = Environment.GetEnvironmentVariable("ClickOnce_CurrentVersion")
+                ?? System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+                ?? "?";
+
             if (string.IsNullOrEmpty(projectName))
             {
-                Title = "SCP Browser";
+                Title = $"SCP Browser v{version}";
             }
             else
             {
-                Title = $"SCP Browser - {projectName}";
+                Title = $"SCP Browser v{version} - {projectName}";
             }
         }
 

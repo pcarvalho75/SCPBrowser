@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -7,7 +8,9 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using Microsoft.Win32;
 using SCPBrowser.Services;
 
 namespace SCPBrowser.Controls
@@ -20,6 +23,15 @@ namespace SCPBrowser.Controls
         private List<ProteinFeature> _currentFeatures;
         private Dictionary<string, FastaParserService.ProteinAnnotation> _annotations;
         private bool _isLoading;
+        private bool _isExporting;
+
+        // Zoom/pan state
+        private int _viewStart;
+        private int _viewEnd;
+        private bool _isPanning;
+        private Point _panStartPoint;
+        private int _panStartViewStart;
+        private int _panStartViewEnd;
 
         // Data sources (set by parent)
         private string _fastaPath;
@@ -76,9 +88,20 @@ namespace SCPBrowser.Controls
 
             SizeChanged += (s, e) =>
             {
-                if (_currentResult != null && ActualWidth > 0)
+                if (_currentResult != null && ActualWidth > 0 && !_isExporting)
                     RedrawAll();
             };
+
+            // Wire zoom/pan handlers on all synced canvases
+            foreach (var canvas in new[] { CoverageBarCanvas, PeptideBarCanvas, IntensityCanvas, DomainCanvas })
+            {
+                canvas.MouseWheel += SyncedCanvas_MouseWheel;
+                canvas.MouseLeftButtonDown += SyncedCanvas_MouseLeftButtonDown;
+                canvas.MouseLeftButtonUp += SyncedCanvas_MouseLeftButtonUp;
+                canvas.MouseMove += SyncedCanvas_MouseMove;
+                canvas.Background = new SolidColorBrush(Color.FromRgb(248, 250, 252)); // ensure hit-testable
+                canvas.Cursor = Cursors.Hand;
+            }
         }
 
         /// <summary>
@@ -221,6 +244,9 @@ namespace SCPBrowser.Controls
 
                 _currentResult = result;
                 _currentFeatures = null;
+                _viewStart = 0;
+                _viewEnd = result.SequenceLength;
+                UpdateZoomInfo();
 
                 // Update info text
                 string annInfo = "";
@@ -236,6 +262,7 @@ namespace SCPBrowser.Controls
 
                 string runInfo = selectedRuns != null ? $" from {selectedRuns.Count} cells" : " from all cells";
                 StatsText.Text = $"{result.CoveragePercent:F1}% coverage | {result.UniquePeptideCount} peptides | {result.SequenceLength} aa{runInfo}";
+                CopyStatsButton.Visibility = Visibility.Visible;
 
                 // Draw everything
                 PlaceholderText.Visibility = Visibility.Collapsed;
@@ -339,6 +366,65 @@ namespace SCPBrowser.Controls
 
         // ==================== DRAWING METHODS ====================
 
+        private const double AxisLabelHeight = 16;
+
+        private void DrawXAxisLabels(Canvas canvas, double labelY, double leftOffset = 0)
+        {
+            double canvasWidth = canvas.ActualWidth;
+            if (canvasWidth <= 0 || _currentResult == null) return;
+
+            int viewRange = _viewEnd - _viewStart;
+            if (viewRange <= 0) return;
+
+            double plotWidth = canvasWidth - leftOffset;
+            double pixelsPerResidue = plotWidth / viewRange;
+
+            // Decide tick interval based on visible range
+            int interval;
+            if (viewRange <= 200) interval = 50;
+            else if (viewRange <= 500) interval = 100;
+            else if (viewRange <= 2000) interval = 200;
+            else interval = 500;
+
+            var labelBrush = new SolidColorBrush(Color.FromRgb(148, 163, 184));
+            var tickBrush = new SolidColorBrush(Color.FromRgb(203, 213, 225));
+
+            // Draw start label
+            int startPos = _viewStart + 1;
+            var startLabel = new TextBlock { Text = startPos.ToString(), FontSize = 8, Foreground = labelBrush };
+            Canvas.SetLeft(startLabel, leftOffset);
+            Canvas.SetTop(startLabel, labelY);
+            canvas.Children.Add(startLabel);
+
+            // Find first tick aligned to interval
+            int firstTick = ((_viewStart / interval) + 1) * interval;
+            for (int pos = firstTick; pos < _viewEnd; pos += interval)
+            {
+                double x = leftOffset + (pos - _viewStart) * pixelsPerResidue;
+
+                var tick = new Line
+                {
+                    X1 = x, Y1 = labelY - 2,
+                    X2 = x, Y2 = labelY + 2,
+                    Stroke = tickBrush,
+                    StrokeThickness = 0.5
+                };
+                canvas.Children.Add(tick);
+
+                var label = new TextBlock { Text = pos.ToString(), FontSize = 8, Foreground = labelBrush };
+                Canvas.SetLeft(label, x - (pos.ToString().Length * 2.5));
+                Canvas.SetTop(label, labelY);
+                canvas.Children.Add(label);
+            }
+
+            // Draw end label
+            double endX = leftOffset + plotWidth;
+            var endLabel = new TextBlock { Text = _viewEnd.ToString(), FontSize = 8, Foreground = labelBrush };
+            Canvas.SetLeft(endLabel, endX - (_viewEnd.ToString().Length * 5) - 2);
+            Canvas.SetTop(endLabel, labelY);
+            canvas.Children.Add(endLabel);
+        }
+
         private void DrawCoverageBar()
         {
             CoverageBarCanvas.Children.Clear();
@@ -349,13 +435,16 @@ namespace SCPBrowser.Controls
             double canvasHeight = CoverageBarCanvas.ActualHeight;
             if (canvasWidth <= 0) return;
 
-            double pixelsPerResidue = canvasWidth / result.SequenceLength;
+            double barHeight = canvasHeight - AxisLabelHeight;
+            int viewRange = _viewEnd - _viewStart;
+            if (viewRange <= 0) return;
+            double pixelsPerResidue = canvasWidth / viewRange;
 
             // Draw uncovered background
             var bgRect = new Rectangle
             {
                 Width = canvasWidth,
-                Height = canvasHeight - 4,
+                Height = barHeight - 4,
                 Fill = new SolidColorBrush(UncoveredColor),
                 RadiusX = 2,
                 RadiusY = 2
@@ -363,31 +452,29 @@ namespace SCPBrowser.Controls
             Canvas.SetTop(bgRect, 2);
             CoverageBarCanvas.Children.Add(bgRect);
 
-            // Draw covered regions as merged segments
-            int i = 0;
-            while (i < result.SequenceLength)
+            // Draw covered regions within visible range
+            int i = _viewStart;
+            while (i < _viewEnd)
             {
                 if (result.CoveragePerResidue[i] > 0)
                 {
                     int start = i;
                     int maxDepth = 0;
-                    while (i < result.SequenceLength && result.CoveragePerResidue[i] > 0)
+                    while (i < _viewEnd && result.CoveragePerResidue[i] > 0)
                     {
                         if (result.CoveragePerResidue[i] > maxDepth)
                             maxDepth = result.CoveragePerResidue[i];
                         i++;
                     }
 
-                    double x = start * pixelsPerResidue;
+                    double x = (start - _viewStart) * pixelsPerResidue;
                     double w = Math.Max(1, (i - start) * pixelsPerResidue);
-
-                    // Vary opacity by depth
                     double opacity = Math.Min(1.0, 0.4 + maxDepth * 0.15);
 
                     var rect = new Rectangle
                     {
                         Width = w,
-                        Height = canvasHeight - 4,
+                        Height = barHeight - 4,
                         Fill = new SolidColorBrush(CoveredColor) { Opacity = opacity }
                     };
                     Canvas.SetLeft(rect, x);
@@ -400,19 +487,8 @@ namespace SCPBrowser.Controls
                 }
             }
 
-            // Draw tick marks every 100 residues
-            for (int t = 100; t < result.SequenceLength; t += 100)
-            {
-                double x = t * pixelsPerResidue;
-                var tick = new Line
-                {
-                    X1 = x, Y1 = 0,
-                    X2 = x, Y2 = 4,
-                    Stroke = Brushes.Gray,
-                    StrokeThickness = 0.5
-                };
-                CoverageBarCanvas.Children.Add(tick);
-            }
+            // Axis labels
+            DrawXAxisLabels(CoverageBarCanvas, barHeight);
         }
 
         private void DrawPeptideBars()
@@ -424,21 +500,33 @@ namespace SCPBrowser.Controls
             double canvasWidth = PeptideBarCanvas.ActualWidth;
             if (canvasWidth <= 0) return;
 
-            double pixelsPerResidue = canvasWidth / result.SequenceLength;
+            int viewRange = _viewEnd - _viewStart;
+            if (viewRange <= 0) return;
+            double pixelsPerResidue = canvasWidth / viewRange;
 
-            // Compute max intensity for color scaling
+            // Filter peptides to those overlapping the visible range
+            var visiblePeptides = result.MappedPeptides
+                .Where(p => p.EndPosition >= _viewStart && p.StartPosition < _viewEnd)
+                .ToList();
+
+            if (visiblePeptides.Count == 0)
+            {
+                DrawXAxisLabels(PeptideBarCanvas, 10);
+                return;
+            }
+
+            // Compute max intensity for color scaling (from all peptides for consistent colors)
             double maxIntensity = result.MappedPeptides.Max(p => p.SummedIntensity);
             if (maxIntensity <= 0) maxIntensity = 1;
             double logMax = Math.Log10(maxIntensity + 1);
 
-            // Layout peptides in rows to avoid overlap
-            var rows = LayoutPeptideRows(result.MappedPeptides);
+            var rows = LayoutPeptideRows(visiblePeptides);
 
             double barHeight = 10;
             double rowSpacing = 2;
             double totalHeight = rows.Count * (barHeight + rowSpacing);
 
-            PeptideBarCanvas.Height = Math.Max(60, Math.Min(300, totalHeight + 10));
+            PeptideBarCanvas.Height = Math.Max(60, Math.Min(300, totalHeight + 10 + AxisLabelHeight));
 
             for (int rowIdx = 0; rowIdx < rows.Count; rowIdx++)
             {
@@ -446,10 +534,9 @@ namespace SCPBrowser.Controls
 
                 foreach (var peptide in rows[rowIdx])
                 {
-                    double x = peptide.StartPosition * pixelsPerResidue;
+                    double x = (peptide.StartPosition - _viewStart) * pixelsPerResidue;
                     double w = Math.Max(2, (peptide.EndPosition - peptide.StartPosition + 1) * pixelsPerResidue);
 
-                    // Color by intensity (log scale)
                     double logInt = Math.Log10(peptide.SummedIntensity + 1);
                     double fraction = logMax > 0 ? logInt / logMax : 0.5;
                     byte alpha = (byte)(100 + (int)(155 * fraction));
@@ -470,6 +557,8 @@ namespace SCPBrowser.Controls
                     PeptideBarCanvas.Children.Add(rect);
                 }
             }
+
+            DrawXAxisLabels(PeptideBarCanvas, totalHeight + 10);
         }
 
         private List<List<MappedPeptide>> LayoutPeptideRows(List<MappedPeptide> peptides)
@@ -501,6 +590,8 @@ namespace SCPBrowser.Controls
             return rows;
         }
 
+        private const double YAxisMargin = 50;
+
         private void DrawIntensityProfile()
         {
             IntensityCanvas.Children.Clear();
@@ -511,37 +602,52 @@ namespace SCPBrowser.Controls
             double canvasHeight = IntensityCanvas.ActualHeight;
             if (canvasWidth <= 0 || canvasHeight <= 0) return;
 
-            double pixelsPerResidue = canvasWidth / result.SequenceLength;
-            double maxIntensity = result.IntensityPerResidue.Max();
-            if (maxIntensity <= 0) return;
+            double plotLeft = YAxisMargin;
+            double plotWidth = canvasWidth - plotLeft;
+            int viewRange = _viewEnd - _viewStart;
+            if (viewRange <= 0) return;
+            double pixelsPerResidue = plotWidth / viewRange;
 
-            // Use log scale for intensity
+            // Max intensity within visible range for Y-axis scaling
+            double maxIntensity = 0;
+            for (int idx = _viewStart; idx < _viewEnd; idx++)
+            {
+                if (result.IntensityPerResidue[idx] > maxIntensity)
+                    maxIntensity = result.IntensityPerResidue[idx];
+            }
+            if (maxIntensity <= 0)
+            {
+                double plotBottomEmpty = canvasHeight - AxisLabelHeight;
+                DrawXAxisLabels(IntensityCanvas, plotBottomEmpty, plotLeft);
+                return;
+            }
+
             double logMax = Math.Log10(maxIntensity + 1);
             double margin = 4;
-            double plotHeight = canvasHeight - margin * 2;
+            double plotBottom = canvasHeight - AxisLabelHeight;
+            double plotHeight = plotBottom - margin * 2;
 
             // Build path geometry for filled area
             var geometry = new StreamGeometry();
             using (var ctx = geometry.Open())
             {
-                ctx.BeginFigure(new Point(0, canvasHeight - margin), true, true);
+                ctx.BeginFigure(new Point(plotLeft, plotBottom - margin), true, true);
 
-                for (int i = 0; i < result.SequenceLength; i++)
+                for (int i = _viewStart; i < _viewEnd; i++)
                 {
-                    double x = i * pixelsPerResidue;
+                    double x = plotLeft + (i - _viewStart) * pixelsPerResidue;
                     double intensity = result.IntensityPerResidue[i];
                     double logVal = intensity > 0 ? Math.Log10(intensity + 1) : 0;
-                    double y = canvasHeight - margin - (logVal / logMax * plotHeight);
+                    double y = plotBottom - margin - (logVal / logMax * plotHeight);
 
                     ctx.LineTo(new Point(x, y), true, true);
                 }
 
-                // Close back to baseline
-                ctx.LineTo(new Point(canvasWidth, canvasHeight - margin), true, true);
+                ctx.LineTo(new Point(plotLeft + plotWidth, plotBottom - margin), true, true);
             }
             geometry.Freeze();
 
-            var path = new Path
+            var path = new System.Windows.Shapes.Path
             {
                 Data = geometry,
                 Fill = new SolidColorBrush(IntensityFill) { Opacity = 0.3 },
@@ -550,16 +656,50 @@ namespace SCPBrowser.Controls
             };
             IntensityCanvas.Children.Add(path);
 
-            // Y-axis label
-            var label = new TextBlock
+            // Y-axis tick labels (log scale)
+            var axisBrush = new SolidColorBrush(Color.FromRgb(148, 163, 184));
+            var gridBrush = new SolidColorBrush(Color.FromRgb(226, 232, 240));
+
+            // Determine tick values: powers of 10 within range
+            int minExp = 0;
+            int maxExp = (int)Math.Floor(Math.Log10(maxIntensity));
+            int step = Math.Max(1, (maxExp - minExp) / 5);
+
+            for (int exp = minExp; exp <= maxExp; exp += step)
             {
-                Text = $"Max: {maxIntensity:E1}",
-                FontSize = 9,
-                Foreground = UncoveredFgBrush
-            };
-            Canvas.SetLeft(label, canvasWidth - 90);
-            Canvas.SetTop(label, 2);
-            IntensityCanvas.Children.Add(label);
+                double val = Math.Pow(10, exp);
+                double logVal = Math.Log10(val + 1);
+                double y = plotBottom - margin - (logVal / logMax * plotHeight);
+
+                if (y < margin || y > plotBottom - margin)
+                    continue;
+
+                // Grid line
+                var gridLine = new Line
+                {
+                    X1 = plotLeft, Y1 = y,
+                    X2 = canvasWidth, Y2 = y,
+                    Stroke = gridBrush,
+                    StrokeThickness = 0.5,
+                    StrokeDashArray = new DoubleCollection { 4, 4 }
+                };
+                IntensityCanvas.Children.Add(gridLine);
+
+                // Tick label
+                string tickText = exp < 3 ? val.ToString("F0") : $"1e{exp}";
+                var tickLabel = new TextBlock
+                {
+                    Text = tickText,
+                    FontSize = 8,
+                    Foreground = axisBrush
+                };
+                Canvas.SetLeft(tickLabel, 2);
+                Canvas.SetTop(tickLabel, y - 6);
+                IntensityCanvas.Children.Add(tickLabel);
+            }
+
+            // X-axis labels (offset by Y-axis margin)
+            DrawXAxisLabels(IntensityCanvas, plotBottom, plotLeft);
         }
 
         private void DrawDomains()
@@ -571,11 +711,17 @@ namespace SCPBrowser.Controls
             double canvasWidth = DomainCanvas.ActualWidth;
             if (canvasWidth <= 0) return;
 
-            double pixelsPerResidue = canvasWidth / _currentResult.SequenceLength;
+            int viewRange = _viewEnd - _viewStart;
+            if (viewRange <= 0) return;
+            double pixelsPerResidue = canvasWidth / viewRange;
 
-            // Separate range features from point features
-            var rangeFeatures = _currentFeatures.Where(f => f.IsRange).ToList();
-            var pointFeatures = _currentFeatures.Where(f => !f.IsRange).ToList();
+            // Filter features overlapping visible range
+            var rangeFeatures = _currentFeatures
+                .Where(f => f.IsRange && (f.End ?? 0) > _viewStart && (f.Start ?? 0) <= _viewEnd)
+                .ToList();
+            var pointFeatures = _currentFeatures
+                .Where(f => !f.IsRange && (f.Start ?? 0) > _viewStart && (f.Start ?? 0) <= _viewEnd)
+                .ToList();
 
             // Layout range features in rows
             double barHeight = 14;
@@ -591,11 +737,10 @@ namespace SCPBrowser.Controls
 
                 foreach (var feature in rows[rowIdx])
                 {
-                    // Positions are 1-based from UniProt
                     int start = (feature.Start ?? 1) - 1;
                     int end = (feature.End ?? 1) - 1;
 
-                    double x = start * pixelsPerResidue;
+                    double x = (start - _viewStart) * pixelsPerResidue;
                     double w = Math.Max(4, (end - start + 1) * pixelsPerResidue);
 
                     Color color = DomainColors.TryGetValue(feature.Type, out var c) ? c : Color.FromRgb(156, 163, 175);
@@ -643,7 +788,7 @@ namespace SCPBrowser.Controls
             foreach (var feature in pointFeatures)
             {
                 int pos = (feature.Start ?? 1) - 1;
-                double x = pos * pixelsPerResidue;
+                double x = (pos - _viewStart) * pixelsPerResidue;
                 Color color = DomainColors.TryGetValue(feature.Type, out var c) ? c : Color.FromRgb(156, 163, 175);
 
                 var marker = new Ellipse
@@ -656,6 +801,61 @@ namespace SCPBrowser.Controls
                 Canvas.SetLeft(marker, x - 3);
                 Canvas.SetTop(marker, pointY);
                 DomainCanvas.Children.Add(marker);
+            }
+
+            DrawDomainLegend();
+        }
+
+        private void DrawDomainLegend()
+        {
+            DomainLegendPanel.Children.Clear();
+            if (_currentFeatures == null || _currentFeatures.Count == 0)
+                return;
+
+            // Only show types for features overlapping the current view
+            var visibleTypes = _currentFeatures
+                .Where(f =>
+                {
+                    if (f.IsRange)
+                        return (f.End ?? 0) > _viewStart && (f.Start ?? 0) <= _viewEnd;
+                    else
+                        return (f.Start ?? 0) > _viewStart && (f.Start ?? 0) <= _viewEnd;
+                })
+                .Select(f => f.Type)
+                .Where(t => !string.IsNullOrEmpty(t))
+                .Distinct()
+                .OrderBy(t => t)
+                .ToList();
+
+            foreach (var type in visibleTypes)
+            {
+                Color color = DomainColors.TryGetValue(type, out var c) ? c : Color.FromRgb(156, 163, 175);
+
+                var swatch = new Rectangle
+                {
+                    Width = 10,
+                    Height = 10,
+                    Fill = new SolidColorBrush(color) { Opacity = 0.6 },
+                    Stroke = new SolidColorBrush(color),
+                    StrokeThickness = 1,
+                    RadiusX = 2,
+                    RadiusY = 2,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                var label = new TextBlock
+                {
+                    Text = type,
+                    FontSize = 9,
+                    Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(3, 0, 10, 0)
+                };
+
+                var item = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+                item.Children.Add(swatch);
+                item.Children.Add(label);
+                DomainLegendPanel.Children.Add(item);
             }
         }
 
@@ -694,8 +894,9 @@ namespace SCPBrowser.Controls
             var result = _currentResult;
             if (result == null) return;
 
-            // Only render text for proteins under 2000 AA (otherwise too slow)
-            if (result.SequenceLength > 2000)
+            // Batch approach: group consecutive same-state residues into single Runs
+            // This handles proteins up to ~10000 AA efficiently
+            if (result.SequenceLength > 10000)
             {
                 SequenceTextBlock.Inlines.Add(new Run($"Sequence too long to display ({result.SequenceLength} aa). See coverage bar above.")
                 {
@@ -706,26 +907,37 @@ namespace SCPBrowser.Controls
 
             string seq = result.ProteinSequence;
             int charsPerBlock = 10;
+            int charsPerLine = 50;
 
-            for (int i = 0; i < seq.Length; i++)
+            int i = 0;
+            while (i < seq.Length)
             {
+                // Determine how far we can batch (same coverage state, within same block of 10)
                 bool covered = result.CoveragePerResidue[i] > 0;
-                var run = new Run(seq[i].ToString())
+                int blockEnd = Math.Min(seq.Length, ((i / charsPerBlock) + 1) * charsPerBlock);
+                int batchEnd = i + 1;
+
+                while (batchEnd < blockEnd && (result.CoveragePerResidue[batchEnd] > 0) == covered)
+                    batchEnd++;
+
+                var run = new Run(seq.Substring(i, batchEnd - i))
                 {
                     Foreground = covered ? CoveredFgBrush : UncoveredFgBrush,
                     Background = covered ? CoveredBgBrush : Brushes.Transparent
                 };
                 SequenceTextBlock.Inlines.Add(run);
 
-                // Add space every 10 residues for readability
-                if ((i + 1) % charsPerBlock == 0 && i < seq.Length - 1)
+                i = batchEnd;
+
+                // Add space every 10 residues
+                if (i % charsPerBlock == 0 && i < seq.Length)
                 {
                     SequenceTextBlock.Inlines.Add(new Run(" "));
 
                     // Add line number every 50 residues
-                    if ((i + 1) % 50 == 0)
+                    if (i % charsPerLine == 0)
                     {
-                        SequenceTextBlock.Inlines.Add(new Run($" {i + 1}\n")
+                        SequenceTextBlock.Inlines.Add(new Run($" {i}\n")
                         {
                             Foreground = LineNumberBrush,
                             FontSize = 9
@@ -740,6 +952,236 @@ namespace SCPBrowser.Controls
                 Foreground = LineNumberBrush,
                 FontSize = 9
             });
+        }
+
+        // ==================== ZOOM / PAN ====================
+
+        private void CopyStatsButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentResult == null) return;
+
+            string proteinGroup = GetSelectedProteinGroup() ?? "";
+            string info = ProteinInfoText.Text ?? "";
+            string stats = StatsText.Text ?? "";
+
+            string clipText = $"{proteinGroup}\n{info}\n{stats}";
+            Clipboard.SetText(clipText);
+
+            // Brief visual feedback
+            CopyStatsButton.Content = "Copied!";
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+            timer.Tick += (s, args) => { CopyStatsButton.Content = "Copy"; timer.Stop(); };
+            timer.Start();
+        }
+
+        private void ExportButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentResult == null) return;
+
+            int dpi = 300;
+            if (DpiComboBox.SelectedItem is ComboBoxItem dpiItem && int.TryParse(dpiItem.Content?.ToString(), out int parsed))
+                dpi = parsed;
+
+            string proteinName = GetSelectedProteinGroup() ?? "protein";
+            // Clean filename
+            foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+                proteinName = proteinName.Replace(c, '_');
+
+            var dlg = new SaveFileDialog
+            {
+                FileName = $"{proteinName}_coverage_{dpi}dpi.png",
+                Filter = "PNG Image|*.png",
+                Title = "Export Coverage Image"
+            };
+
+            if (dlg.ShowDialog() != true)
+                return;
+
+            try
+            {
+                ExportPanelToPng(dlg.FileName, dpi);
+                ExportButton.Content = "Saved!";
+                var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+                timer.Tick += (s, args) => { ExportButton.Content = "Export PNG"; timer.Stop(); };
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Export failed: {ex.Message}", "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ExportPanelToPng(string filePath, int dpi)
+        {
+            _isExporting = true;
+            var target = CoveragePanel;
+
+            // Hide UI-only elements during export
+            var zoomBar = ZoomInfoText.Parent as StackPanel;
+            var zoomBorder = zoomBar?.Parent as Border;
+            Visibility savedZoomVis = Visibility.Visible;
+            if (zoomBorder != null)
+            {
+                savedZoomVis = zoomBorder.Visibility;
+                zoomBorder.Visibility = Visibility.Collapsed;
+            }
+
+            try
+            {
+                // Measure and arrange at a fixed width for consistent output
+                double renderWidth = 1200;
+                target.Measure(new Size(renderWidth, double.PositiveInfinity));
+                target.Arrange(new Rect(0, 0, renderWidth, target.DesiredSize.Height));
+                target.UpdateLayout();
+
+                double scale = dpi / 96.0;
+                int pixelWidth = (int)(renderWidth * scale);
+                int pixelHeight = (int)(target.DesiredSize.Height * scale);
+
+                var rtb = new RenderTargetBitmap(pixelWidth, pixelHeight, dpi, dpi, PixelFormats.Pbgra32);
+
+                // Draw white background
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, renderWidth, target.DesiredSize.Height));
+                }
+                rtb.Render(dv);
+                rtb.Render(target);
+
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(rtb));
+
+                using (var fs = new FileStream(filePath, FileMode.Create))
+                {
+                    encoder.Save(fs);
+                }
+            }
+            finally
+            {
+                // Restore zoom bar visibility
+                if (zoomBorder != null)
+                    zoomBorder.Visibility = savedZoomVis;
+
+                _isExporting = false;
+
+                // Re-layout and redraw to restore visual state
+                target.InvalidateMeasure();
+                target.InvalidateArrange();
+                target.UpdateLayout();
+                RedrawAll();
+            }
+        }
+
+        private void ResetZoomButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentResult == null) return;
+            _viewStart = 0;
+            _viewEnd = _currentResult.SequenceLength;
+            UpdateZoomInfo();
+            RedrawAll();
+        }
+
+        private void SyncedCanvas_MouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (_currentResult == null) return;
+            var canvas = sender as Canvas;
+            if (canvas == null) return;
+
+            double mouseX = e.GetPosition(canvas).X;
+            double canvasWidth = canvas.ActualWidth;
+            if (canvasWidth <= 0) return;
+
+            // Fraction of visible range where mouse is
+            double fraction = Math.Max(0, Math.Min(1, mouseX / canvasWidth));
+            int viewRange = _viewEnd - _viewStart;
+
+            // Zoom factor
+            double zoomFactor = e.Delta > 0 ? 0.8 : 1.25;
+            int newRange = Math.Max(20, (int)(viewRange * zoomFactor));
+            newRange = Math.Min(newRange, _currentResult.SequenceLength);
+
+            // Keep mouse position anchored
+            int anchor = _viewStart + (int)(fraction * viewRange);
+            int newStart = anchor - (int)(fraction * newRange);
+            int newEnd = newStart + newRange;
+
+            // Clamp
+            if (newStart < 0) { newEnd -= newStart; newStart = 0; }
+            if (newEnd > _currentResult.SequenceLength) { newStart -= (newEnd - _currentResult.SequenceLength); newEnd = _currentResult.SequenceLength; }
+            newStart = Math.Max(0, newStart);
+
+            _viewStart = newStart;
+            _viewEnd = newEnd;
+            UpdateZoomInfo();
+            RedrawAll();
+            e.Handled = true;
+        }
+
+        private void SyncedCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (_currentResult == null) return;
+            var canvas = sender as Canvas;
+            if (canvas == null) return;
+
+            _isPanning = true;
+            _panStartPoint = e.GetPosition(canvas);
+            _panStartViewStart = _viewStart;
+            _panStartViewEnd = _viewEnd;
+            canvas.CaptureMouse();
+            canvas.Cursor = Cursors.ScrollAll;
+            e.Handled = true;
+        }
+
+        private void SyncedCanvas_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (!_isPanning) return;
+            _isPanning = false;
+            var canvas = sender as Canvas;
+            if (canvas != null)
+            {
+                canvas.ReleaseMouseCapture();
+                canvas.Cursor = Cursors.Hand;
+            }
+            e.Handled = true;
+        }
+
+        private void SyncedCanvas_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (!_isPanning || _currentResult == null) return;
+            var canvas = sender as Canvas;
+            if (canvas == null) return;
+
+            double canvasWidth = canvas.ActualWidth;
+            if (canvasWidth <= 0) return;
+
+            double deltaX = e.GetPosition(canvas).X - _panStartPoint.X;
+            int viewRange = _panStartViewEnd - _panStartViewStart;
+            double residuesPerPixel = (double)viewRange / canvasWidth;
+            int shift = (int)(-deltaX * residuesPerPixel);
+
+            int newStart = _panStartViewStart + shift;
+            int newEnd = _panStartViewEnd + shift;
+
+            // Clamp
+            if (newStart < 0) { newEnd -= newStart; newStart = 0; }
+            if (newEnd > _currentResult.SequenceLength) { newStart -= (newEnd - _currentResult.SequenceLength); newEnd = _currentResult.SequenceLength; }
+            newStart = Math.Max(0, newStart);
+
+            _viewStart = newStart;
+            _viewEnd = newEnd;
+            UpdateZoomInfo();
+            RedrawAll();
+        }
+
+        private void UpdateZoomInfo()
+        {
+            if (_currentResult == null) return;
+            bool isFullView = _viewStart == 0 && _viewEnd == _currentResult.SequenceLength;
+            ZoomInfoText.Text = isFullView
+                ? "Full sequence"
+                : $"Viewing residues {_viewStart + 1} - {_viewEnd} of {_currentResult.SequenceLength}";
+            ResetZoomButton.Visibility = isFullView ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void ShowLoading(string message)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace SCPBrowser.Services
@@ -13,6 +14,9 @@ namespace SCPBrowser.Services
     {
         // Events
         public event EventHandler FilteredDataChanged;
+
+        // Serialization guard - prevents concurrent filter passes from corrupting state
+        private readonly SemaphoreSlim _filterLock = new SemaphoreSlim(1, 1);
 
         // Data storage
         private ProteomicsData _originalData;
@@ -159,25 +163,33 @@ namespace SCPBrowser.Services
                 return;
             }
 
-            // Step 1: Filter by plates
-            _plateFilteredData = await FilterByPlatesAsync(parquetService, _selectedPlateIds);
+            await _filterLock.WaitAsync();
+            try
+            {
+                // Step 1: Filter by plates
+                _plateFilteredData = await FilterByPlatesAsync(parquetService, _selectedPlateIds);
 
-            // Step 2: Filter by protein cutoff
-            _proteinCutoffFilteredData = FilterByProteinCutoff(_plateFilteredData, _proteinCutoff);
+                // Step 2: Filter by protein cutoff
+                _proteinCutoffFilteredData = FilterByProteinCutoff(_plateFilteredData, _proteinCutoff);
 
-            // Step 3: Filter by contaminant ratio cutoff
-            _filteredData = FilterByContaminantRatio(_proteinCutoffFilteredData);
+                // Step 3: Filter by contaminant ratio cutoff
+                _filteredData = FilterByContaminantRatio(_proteinCutoffFilteredData);
 
-            // Step 4: Remove contaminant proteins from both datasets
-            ExcludeContaminants(_proteinCutoffFilteredData);
-            ExcludeContaminants(_filteredData);
+                // Step 4: Remove contaminant proteins from both datasets
+                ExcludeContaminants(_proteinCutoffFilteredData);
+                ExcludeContaminants(_filteredData);
 
-            // Step 5: Compute HVP on filtered data
-            ComputeHvpResults();
+                // Step 5: Compute HVP on filtered data
+                ComputeHvpResults();
 
-            Console.WriteLine($"DataFilterService: Filters applied - {_filteredData.TotalRawFiles} raw files pass all filters");
+                Console.WriteLine($"DataFilterService: Filters applied - {_filteredData.TotalRawFiles} raw files pass all filters");
+            }
+            finally
+            {
+                _filterLock.Release();
+            }
 
-            // Notify listeners
+            // Notify listeners outside the lock to avoid deadlocks with UI handlers
             FilteredDataChanged?.Invoke(this, EventArgs.Empty);
         }
 

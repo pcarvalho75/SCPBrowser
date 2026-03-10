@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -31,6 +32,7 @@ namespace SCPBrowser
         private const string SETTING_PROTEIN_CUTOFF = "ProteinCutoff";
         private DataFilterService _dataFilterService;
         private int _pendingProteinCutoff;
+        private CancellationTokenSource _projectCts;
 
 
         // Public properties for controls to access
@@ -122,6 +124,10 @@ namespace SCPBrowser
         {
             try
             {
+                // Cancel any previous project's in-flight operations
+                _projectCts?.Cancel();
+                _projectCts = new CancellationTokenSource();
+                var ct = _projectCts.Token;
                 LoadingOverlay.SetMessage("Opening Project");
                 LoadingOverlay.SetProgress("Loading project information...");
                 LoadingOverlay.Show();
@@ -272,6 +278,7 @@ namespace SCPBrowser
         {
             try
             {
+                if (!_hasOpenProject) return;
                 Console.WriteLine($"DataFilterService: FilteredDataChanged event received");
                 await RefreshAllTabsWithFilteredDataAsync();
             }
@@ -300,6 +307,7 @@ namespace SCPBrowser
 
         private async Task ApplyProteinCutoffAsync(int newCutoff)
         {
+            if (!_hasOpenProject) return;
             try
             {
                 Console.WriteLine($"Protein cutoff changed: {newCutoff}");
@@ -337,9 +345,10 @@ namespace SCPBrowser
         {
             try
             {
+                if (!_hasOpenProject) return;
                 Console.WriteLine($"Plate selection changed: {e.SelectedPlateIds.Count} plates selected");
 
-                if (_dataFilterService.OriginalData == null)
+                if (_dataFilterService?.OriginalData == null)
                 {
                     Console.WriteLine("No original data available for filtering");
                     return;
@@ -361,7 +370,7 @@ namespace SCPBrowser
 
         private async Task RefreshAllTabsWithFilteredDataAsync()
         {
-            if (_dataFilterService.FilteredData == null)
+            if (!_hasOpenProject || _dataFilterService?.FilteredData == null)
                 return;
 
             Console.WriteLine($"Refreshing all tabs with filtered data: {_dataFilterService.FilteredData.TotalRawFiles} runs");
@@ -523,6 +532,10 @@ namespace SCPBrowser
 
         private void CloseProject()
         {
+            // Cancel all in-flight async operations for this project
+            _projectCts?.Cancel();
+            _projectCts = null;
+
             // Unsubscribe from events to avoid double-subscription on next project open
             PlateFilterControl.PlateSelectionChanged -= PlateFilterControl_PlateSelectionChanged;
             MainControlTab.ProteinCutoffChanged -= MainControlTab_ProteinCutoffChanged;
@@ -1121,14 +1134,13 @@ namespace SCPBrowser
         private async void ProteinMatrixTab_ContaminantsUpdated(object sender, EventArgs e)
         {
             var contaminantIds = ProteinMatrixTab.ContaminantIds;
-            var originalData = _dataFilterService.OriginalData;
-            if (originalData == null) return;
+            var originalData = _dataFilterService?.OriginalData;
+            if (originalData == null || !_hasOpenProject) return;
 
             originalData.ContaminantIds = new HashSet<string>(contaminantIds, StringComparer.OrdinalIgnoreCase);
 
-            // Recalculate TargetProteinRatioPerFile on OriginalData so it survives re-filtering
-            // Stored as fraction (0.0–1.0); display code multiplies by 100
-            originalData.TargetProteinRatioPerFile.Clear();
+            // Build a NEW dictionary to avoid mutating one that FilterByContaminantRatio may be iterating
+            var newRatios = new Dictionary<string, double>();
             if (contaminantIds.Count > 0)
             {
                 foreach (var rawFile in originalData.RawFileNames)
@@ -1144,11 +1156,14 @@ namespace SCPBrowser
                     }
 
                     double totalTic = originalData.TotalIonCurrentPerFile.TryGetValue(rawFile, out double tic) ? tic : 0;
-                    originalData.TargetProteinRatioPerFile[rawFile] = totalTic > 0
+                    newRatios[rawFile] = totalTic > 0
                         ? contaminantAbundance / totalTic
                         : 0;
                 }
             }
+
+            // Atomic swap - safe even if ApplyFiltersAsync is reading the old reference
+            originalData.TargetProteinRatioPerFile = newRatios;
 
             // Re-apply filters so PCA/UMAP/classification/HVP exclude contaminants
             await _dataFilterService.ApplyFiltersAsync(_parquetService);
@@ -1407,6 +1422,7 @@ namespace SCPBrowser
         {
             try
             {
+                if (!_hasOpenProject || _dataFilterService == null) return;
                 _dataFilterService.ContaminantRatioCutoff = cutoff;
                 await _dataFilterService.ApplyFiltersAsync(_parquetService);
             }

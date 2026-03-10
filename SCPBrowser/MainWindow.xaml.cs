@@ -194,12 +194,14 @@ namespace SCPBrowser
                 LoadingOverlay.SetProgress("Loading plates...");
                 await PlateFilterControl.LoadPlatesAsync(projectDbPath);
                 PeptideTicTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMap());
+                MainControlTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMapById());
                 await _dataFilterService.LoadPlateMappingAsync(_parquetService, _plateService);
                 PlateFilterControl.Visibility = Visibility.Visible;
                 Console.WriteLine("PlateFilterControl loaded and visible");
 
                 // Subscribe to events
                 PlateFilterControl.PlateSelectionChanged += PlateFilterControl_PlateSelectionChanged;
+                PlateFilterControl.PlateColorChanged += PlateFilterControl_PlateColorChanged;
                 MainControlTab.ProteinCutoffChanged += MainControlTab_ProteinCutoffChanged;
                 MainControlTab.MaxProteinCutoffChanged += MainControlTab_MaxProteinCutoffChanged;
                 MainControlTab.RunExcludeRequested += MainControlTab_RunExcludeRequested;
@@ -450,6 +452,26 @@ namespace SCPBrowser
             }
         }
 
+        private void PlateFilterControl_PlateColorChanged(object sender, PlateColorChangedEventArgs e)
+        {
+            if (!_hasOpenProject) return;
+
+            Console.WriteLine($"Plate color changed: '{e.PlateName}' -> #{e.NewColor.R:X2}{e.NewColor.G:X2}{e.NewColor.B:X2}");
+
+            // Propagate updated color map to PeptideTicControl and refresh its chart
+            PeptideTicTab.UpdatePlateColors(e.FullColorMap);
+
+            // Propagate updated color map to histogram/distribution via MainControl
+            MainControlTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMapById());
+
+            // Redraw histogram and distribution with the new colors
+            if (_dataFilterService?.FilteredData != null)
+            {
+                var dataForBarChart = _dataFilterService.PlateFilteredData ?? _dataFilterService.FilteredData;
+                MainControlTab.UpdateChart(dataForBarChart, _dataFilterService.RawFileToPlateId, _dataFilterService.PlateIdToName);
+            }
+        }
+
         private async Task RefreshAllTabsWithFilteredDataAsync()
         {
             if (!_hasOpenProject || _dataFilterService?.FilteredData == null)
@@ -621,6 +643,7 @@ namespace SCPBrowser
 
             // Unsubscribe from events to avoid double-subscription on next project open
             PlateFilterControl.PlateSelectionChanged -= PlateFilterControl_PlateSelectionChanged;
+            PlateFilterControl.PlateColorChanged -= PlateFilterControl_PlateColorChanged;
             MainControlTab.ProteinCutoffChanged -= MainControlTab_ProteinCutoffChanged;
             MainControlTab.MaxProteinCutoffChanged -= MainControlTab_MaxProteinCutoffChanged;
             MainControlTab.RunExcludeRequested -= MainControlTab_RunExcludeRequested;
@@ -709,6 +732,8 @@ namespace SCPBrowser
 
                     // Refresh plate filter
                     await PlateFilterControl.LoadPlatesAsync(_currentProjectPath);
+                    PeptideTicTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMap());
+                    MainControlTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMapById());
 
                     // Get ALL imported parquet files and reload data
                     var allImportedFiles = await _parquetService.GetAllImportedParquetFilesAsync();
@@ -1295,6 +1320,33 @@ namespace SCPBrowser
             if (cellTypeColors != null || bioConditionColors != null || plateColors != null)
             {
                 PeptideTicTab.RestoreColorMaps(cellTypeColors, bioConditionColors, plateColors);
+
+                // Also restore plate colors to PlateFilterControl (button rectangles)
+                if (!string.IsNullOrEmpty(plateColors))
+                {
+                    var plateColorMap = new Dictionary<string, System.Windows.Media.Color>();
+                    foreach (var entry in plateColors.Split(','))
+                    {
+                        var eq = entry.LastIndexOf('=');
+                        if (eq < 0) continue;
+                        string key = Uri.UnescapeDataString(entry.Substring(0, eq));
+                        string hex = entry.Substring(eq + 1);
+                        if (hex.Length != 6) continue;
+                        byte r = Convert.ToByte(hex.Substring(0, 2), 16);
+                        byte g = Convert.ToByte(hex.Substring(2, 2), 16);
+                        byte b = Convert.ToByte(hex.Substring(4, 2), 16);
+                        plateColorMap[key] = System.Windows.Media.Color.FromRgb(r, g, b);
+                    }
+
+                    if (plateColorMap.Count > 0)
+                    {
+                        PlateFilterControl.RestorePlateColors(plateColorMap);
+
+                        // Re-push updated colors to all consumers
+                        PeptideTicTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMap());
+                        MainControlTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMapById());
+                    }
+                }
             }
 
             // Refresh checkbox/legend UI to reflect restored states and colors

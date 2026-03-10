@@ -31,20 +31,8 @@ namespace SCPBrowser.Controls
         public event EventHandler<string> RunRestoreRequested;
         public event EventHandler ClearExclusionsRequested;
 
-        // Plate color palette
-        private static readonly string[] PlateColors = new[]
-        {
-            "#2563eb", // Blue
-            "#dc2626", // Red
-            "#16a34a", // Green
-            "#9333ea", // Purple
-            "#ea580c", // Orange
-            "#0891b2", // Cyan
-            "#c026d3", // Fuchsia
-            "#4f46e5", // Indigo
-            "#059669", // Emerald
-            "#d97706"  // Amber
-        };
+        // Plate color map from PlateFilterControl (plate ID -> WPF Color)
+        private Dictionary<int, System.Windows.Media.Color> _plateColorMap;
 
         public ProteinHistogramControl()
         {
@@ -61,6 +49,21 @@ namespace SCPBrowser.Controls
         {
             _excludedRuns = excludedRuns ?? new HashSet<string>();
             ClearExclusionsButton.Visibility = _excludedRuns.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// Sets the plate color map from PlateFilterControl (single source of truth)
+        /// </summary>
+        public void SetPlateColorMap(Dictionary<int, System.Windows.Media.Color> colorMap)
+        {
+            _plateColorMap = colorMap;
+        }
+
+        private ScottPlot.Color ToScottPlotColor(int plateId)
+        {
+            if (_plateColorMap != null && _plateColorMap.TryGetValue(plateId, out var c))
+                return new ScottPlot.Color(c.R, c.G, c.B);
+            return ScottPlot.Color.FromHex("#2563eb");
         }
 
         private void ProteinChart_MouseMove(object sender, MouseEventArgs e)
@@ -174,14 +177,11 @@ namespace SCPBrowser.Controls
             _barLabels = sortedData.Select(kvp => kvp.Key).ToArray();
 
             // Build plate ID to color index mapping
-            var plateIdToColorIndex = new Dictionary<int, int>();
+            var uniquePlateIds = new HashSet<int>();
             if (rawFileToPlateId != null)
             {
-                var uniquePlateIds = rawFileToPlateId.Values.Distinct().OrderBy(id => id).ToList();
-                for (int i = 0; i < uniquePlateIds.Count; i++)
-                {
-                    plateIdToColorIndex[uniquePlateIds[i]] = i % PlateColors.Length;
-                }
+                foreach (var id in rawFileToPlateId.Values)
+                    uniquePlateIds.Add(id);
             }
 
             // Draw bars
@@ -202,7 +202,7 @@ namespace SCPBrowser.Controls
                 upperOverlay.LineWidth = 0;
             }
 
-            DrawBarChart(rawFileToPlateId, plateIdToColorIndex, cutoff, upperCutoff);
+            DrawBarChart(rawFileToPlateId, cutoff, upperCutoff);
 
             // Draw lower cutoff line (dashed, amber)
             var cutoffLine = ProteinChart.Plot.Add.HorizontalLine(cutoff);
@@ -220,20 +220,18 @@ namespace SCPBrowser.Controls
             }
 
             // Add plate legend
-            if (plateIdToName != null && plateIdToColorIndex.Count > 0)
+            if (plateIdToName != null && uniquePlateIds.Count > 0)
             {
                 ProteinChart.Plot.Legend.ManualItems.Clear();
 
-                foreach (var kvp in plateIdToColorIndex.OrderBy(x => x.Key))
+                foreach (var plateId in uniquePlateIds.OrderBy(id => id))
                 {
-                    int plateId = kvp.Key;
-                    int colorIndex = kvp.Value;
                     string plateName = plateIdToName.TryGetValue(plateId, out string name) ? name : $"Plate {plateId}";
 
                     ProteinChart.Plot.Legend.ManualItems.Add(new LegendItem
                     {
                         LabelText = plateName,
-                        FillColor = ScottPlot.Color.FromHex(PlateColors[colorIndex])
+                        FillColor = ToScottPlotColor(plateId)
                     });
                 }
 
@@ -257,7 +255,7 @@ namespace SCPBrowser.Controls
             ProteinChart.Refresh();
         }
 
-        private void DrawBarChart(Dictionary<string, int> rawFileToPlateId, Dictionary<int, int> plateIdToColorIndex, int cutoff, int upperCutoff)
+        private void DrawBarChart(Dictionary<string, int> rawFileToPlateId, int cutoff, int upperCutoff)
         {
             var barPlot = ProteinChart.Plot.Add.Bars(_barPositions, _barValues);
 
@@ -282,15 +280,12 @@ namespace SCPBrowser.Controls
                 }
                 else
                 {
-                    string colorHex = "#2563eb";
+                    var fillColor = ScottPlot.Color.FromHex("#2563eb");
                     if (rawFileToPlateId != null && rawFileToPlateId.TryGetValue(rawFileName, out int plateId))
                     {
-                        if (plateIdToColorIndex.TryGetValue(plateId, out int colorIndex))
-                        {
-                            colorHex = PlateColors[colorIndex];
-                        }
+                        fillColor = ToScottPlotColor(plateId);
                     }
-                    barPlot.Bars[i].FillColor = ScottPlot.Color.FromHex(colorHex);
+                    barPlot.Bars[i].FillColor = fillColor;
                 }
             }
         }

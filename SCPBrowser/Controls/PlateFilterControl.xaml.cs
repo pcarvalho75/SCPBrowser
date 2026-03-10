@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace SCPBrowser
@@ -24,6 +25,14 @@ namespace SCPBrowser
         public List<PlateFilterItem> AllPlates { get; set; }
     }
 
+    public class PlateColorChangedEventArgs : EventArgs
+    {
+        public int PlateId { get; set; }
+        public string PlateName { get; set; }
+        public Color NewColor { get; set; }
+        public Dictionary<string, Color> FullColorMap { get; set; }
+    }
+
     public partial class PlateFilterControl : UserControl
     {
         private PlateService _plateService;
@@ -32,6 +41,7 @@ namespace SCPBrowser
         private bool _isInitializing = false;
 
         public event EventHandler<PlateSelectionChangedEventArgs> PlateSelectionChanged;
+        public event EventHandler<PlateColorChangedEventArgs> PlateColorChanged;
 
         public static readonly Color[] PlateColorPalette = new[]
         {
@@ -48,7 +58,7 @@ namespace SCPBrowser
         };
 
         /// <summary>
-        /// Returns a color map for plates (plate name → color) for use in scatter plots
+        /// Returns a color map for plates (plate name -> color) for use in scatter plots
         /// </summary>
         public Dictionary<string, Color> GetPlateColorMap()
         {
@@ -56,6 +66,53 @@ namespace SCPBrowser
                 p => p.PlateName,
                 p => ((SolidColorBrush)p.PlateColor).Color
             );
+        }
+
+        /// <summary>
+        /// Returns a color map keyed by plate ID for use in histogram/distribution controls
+        /// </summary>
+        public Dictionary<int, Color> GetPlateColorMapById()
+        {
+            return _plateItems.ToDictionary(
+                p => p.PlateId,
+                p => ((SolidColorBrush)p.PlateColor).Color
+            );
+        }
+
+        /// <summary>
+        /// Updates a plate's color and raises PlateColorChanged
+        /// </summary>
+        public void UpdatePlateColor(int plateId, Color newColor)
+        {
+            var item = _plateItems.FirstOrDefault(p => p.PlateId == plateId);
+            if (item == null) return;
+
+            item.PlateColor = new SolidColorBrush(newColor);
+
+            PlateColorChanged?.Invoke(this, new PlateColorChangedEventArgs
+            {
+                PlateId = plateId,
+                PlateName = item.PlateName,
+                NewColor = newColor,
+                FullColorMap = GetPlateColorMap()
+            });
+        }
+
+        /// <summary>
+        /// Restores plate colors from a saved color map (plate name -> color).
+        /// Called on project load to sync with persisted colors.
+        /// </summary>
+        public void RestorePlateColors(Dictionary<string, Color> colorMap)
+        {
+            if (colorMap == null || colorMap.Count == 0) return;
+
+            foreach (var item in _plateItems)
+            {
+                if (colorMap.TryGetValue(item.PlateName, out var color))
+                {
+                    item.PlateColor = new SolidColorBrush(color);
+                }
+            }
         }
 
         public PlateFilterControl()
@@ -138,6 +195,134 @@ namespace SCPBrowser
 
             UpdateSummaryText();
             RaisePlateSelectionChanged();
+        }
+
+        // Expanded color swatch palette for the color picker (6 columns x 5 rows)
+        private static readonly Color[] ColorSwatchPalette = new[]
+        {
+            // Row 1: Reds / Pinks
+            Color.FromRgb(239, 68, 68),    // Red
+            Color.FromRgb(252, 165, 165),   // Light red
+            Color.FromRgb(236, 72, 153),    // Pink
+            Color.FromRgb(249, 168, 212),   // Light pink
+            Color.FromRgb(192, 38, 211),    // Fuchsia
+            Color.FromRgb(232, 170, 247),   // Light fuchsia
+
+            // Row 2: Purples / Blues
+            Color.FromRgb(139, 92, 246),    // Violet
+            Color.FromRgb(196, 181, 253),   // Light violet
+            Color.FromRgb(59, 130, 246),    // Blue
+            Color.FromRgb(147, 197, 253),   // Light blue
+            Color.FromRgb(6, 182, 212),     // Cyan
+            Color.FromRgb(153, 246, 228),   // Light cyan
+
+            // Row 3: Greens
+            Color.FromRgb(34, 197, 94),     // Green
+            Color.FromRgb(134, 239, 172),   // Light green
+            Color.FromRgb(16, 185, 129),    // Emerald
+            Color.FromRgb(167, 243, 208),   // Light emerald
+            Color.FromRgb(132, 204, 22),    // Lime
+            Color.FromRgb(190, 242, 100),   // Light lime
+
+            // Row 4: Yellows / Oranges
+            Color.FromRgb(234, 179, 8),     // Yellow
+            Color.FromRgb(253, 224, 71),    // Light yellow
+            Color.FromRgb(249, 115, 22),    // Orange
+            Color.FromRgb(253, 186, 116),   // Light orange
+            Color.FromRgb(245, 158, 11),    // Amber
+            Color.FromRgb(252, 211, 77),    // Light amber
+
+            // Row 5: Neutrals
+            Color.FromRgb(107, 114, 128),   // Gray
+            Color.FromRgb(209, 213, 219),   // Light gray
+            Color.FromRgb(120, 113, 108),   // Stone
+            Color.FromRgb(214, 211, 209),   // Light stone
+            Color.FromRgb(82, 82, 91),      // Zinc
+            Color.FromRgb(30, 41, 59),      // Dark slate
+        };
+
+        /// <summary>
+        /// Right-click on a plate button to open a color swatch picker
+        /// </summary>
+        private void PlateButton_RightClick(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is not ToggleButton button || button.DataContext is not PlateFilterItem item)
+                return;
+
+            e.Handled = true;
+
+            var contextMenu = new ContextMenu
+            {
+                Background = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(203, 213, 225)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(6),
+                HasDropShadow = true
+            };
+
+            // Header
+            var header = new MenuItem
+            {
+                Header = $"Color for: {item.PlateName}",
+                IsEnabled = false,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 12
+            };
+            contextMenu.Items.Add(header);
+            contextMenu.Items.Add(new Separator());
+
+            // Color swatch grid inside a single MenuItem
+            var swatchItem = new MenuItem { StaysOpenOnClick = true };
+            var wrapPanel = new WrapPanel { Width = 6 * 28 };
+
+            foreach (var color in ColorSwatchPalette)
+            {
+                var border = new Border
+                {
+                    Width = 24,
+                    Height = 24,
+                    Margin = new Thickness(2),
+                    CornerRadius = new CornerRadius(4),
+                    Background = new SolidColorBrush(color),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(180, 180, 180)),
+                    BorderThickness = new Thickness(1),
+                    Cursor = Cursors.Hand,
+                    ToolTip = $"#{color.R:X2}{color.G:X2}{color.B:X2}"
+                };
+
+                // Highlight if this is the current color
+                var currentColor = ((SolidColorBrush)item.PlateColor).Color;
+                if (color == currentColor)
+                {
+                    border.BorderBrush = new SolidColorBrush(Colors.Black);
+                    border.BorderThickness = new Thickness(2);
+                }
+
+                var capturedColor = color;
+                border.MouseLeftButtonUp += (s, args) =>
+                {
+                    contextMenu.IsOpen = false;
+                    UpdatePlateColor(item.PlateId, capturedColor);
+                };
+
+                // Hover effect
+                border.MouseEnter += (s, args) =>
+                {
+                    if (s is Border b) b.Opacity = 0.7;
+                };
+                border.MouseLeave += (s, args) =>
+                {
+                    if (s is Border b) b.Opacity = 1.0;
+                };
+
+                wrapPanel.Children.Add(border);
+            }
+
+            swatchItem.Header = wrapPanel;
+            contextMenu.Items.Add(swatchItem);
+
+            button.ContextMenu = contextMenu;
+            contextMenu.IsOpen = true;
         }
 
         /// <summary>
@@ -231,12 +416,25 @@ namespace SCPBrowser
     public class PlateFilterItem : INotifyPropertyChanged
     {
         private bool _isSelected;
+        private SolidColorBrush _plateColor;
 
         public int PlateId { get; set; }
         public string PlateName { get; set; }
         public int FileCount { get; set; }
         public PlateInfo PlateInfo { get; set; }
-        public System.Windows.Media.SolidColorBrush PlateColor { get; set; }
+
+        public System.Windows.Media.SolidColorBrush PlateColor
+        {
+            get => _plateColor;
+            set
+            {
+                if (_plateColor != value)
+                {
+                    _plateColor = value;
+                    OnPropertyChanged(nameof(PlateColor));
+                }
+            }
+        }
 
         public string FileCountText => $"({FileCount} files)";
 
@@ -259,6 +457,7 @@ namespace SCPBrowser
                 }
 
                 lines.Add("Click to toggle visibility");
+                lines.Add("Right-click to change color");
                 return string.Join("\n", lines);
             }
         }

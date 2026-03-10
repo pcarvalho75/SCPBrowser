@@ -198,6 +198,29 @@ namespace SCPBrowser
             _plateColorMap = colorMap;
         }
 
+        /// <summary>
+        /// Updates the plate color map and refreshes the chart and legend.
+        /// Called when the user changes a plate color via the PlateFilterControl.
+        /// </summary>
+        public void UpdatePlateColors(Dictionary<string, Color> colorMap)
+        {
+            _plateColorMap = colorMap;
+
+            if (_currentData == null || !_isInitialized)
+                return;
+
+            // Rebuild legend checkboxes with updated colors
+            var selectedColorItem = ColorModeComboBox.SelectedItem as ComboBoxItem;
+            string colorMode = selectedColorItem?.Tag?.ToString() ?? "TargetRatio";
+            if (colorMode == "Plate")
+            {
+                PopulatePlateCheckboxes();
+            }
+
+            RefreshChart();
+            SaveColorMapsAsync();
+        }
+
         private void ViewModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!_isInitialized)

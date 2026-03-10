@@ -18,16 +18,27 @@ namespace SCPBrowser.Controls
         private Dictionary<string, int> _cachedRawFileToPlateId;
         private Dictionary<int, string> _cachedPlateIdToName;
 
-        // Plate color palette (same as histogram)
-        private static readonly string[] PlateColors = new[]
-        {
-            "#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c",
-            "#0891b2", "#c026d3", "#4f46e5", "#059669", "#d97706"
-        };
+        // Plate color map from PlateFilterControl (plate ID -> WPF Color)
+        private Dictionary<int, System.Windows.Media.Color> _plateColorMap;
 
         public ProteinDistributionControl()
         {
             InitializeComponent();
+        }
+
+        /// <summary>
+        /// Sets the plate color map from PlateFilterControl (single source of truth)
+        /// </summary>
+        public void SetPlateColorMap(Dictionary<int, System.Windows.Media.Color> colorMap)
+        {
+            _plateColorMap = colorMap;
+        }
+
+        private ScottPlot.Color ToScottPlotColor(int plateId)
+        {
+            if (_plateColorMap != null && _plateColorMap.TryGetValue(plateId, out var c))
+                return new ScottPlot.Color(c.R, c.G, c.B);
+            return ScottPlot.Color.FromHex("#2563eb");
         }
 
         public void UpdateChart(ProteomicsData data, Dictionary<string, int> rawFileToPlateId = null, Dictionary<int, string> plateIdToName = null)
@@ -44,13 +55,12 @@ namespace SCPBrowser.Controls
                 return;
             }
 
-            // Build plate mapping
-            var plateIdToColorIndex = new Dictionary<int, int>();
+            // Build set of unique plate IDs
+            var uniquePlateIds = new HashSet<int>();
             if (rawFileToPlateId != null)
             {
-                var uniquePlateIds = rawFileToPlateId.Values.Distinct().OrderBy(id => id).ToList();
-                for (int i = 0; i < uniquePlateIds.Count; i++)
-                    plateIdToColorIndex[uniquePlateIds[i]] = i % PlateColors.Length;
+                foreach (var id in rawFileToPlateId.Values)
+                    uniquePlateIds.Add(id);
             }
 
             // Group protein counts by plate
@@ -91,11 +101,7 @@ namespace SCPBrowser.Controls
                         histogram[binIndex]++;
                 }
 
-                string colorHex = "#2563eb";
-                if (plateIdToColorIndex.TryGetValue(plateId, out int colorIndex))
-                    colorHex = PlateColors[colorIndex];
-
-                var color = ScottPlot.Color.FromHex(colorHex);
+                var color = ToScottPlotColor(plateId);
 
                 var scatter = DistributionChart.Plot.Add.ScatterLine(binCenters, histogram);
                 scatter.Color = color;
@@ -108,17 +114,17 @@ namespace SCPBrowser.Controls
             }
 
             // Add plate legend
-            if (plateIdToName != null && plateIdToColorIndex.Count > 0)
+            if (plateIdToName != null && uniquePlateIds.Count > 0)
             {
                 DistributionChart.Plot.Legend.ManualItems.Clear();
 
-                foreach (var kvp in plateIdToColorIndex.OrderBy(x => x.Key))
+                foreach (var plateId in uniquePlateIds.OrderBy(id => id))
                 {
-                    string plateName = plateIdToName.TryGetValue(kvp.Key, out string name) ? name : $"Plate {kvp.Key}";
+                    string plateName = plateIdToName.TryGetValue(plateId, out string name) ? name : $"Plate {plateId}";
                     DistributionChart.Plot.Legend.ManualItems.Add(new LegendItem
                     {
                         LabelText = plateName,
-                        FillColor = ScottPlot.Color.FromHex(PlateColors[kvp.Value])
+                        FillColor = ToScottPlotColor(plateId)
                     });
                 }
 

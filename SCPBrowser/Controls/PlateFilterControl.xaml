@@ -1,4 +1,4 @@
-﻿<!--
+<!--
 PlateFilterControl.xaml
 Global plate filter control - shows horizontal row of plate toggle buttons
 Location: SCPBrowser/Controls/PlateFilterControl.xaml
@@ -101,6 +101,7 @@ Location: SCPBrowser/Controls/PlateFilterControl.xaml
                       IsChecked="{Binding IsSelected, Mode=TwoWay}"
                       Checked="PlateButton_CheckedChanged"
                       Unchecked="PlateButton_CheckedChanged"
+                      MouseRightButtonUp="PlateButton_RightClick"
                       ToolTip="{Binding ToolTip}">
                                 <StackPanel Orientation="Horizontal">
                                     <Rectangle Width="12" Height="12" 

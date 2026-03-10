@@ -467,6 +467,15 @@ namespace SCPBrowser
             ProteinHistogram.SetExcludedRuns(excludedRuns);
         }
 
+        /// <summary>
+        /// Sets the plate color map for both histogram and distribution controls
+        /// </summary>
+        public void SetPlateColorMap(Dictionary<int, System.Windows.Media.Color> colorMap)
+        {
+            ProteinHistogram.SetPlateColorMap(colorMap);
+            ProteinDistribution.SetPlateColorMap(colorMap);
+        }
+
         public ProteomicsData GetCurrentData()
         {
             return _currentData;

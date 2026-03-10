@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -11,6 +11,8 @@ namespace SCPBrowser.Controls
         private int _minimum = 0;
         private int _maximum = 5000;
         private int _increment = 50;
+        private bool _showInfinityAtMax = false;
+        private int? _snapDownValue = null;
 
         public event EventHandler<int> ValueChanged;
 
@@ -63,6 +65,36 @@ namespace SCPBrowser.Controls
             set => _increment = value;
         }
 
+        public bool ShowInfinityAtMax
+        {
+            get => _showInfinityAtMax;
+            set
+            {
+                _showInfinityAtMax = value;
+                UpdateDisplay();
+            }
+        }
+
+        /// <summary>
+        /// When set, the first down-click from the maximum value snaps to this value
+        /// instead of decrementing by the normal increment.
+        /// </summary>
+        public int? SnapDownValue
+        {
+            get => _snapDownValue;
+            set => _snapDownValue = value;
+        }
+
+        public void SetColorScheme(string background, string borderBrush, string foreground)
+        {
+            OuterBorder.Background = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(background));
+            OuterBorder.BorderBrush = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(borderBrush));
+            ValueTextBox.Foreground = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(foreground));
+        }
+
         public string Label
         {
             get => LabelText.Text;
@@ -71,17 +103,46 @@ namespace SCPBrowser.Controls
 
         private void UpdateDisplay()
         {
-            ValueTextBox.Text = _value.ToString();
+            if (_showInfinityAtMax && _value >= _maximum)
+                ValueTextBox.Text = "\u221E";
+            else
+                ValueTextBox.Text = _value.ToString();
         }
 
         private void UpButton_Click(object sender, RoutedEventArgs e)
         {
-            Value += _increment;
+            IncrementValue();
         }
 
         private void DownButton_Click(object sender, RoutedEventArgs e)
         {
-            Value -= _increment;
+            DecrementValue();
+        }
+
+        private void IncrementValue()
+        {
+            if (_snapDownValue.HasValue && _value + _increment > _snapDownValue.Value && _value < _maximum)
+            {
+                // Jump to max (infinity) from near the snap-down value
+                Value = _maximum;
+            }
+            else
+            {
+                Value += _increment;
+            }
+        }
+
+        private void DecrementValue()
+        {
+            if (_snapDownValue.HasValue && _value >= _maximum)
+            {
+                // First down-click from infinity: snap to data max
+                Value = _snapDownValue.Value;
+            }
+            else
+            {
+                Value -= _increment;
+            }
         }
 
         private void ValueTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
@@ -111,12 +172,12 @@ namespace SCPBrowser.Controls
             }
             else if (e.Key == Key.Up)
             {
-                Value += _increment;
+                IncrementValue();
                 e.Handled = true;
             }
             else if (e.Key == Key.Down)
             {
-                Value -= _increment;
+                DecrementValue();
                 e.Handled = true;
             }
         }
@@ -124,9 +185,9 @@ namespace SCPBrowser.Controls
         private void ValueTextBox_MouseWheel(object sender, MouseWheelEventArgs e)
         {
             if (e.Delta > 0)
-                Value += _increment;
+                IncrementValue();
             else
-                Value -= _increment;
+                DecrementValue();
 
             e.Handled = true;
         }

@@ -108,6 +108,10 @@
             <controls:NumericUpDownControl x:Name="ProteinCutoffControl"
                                    Margin="10,0,0,0"
                                    ValueChanged="ProteinCutoffControl_ValueChanged"/>
+
+            <controls:NumericUpDownControl x:Name="MaxProteinCutoffControl"
+                                   Margin="10,0,0,0"
+                                   ValueChanged="MaxProteinCutoffControl_ValueChanged"/>
         </StackPanel>
 
         <GroupBox Header="Protein Groups per Raw File" 

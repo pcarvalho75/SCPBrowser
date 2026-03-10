@@ -24,6 +24,10 @@ namespace SCPBrowser
         private string _projectDatabasePath;
         private List<string> _allParquetFilePaths;
         public event EventHandler<int> ProteinCutoffChanged;
+        public event EventHandler<int> MaxProteinCutoffChanged;
+        public event EventHandler<string> RunExcludeRequested;
+        public event EventHandler<string> RunRestoreRequested;
+        public event EventHandler ClearExclusionsRequested;
         private Dictionary<string, int> _rawFileToPlateId;
         private Dictionary<int, string> _plateIdToName;
 
@@ -34,12 +38,32 @@ namespace SCPBrowser
             set => ProteinCutoffControl.Value = value;
         }
 
+        public int MaxProteinCutoff
+        {
+            get => MaxProteinCutoffControl.Value;
+            set => MaxProteinCutoffControl.Value = value;
+        }
+
         public MainControl()
         {
             InitializeComponent();
             _dataService = new ParquetDataService();
             _cellTypeClassificationManager = new CellTypeClassificationManager();
             _goEnrichmentManager = new GoEnrichmentManager();
+
+            // Configure the upper limit control
+            MaxProteinCutoffControl.Label = "Max. Proteins G.";
+            MaxProteinCutoffControl.Maximum = 99999;
+            MaxProteinCutoffControl.Value = 99999;
+            MaxProteinCutoffControl.Minimum = 0;
+            MaxProteinCutoffControl.Increment = 50;
+            MaxProteinCutoffControl.ShowInfinityAtMax = true;
+            MaxProteinCutoffControl.SetColorScheme("#fee2e2", "#dc2626", "#dc2626");
+
+            // Bubble up histogram events
+            ProteinHistogram.RunExcludeRequested += (s, rawFileName) => RunExcludeRequested?.Invoke(this, rawFileName);
+            ProteinHistogram.RunRestoreRequested += (s, rawFileName) => RunRestoreRequested?.Invoke(this, rawFileName);
+            ProteinHistogram.ClearExclusionsRequested += (s, args) => ClearExclusionsRequested?.Invoke(this, args);
         }
 
 
@@ -47,11 +71,22 @@ namespace SCPBrowser
         {
             if (_currentData != null)
             {
-                ProteinHistogram.UpdateChart(_currentData, newValue, _rawFileToPlateId, _plateIdToName);
+                ProteinHistogram.UpdateChart(_currentData, newValue, _rawFileToPlateId, _plateIdToName, MaxProteinCutoffControl.Value);
             }
 
             // Bubble up to MainWindow
             ProteinCutoffChanged?.Invoke(this, newValue);
+        }
+
+        private void MaxProteinCutoffControl_ValueChanged(object sender, int newValue)
+        {
+            if (_currentData != null)
+            {
+                ProteinHistogram.UpdateChart(_currentData, ProteinCutoffControl.Value, _rawFileToPlateId, _plateIdToName, newValue);
+            }
+
+            // Bubble up to MainWindow
+            MaxProteinCutoffChanged?.Invoke(this, newValue);
         }
 
         /// <summary>
@@ -397,7 +432,20 @@ namespace SCPBrowser
             _currentData = data;
             _rawFileToPlateId = rawFileToPlateId;
             _plateIdToName = plateIdToName;
-            ProteinHistogram.UpdateChart(data, ProteinCutoffControl.Value, rawFileToPlateId, plateIdToName);
+
+            // Set snap-down value so first down-click from infinity lands on the actual data max
+            if (data != null && data.ProteinCountPerFile.Count > 0)
+            {
+                int dataMax = data.ProteinCountPerFile.Values.Max();
+                MaxProteinCutoffControl.SnapDownValue = dataMax;
+            }
+
+            ProteinHistogram.UpdateChart(data, ProteinCutoffControl.Value, rawFileToPlateId, plateIdToName, MaxProteinCutoffControl.Value);
+        }
+
+        public void SetExcludedRuns(HashSet<string> excludedRuns)
+        {
+            ProteinHistogram.SetExcludedRuns(excludedRuns);
         }
 
         public ProteomicsData GetCurrentData()

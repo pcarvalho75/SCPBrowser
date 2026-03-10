@@ -30,6 +30,7 @@ namespace SCPBrowser
         private System.Windows.Threading.DispatcherTimer _proteinCutoffDebounceTimer;
         private const int ProteinCutoffDebounceDelayMs = 300;
         private const string SETTING_PROTEIN_CUTOFF = "ProteinCutoff";
+        private const string SETTING_UPPER_PROTEIN_CUTOFF = "UpperProteinCutoff";
         private DataFilterService _dataFilterService;
         private int _pendingProteinCutoff;
         private CancellationTokenSource _projectCts;
@@ -200,6 +201,10 @@ namespace SCPBrowser
                 // Subscribe to events
                 PlateFilterControl.PlateSelectionChanged += PlateFilterControl_PlateSelectionChanged;
                 MainControlTab.ProteinCutoffChanged += MainControlTab_ProteinCutoffChanged;
+                MainControlTab.MaxProteinCutoffChanged += MainControlTab_MaxProteinCutoffChanged;
+                MainControlTab.RunExcludeRequested += MainControlTab_RunExcludeRequested;
+                MainControlTab.RunRestoreRequested += MainControlTab_RunRestoreRequested;
+                MainControlTab.ClearExclusionsRequested += MainControlTab_ClearExclusionsRequested;
                 _dataFilterService.FilteredDataChanged += DataFilterService_FilteredDataChanged;
 
                 // Load saved protein cutoff
@@ -208,6 +213,14 @@ namespace SCPBrowser
                 {
                     MainControlTab.ProteinCutoff = cutoffValue;
                     _dataFilterService.ProteinCutoff = cutoffValue;
+                }
+
+                // Load saved upper protein cutoff
+                var savedUpperCutoff = await _projectDatabaseService.GetSettingAsync(SETTING_UPPER_PROTEIN_CUTOFF, "99999");
+                if (int.TryParse(savedUpperCutoff, out int upperCutoffValue))
+                {
+                    MainControlTab.MaxProteinCutoff = upperCutoffValue;
+                    _dataFilterService.UpperProteinCutoff = upperCutoffValue;
                 }
 
                 UpdateWindowTitle(projectInfo.ProjectName);
@@ -349,6 +362,67 @@ namespace SCPBrowser
             }
         }
 
+        private async void MainControlTab_MaxProteinCutoffChanged(object sender, int newUpperCutoff)
+        {
+            if (!_hasOpenProject) return;
+            try
+            {
+                if (_projectDatabaseService != null)
+                {
+                    await _projectDatabaseService.SetSettingAsync(SETTING_UPPER_PROTEIN_CUTOFF, newUpperCutoff.ToString());
+                }
+
+                _dataFilterService.UpperProteinCutoff = newUpperCutoff;
+                await _dataFilterService.ApplyFiltersAsync(_parquetService);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error applying upper protein cutoff: {ex.Message}");
+            }
+        }
+
+        private async void MainControlTab_RunExcludeRequested(object sender, string rawFileName)
+        {
+            if (!_hasOpenProject) return;
+            try
+            {
+                _dataFilterService.ExcludeRun(rawFileName);
+                await _dataFilterService.ApplyFiltersAsync(_parquetService);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error excluding run: {ex.Message}");
+            }
+        }
+
+        private async void MainControlTab_RunRestoreRequested(object sender, string rawFileName)
+        {
+            if (!_hasOpenProject) return;
+            try
+            {
+                _dataFilterService.RestoreRun(rawFileName);
+                await _dataFilterService.ApplyFiltersAsync(_parquetService);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error restoring run: {ex.Message}");
+            }
+        }
+
+        private async void MainControlTab_ClearExclusionsRequested(object sender, EventArgs e)
+        {
+            if (!_hasOpenProject) return;
+            try
+            {
+                _dataFilterService.ClearManualExclusions();
+                await _dataFilterService.ApplyFiltersAsync(_parquetService);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error clearing exclusions: {ex.Message}");
+            }
+        }
+
         private async void PlateFilterControl_PlateSelectionChanged(object sender, PlateSelectionChangedEventArgs e)
         {
             try
@@ -385,6 +459,7 @@ namespace SCPBrowser
 
             // Bar chart shows plate-filtered data (all bars) with visual cutoff
             var dataForBarChart = _dataFilterService.PlateFilteredData ?? _dataFilterService.FilteredData;
+            MainControlTab.SetExcludedRuns(_dataFilterService.ManuallyExcludedRuns);
             MainControlTab.UpdateChart(dataForBarChart, _dataFilterService.RawFileToPlateId, _dataFilterService.PlateIdToName);
 
             // Pass HVP results to PeptideTicTab before updating chart
@@ -547,6 +622,10 @@ namespace SCPBrowser
             // Unsubscribe from events to avoid double-subscription on next project open
             PlateFilterControl.PlateSelectionChanged -= PlateFilterControl_PlateSelectionChanged;
             MainControlTab.ProteinCutoffChanged -= MainControlTab_ProteinCutoffChanged;
+            MainControlTab.MaxProteinCutoffChanged -= MainControlTab_MaxProteinCutoffChanged;
+            MainControlTab.RunExcludeRequested -= MainControlTab_RunExcludeRequested;
+            MainControlTab.RunRestoreRequested -= MainControlTab_RunRestoreRequested;
+            MainControlTab.ClearExclusionsRequested -= MainControlTab_ClearExclusionsRequested;
             if (_dataFilterService != null)
             {
                 _dataFilterService.FilteredDataChanged -= DataFilterService_FilteredDataChanged;

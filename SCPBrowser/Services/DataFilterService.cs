@@ -35,8 +35,10 @@ namespace SCPBrowser.Services
 
         // Filter settings
         private int _proteinCutoff = 800;
+        private int _upperProteinCutoff = 99999;
         private double _contaminantRatioCutoff = 1.0; // 0.0–1.0 fraction; 1.0 = no filtering
         private List<int> _selectedPlateIds = new List<int>();
+        private HashSet<string> _manuallyExcludedRuns = new HashSet<string>();
 
         // Public read-only access to data
         public ProteomicsData OriginalData => _originalData;
@@ -65,6 +67,39 @@ namespace SCPBrowser.Services
                 }
             }
         }
+
+        public int UpperProteinCutoff
+        {
+            get => _upperProteinCutoff;
+            set
+            {
+                if (_upperProteinCutoff != value)
+                {
+                    _upperProteinCutoff = value;
+                    Console.WriteLine($"DataFilterService: Upper protein cutoff set to {value}");
+                }
+            }
+        }
+
+        public void ExcludeRun(string rawFileName)
+        {
+            if (_manuallyExcludedRuns.Add(rawFileName))
+                Console.WriteLine($"DataFilterService: Manually excluded run '{rawFileName}'");
+        }
+
+        public void RestoreRun(string rawFileName)
+        {
+            if (_manuallyExcludedRuns.Remove(rawFileName))
+                Console.WriteLine($"DataFilterService: Restored excluded run '{rawFileName}'");
+        }
+
+        public void ClearManualExclusions()
+        {
+            _manuallyExcludedRuns.Clear();
+            Console.WriteLine("DataFilterService: Manual exclusions cleared");
+        }
+
+        public HashSet<string> ManuallyExcludedRuns => _manuallyExcludedRuns;
 
         public List<int> SelectedPlateIds
         {
@@ -288,13 +323,15 @@ namespace SCPBrowser.Services
             if (data == null)
                 return null;
 
-            // Get raw files that meet the cutoff
+            // Get raw files that meet both lower and upper cutoffs and are not manually excluded
             var passingRawFiles = data.ProteinCountPerFile
-                .Where(kvp => kvp.Value >= cutoff)
+                .Where(kvp => kvp.Value >= cutoff
+                    && (_upperProteinCutoff >= 99999 || kvp.Value <= _upperProteinCutoff)
+                    && !_manuallyExcludedRuns.Contains(kvp.Key))
                 .Select(kvp => kvp.Key)
                 .ToHashSet();
 
-            Console.WriteLine($"DataFilterService: Protein cutoff filter - {passingRawFiles.Count}/{data.RawFileNames.Count} raw files pass cutoff of {cutoff}");
+            Console.WriteLine($"DataFilterService: Protein cutoff filter - {passingRawFiles.Count}/{data.RawFileNames.Count} raw files pass (min={cutoff}, max={(_upperProteinCutoff >= 99999 ? "inf" : _upperProteinCutoff.ToString())}, excluded={_manuallyExcludedRuns.Count})");
 
             return FilterDataByRawFiles(data, passingRawFiles);
         }
@@ -413,7 +450,9 @@ namespace SCPBrowser.Services
             _hvpResults = null;
             _selectedPlateIds = new List<int>();
             _proteinCutoff = 800;
+            _upperProteinCutoff = 99999;
             _contaminantRatioCutoff = 1.0;
+            _manuallyExcludedRuns.Clear();
             ContaminantRatioExcludedRuns.Clear();
         }
     }

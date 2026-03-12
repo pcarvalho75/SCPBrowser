@@ -319,18 +319,6 @@ namespace SCPBrowser
             _databaseService = db;
             _dimRedSettings = await DimensionReductionSettings.LoadAsync(db);
             ApplySettingsToUI(_dimRedSettings);
-
-            if (db != null)
-            {
-                var confStr = await db.GetSettingAsync("ClassificationConfidenceThreshold");
-                if (confStr != null && double.TryParse(confStr, out var conf))
-                {
-                    _suppressSettingsSave = true;
-                    try { ConfidenceThresholdSlider.Value = conf; }
-                    finally { _suppressSettingsSave = false; }
-                    ConfidenceThresholdLabel.Text = $"{conf:P0}";
-                }
-            }
         }
 
         /// <summary>

@@ -640,16 +640,6 @@ namespace SCPBrowser
             }
         }
 
-        private async Task SeedProjectSettingsAsync(ProjectDatabaseService db)
-        {
-            if (await db.GetSettingAsync("GOPValueCutoff") == null)
-                await db.SetSettingAsync("GOPValueCutoff", Settings.Default.GOPValueCutoff.ToString());
-            if (await db.GetSettingAsync("GOMinimumOverlap") == null)
-                await db.SetSettingAsync("GOMinimumOverlap", Settings.Default.GOMinimumOverlap.ToString());
-            if (await db.GetSettingAsync("ClassificationConfidenceThreshold") == null)
-                await db.SetSettingAsync("ClassificationConfidenceThreshold", Settings.Default.ClassificationConfidenceThreshold.ToString());
-        }
-
         private void CloseProject()        {
             // Cancel all in-flight async operations for this project
             _projectCts?.Cancel();

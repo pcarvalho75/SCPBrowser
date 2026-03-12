@@ -115,7 +115,7 @@ namespace SCPBrowser
             {
                 PValueUpDown.Value = 0.05;
                 MinOverlapUpDown.Value = 2;
-                ConfidenceThresholdUpDown.Value = 0.1;
+                ConfidenceThresholdUpDown.Value = 0.5;
 
                 ShowStatusMessage("Settings reset to defaults (click Save to apply)", false);
             }

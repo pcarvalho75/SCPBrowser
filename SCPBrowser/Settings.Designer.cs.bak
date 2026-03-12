@@ -84,7 +84,7 @@ namespace SCPBrowser {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("0.1")]
+        [global::System.Configuration.DefaultSettingValueAttribute("0.5")]
         public double ClassificationConfidenceThreshold {
             get {
                 return ((double)(this["ClassificationConfidenceThreshold"]));

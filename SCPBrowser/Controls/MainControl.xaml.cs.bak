@@ -220,15 +220,8 @@ namespace SCPBrowser
                 StatusText.Text = "Running GO enrichment analysis...";
 
                 // Use settings for GO enrichment parameters
-                double pValueCutoff = Settings.Default.GOPValueCutoff;
-                int minOverlap = Settings.Default.GOMinimumOverlap;
-                if (_databaseService != null)
-                {
-                    var pStr = await _databaseService.GetSettingAsync("GOPValueCutoff");
-                    var mStr = await _databaseService.GetSettingAsync("GOMinimumOverlap");
-                    if (pStr != null && double.TryParse(pStr, out var p)) pValueCutoff = p;
-                    if (mStr != null && int.TryParse(mStr, out var m)) minOverlap = m;
-                }
+                var pValueCutoff = Settings.Default.GOPValueCutoff;
+                var minOverlap = Settings.Default.GOMinimumOverlap;
 
                 _goEnrichmentResults = await System.Threading.Tasks.Task.Run(() =>
                     _goEnrichmentManager.EnrichAllRuns(

@@ -43,13 +43,13 @@ namespace SCPBrowser
             if (_database == null)
             {
                 _predictor = null;
-                Console.WriteLine("Reference database has no cell type profiles imported yet.");
+
                 return;
             }
 
             _predictor = new CellTypePredictor(_database);
 
-            Console.WriteLine($"Reference database loaded: {_database.TotalCellTypes} cell types, {_database.TotalGenes} features");
+
         }
 
         /// <summary>
@@ -73,7 +73,7 @@ namespace SCPBrowser
             // 1. Check if already in memory cache (skip if forcing recompute)
             if (!forceRecompute && _cachedPredictions != null && _cachedPredictions.Count > 0)
             {
-                Console.WriteLine("Cell type predictions returned from MEMORY CACHE (no recomputation)");
+
                 return _cachedPredictions;
             }
 
@@ -93,18 +93,18 @@ namespace SCPBrowser
 
                 if (existingPredictions.Count > 0 && existingPredictions.Count == proteomicsData.TotalRawFiles)
                 {
-                    Console.WriteLine($"Cell type predictions returned from DATABASE ({existingPredictions.Count} runs, no recomputation)");
+
                     _cachedPredictions = existingPredictions;
                     return _cachedPredictions;
                 }
             }
             else
             {
-                Console.WriteLine("Force recompute requested - skipping cache and database");
+
             }
 
             // 4. Need to compute predictions
-            Console.WriteLine("Cell type predictions being FRESHLY COMPUTED (not from cache or database)");
+
             progressReporter?.ReportMessage("Computing cell type predictions...");
 
             var predictions = PredictCellTypesForAllRuns(proteomicsData, progressReporter, keyMarkers, excludedCellTypes, priorWeights);
@@ -119,7 +119,7 @@ namespace SCPBrowser
             }
             await saveCellTypeService.SaveCellTypeClassificationsAsync(importId, predictions);
 
-            Console.WriteLine($"Saved {predictions.Count} cell type classifications to database");
+
 
             // 6. Store in cache and return
             _cachedPredictions = predictions;
@@ -243,11 +243,11 @@ namespace SCPBrowser
             }
 
             // DEBUG OUTPUT
-            Console.WriteLine($"[DEBUG] Run: {runName}");
-            Console.WriteLine($"[DEBUG] Extracted {abundances.Count} unique gene names from proteomics");
+
+
             if (abundances.Count > 0)
             {
-                Console.WriteLine($"[DEBUG] Sample gene names: {string.Join(", ", abundances.Keys.Take(10))}");
+
             }
 
             return abundances;
@@ -287,7 +287,7 @@ namespace SCPBrowser
         public void ClearCache()
         {
             _cachedPredictions = null;
-            Console.WriteLine("Cell type prediction cache cleared");
+
         }
 
         /// <summary>
@@ -301,7 +301,7 @@ namespace SCPBrowser
             var cellTypeService = new CellTypeClassificationService(projectDatabasePath);
             await cellTypeService.DeleteAllCellTypeClassificationsAsync(importId);
             ClearCache();
-            Console.WriteLine("All cell type classifications deleted");
+
         }
 
         // ================================================================
@@ -313,11 +313,11 @@ namespace SCPBrowser
         /// </summary>
         public void DiagnoseProteinGeneMapping(ProteomicsData proteomicsData, string runName)
         {
-            Console.WriteLine($"");
-            Console.WriteLine($"========================================");
-            Console.WriteLine($"PROTEIN-TO-GENE MAPPING DIAGNOSTIC");
-            Console.WriteLine($"Run: {runName}");
-            Console.WriteLine($"========================================");
+
+
+
+
+
 
             // --- INCORRECT 'if' BLOCK REMOVED ---
             // The check 'proteomicsData.ProteinQuantMatrix.ContainsKey(runName)'
@@ -328,9 +328,9 @@ namespace SCPBrowser
                 .Where(protein => proteomicsData.ProteinQuantMatrix[protein].ContainsKey(runName))
                 .ToList();
 
-            Console.WriteLine($"");
-            Console.WriteLine($"Step 1: Proteins detected in proteomics");
-            Console.WriteLine($"  Total proteins: {proteinsInRun.Count}");
+
+
+
 
             // Step 2: Check how many have gene mappings
             int proteinsWithMappings = 0;
@@ -351,13 +351,13 @@ namespace SCPBrowser
                 }
             }
 
-            Console.WriteLine($"");
-            Console.WriteLine($"Step 2: Gene mapping availability");
-            Console.WriteLine($"  Proteins WITH gene mappings: {proteinsWithMappings}");
-            Console.WriteLine($"  Proteins WITHOUT mappings: {proteinsWithoutMappings}");
+
+
+
+
             if (sampleUnmapped.Count > 0)
             {
-                Console.WriteLine($"  Sample unmapped proteins: {string.Join(", ", sampleUnmapped)}");
+
             }
 
             // Step 3: Extract all gene names
@@ -388,16 +388,16 @@ namespace SCPBrowser
                 }
             }
 
-            Console.WriteLine($"");
-            Console.WriteLine($"Step 3: Gene name extraction");
-            Console.WriteLine($"  Total unique genes extracted: {extractedGenes.Count}");
-            Console.WriteLine($"  Sample genes: {string.Join(", ", extractedGenes.Keys.Take(10))}");
+
+
+
+
 
             // Step 4: Check how many exist in transcriptomic database
             if (!IsLoaded)
             {
-                Console.WriteLine($"");
-                Console.WriteLine($"ERROR: Reference database not loaded");
+
+
                 return;
             }
 
@@ -426,38 +426,38 @@ namespace SCPBrowser
                 }
             }
 
-            Console.WriteLine($"");
-            Console.WriteLine($"Step 4: Transcriptomic database matching");
-            Console.WriteLine($"  Total genes in transcriptomic DB: {allTranscriptomicGenes.Count}");
-            Console.WriteLine($"  Proteomics genes that MATCH transcriptomics: {matchedGenes.Count}");
-            Console.WriteLine($"  Proteomics genes that DON'T MATCH: {extractedGenes.Count - matchedGenes.Count}");
+
+
+
+
+
 
             // Added safety check for divide-by-zero
             if (extractedGenes.Count > 0)
             {
-                Console.WriteLine($"  Match rate: {(matchedGenes.Count * 100.0 / extractedGenes.Count):F1}%");
+
             }
             else
             {
-                Console.WriteLine($"  Match rate: N/A (0 genes extracted)");
+
             }
 
 
             if (matchedGenes.Count > 0)
             {
-                Console.WriteLine($"");
-                Console.WriteLine($"  Sample MATCHED genes: {string.Join(", ", matchedGenes.Take(15))}");
+
+
             }
 
             if (unmatchedGenes.Count > 0)
             {
-                Console.WriteLine($"");
-                Console.WriteLine($"  Sample UNMATCHED genes: {string.Join(", ", unmatchedGenes)}");
+
+
             }
 
             // Step 5: Check marker overlap
-            Console.WriteLine($"");
-            Console.WriteLine($"Step 5: Marker gene analysis");
+
+
             foreach (var cellType in _database.CellTypeProfiles.Keys)
             {
                 // FIX: Access CellTypeMarkers via the _predictor object
@@ -465,12 +465,12 @@ namespace SCPBrowser
                 {
                     var markers = _predictor.CellTypeMarkers[cellType];
                     int overlap = matchedGenes.Count(g => markers.Contains(g));
-                    Console.WriteLine($"  {cellType}: {markers.Count} markers, {overlap} detected in this run");
+
                 }
             }
 
-            Console.WriteLine($"========================================");
-            Console.WriteLine($"");
+
+
         }
 
         /// <summary>

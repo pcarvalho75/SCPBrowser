@@ -82,11 +82,11 @@ namespace SCPBrowser
             {
                 var fastaService = new FastaParserService(projectDbPath);
                 _proteinAnnotations = await fastaService.GetAllAnnotationsAsync();
-                Console.WriteLine($"ProteinMatrixControl: Loaded {_proteinAnnotations.Count} protein annotations");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"ProteinMatrixControl: Failed to load annotations - {ex.Message}");
+
                 _proteinAnnotations = new Dictionary<string, FastaParserService.ProteinAnnotation>();
             }
 
@@ -95,11 +95,11 @@ namespace SCPBrowser
                 var dbService = new ProjectDatabaseService(projectDbPath);
                 await dbService.EnsureProteinContaminantsTableExistsAsync();
                 _contaminantIds = await dbService.LoadContaminantsAsync();
-                Console.WriteLine($"ProteinMatrixControl: Loaded {_contaminantIds.Count} contaminants from DB");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"ProteinMatrixControl: Failed to load contaminants - {ex.Message}");
+
             }
         }
 
@@ -533,11 +533,11 @@ namespace SCPBrowser
                 {
                     var dbService = new ProjectDatabaseService(_projectDbPath);
                     await dbService.SaveContaminantsAsync(_contaminantIds);
-                    Console.WriteLine($"ProteinMatrixControl: Saved {_contaminantIds.Count} contaminants to DB");
+
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"ProteinMatrixControl: Failed to save contaminants - {ex.Message}");
+
                 }
             }
 

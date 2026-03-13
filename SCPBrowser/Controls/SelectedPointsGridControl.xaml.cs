@@ -49,7 +49,7 @@ namespace SCPBrowser
 
         public void ClearGrid()
         {
-            Console.WriteLine("GridCleared");
+
             _currentGridData = null;
             SelectedPointsGrid.ItemsSource = null;
             SelectionStatusText.Text = "Click a point or drag to select multiple points. Right-click a point to view details.";

@@ -197,7 +197,7 @@ namespace SCPBrowser
                 MainControlTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMapById());
                 await _dataFilterService.LoadPlateMappingAsync(_parquetService, _plateService);
                 PlateFilterControl.Visibility = Visibility.Visible;
-                Console.WriteLine("PlateFilterControl loaded and visible");
+
 
                 // Subscribe to events
                 PlateFilterControl.PlateSelectionChanged += PlateFilterControl_PlateSelectionChanged;
@@ -247,7 +247,7 @@ namespace SCPBrowser
                         }
                         else
                         {
-                            Console.WriteLine($"Warning: Data file '{fileName}' not found in imports folder.");
+
                         }
                     }
 
@@ -276,9 +276,9 @@ namespace SCPBrowser
 
                 LoadingOverlay.Hide();
 
-                Console.WriteLine($"Project opened: {projectInfo.ProjectName}");
-                Console.WriteLine($"Created: {projectInfo.CreatedDate}");
-                Console.WriteLine($"Location: {Path.GetDirectoryName(projectDbPath)}");
+
+
+
 
                 AddToRecentProjects(projectDbPath);
 
@@ -307,12 +307,12 @@ namespace SCPBrowser
             try
             {
                 if (!_hasOpenProject) return;
-                Console.WriteLine($"DataFilterService: FilteredDataChanged event received");
+
                 await RefreshAllTabsWithFilteredDataAsync();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in FilteredDataChanged handler: {ex.Message}");
+
             }
         }
 
@@ -338,7 +338,7 @@ namespace SCPBrowser
             if (!_hasOpenProject) return;
             try
             {
-                Console.WriteLine($"Protein cutoff changed: {newCutoff}");
+
 
                 LoadingOverlay.SetMessage("Applying Filter");
                 LoadingOverlay.SetProgress("Filtering by protein count...");
@@ -365,7 +365,7 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 LoadingOverlay.Hide();
-                Console.WriteLine($"Error applying protein cutoff: {ex.Message}");
+
             }
         }
 
@@ -384,7 +384,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error applying upper protein cutoff: {ex.Message}");
+
             }
         }
 
@@ -398,7 +398,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error excluding run: {ex.Message}");
+
             }
         }
 
@@ -412,7 +412,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error restoring run: {ex.Message}");
+
             }
         }
 
@@ -426,7 +426,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error clearing exclusions: {ex.Message}");
+
             }
         }
 
@@ -435,11 +435,11 @@ namespace SCPBrowser
             try
             {
                 if (!_hasOpenProject) return;
-                Console.WriteLine($"Plate selection changed: {e.SelectedPlateIds.Count} plates selected");
+
 
                 if (_dataFilterService?.OriginalData == null)
                 {
-                    Console.WriteLine("No original data available for filtering");
+
                     return;
                 }
 
@@ -448,7 +448,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error filtering data: {ex.Message}");
+
                 await Dispatcher.InvokeAsync(() =>
                 {
                     MessageBox.Show($"Error filtering data:\n\n{ex.Message}", "Error",
@@ -461,7 +461,7 @@ namespace SCPBrowser
         {
             if (!_hasOpenProject) return;
 
-            Console.WriteLine($"Plate color changed: '{e.PlateName}' -> #{e.NewColor.R:X2}{e.NewColor.G:X2}{e.NewColor.B:X2}");
+
 
             // Propagate updated color map to PeptideTicControl and refresh its chart
             PeptideTicTab.UpdatePlateColors(e.FullColorMap);
@@ -482,7 +482,7 @@ namespace SCPBrowser
             if (!_hasOpenProject || _dataFilterService?.FilteredData == null)
                 return;
 
-            Console.WriteLine($"Refreshing all tabs with filtered data: {_dataFilterService.FilteredData.TotalRawFiles} runs");
+
 
             // Bar chart shows plate-filtered data (all bars) with visual cutoff
             var dataForBarChart = _dataFilterService.PlateFilteredData ?? _dataFilterService.FilteredData;
@@ -522,7 +522,7 @@ namespace SCPBrowser
 
                 if (proteins.Count == 0)
                 {
-                    Console.WriteLine("[BioTessera] No proteins after conversion");
+
                     return;
                 }
 
@@ -534,11 +534,11 @@ namespace SCPBrowser
                 await BioTesseraTab.GenerateAsync();
 
                 var runInfo = selectedRuns != null ? $" (filtered to {selectedRuns.Count} runs)" : "";
-                Console.WriteLine($"[BioTessera] Updated with {proteins.Count} proteins{runInfo}");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[BioTessera] Error updating tab: {ex.Message}");
+
             }
         }
 
@@ -554,7 +554,7 @@ namespace SCPBrowser
 
                 if (string.IsNullOrEmpty(fastaPath) || !System.IO.File.Exists(fastaPath))
                 {
-                    Console.WriteLine("[ProteinCoverage] FASTA path not set or file not found. Coverage will be unavailable.");
+
                     return;
                 }
 
@@ -580,11 +580,11 @@ namespace SCPBrowser
                 // Initialize the coverage panel
                 PeptideTicTab.InitializeProteinCoverage(fastaPath, parquetPaths, annotations);
 
-                Console.WriteLine($"[ProteinCoverage] Initialized with FASTA={Path.GetFileName(fastaPath)}, {parquetPaths.Count} parquet files, {annotations.Count} annotations");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ProteinCoverage] Error initializing: {ex.Message}");
+
             }
         }
 
@@ -621,7 +621,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error clearing classifications: {ex.Message}");
+
                 MessageBox.Show($"Error clearing classifications:\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -695,7 +695,7 @@ namespace SCPBrowser
 
             UpdateWindowTitle();
 
-            Console.WriteLine("Project closed");
+
         }
 
         private void UpdateWindowTitle(string projectName = null)
@@ -826,7 +826,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error opening project browser: {ex.Message}");
+
                 MessageBox.Show($"Error opening project browser:\n\n{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -878,7 +878,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error opening PLP export: {ex.Message}");
+
                 MessageBox.Show($"Error opening PLP export:\n\n{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -1029,7 +1029,7 @@ namespace SCPBrowser
                         MessageBoxImage.Information);
                 }
 
-                Console.WriteLine($"Reference data imported to: {referenceDatabasePath}");
+
 
                 // Hot reload: Update MainControl's transcriptomic reference
                 await MainControlTab.ReloadTranscriptomicReferenceAsync();
@@ -1038,7 +1038,7 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 LoadingOverlay.Hide();
-                Console.WriteLine($"Error importing reference data: {ex.Message}");
+
                 MessageBox.Show(
                     $"Error importing reference data:\n\n{ex.Message}",
                     "Import Error",
@@ -1078,7 +1078,7 @@ namespace SCPBrowser
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
 
-                Console.WriteLine($"Proteomics reference imported from: {prefFilePath}");
+
 
                 await MainControlTab.ReloadTranscriptomicReferenceAsync();
                 PeptideTicTab.EnableCellTypeClassification(MainControlTab.IsTranscriptomicDatabaseLoaded());
@@ -1086,7 +1086,7 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 LoadingOverlay.Hide();
-                Console.WriteLine($"Error importing proteomics reference: {ex.Message}");
+
                 MessageBox.Show(
                     $"Error importing proteomics reference:\n\n{ex.Message}",
                     "Import Error",
@@ -1141,7 +1141,7 @@ namespace SCPBrowser
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
 
-                Console.WriteLine($"Proteomic reference built from parquet: {parquetFilePath}");
+
 
                 // Hot reload
                 await MainControlTab.ReloadTranscriptomicReferenceAsync();
@@ -1150,7 +1150,7 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 LoadingOverlay.Hide();
-                Console.WriteLine($"Error building proteomic reference: {ex.Message}");
+
                 MessageBox.Show(
                     $"Error building proteomic reference:\n\n{ex.Message}",
                     "Build Error",
@@ -1186,7 +1186,7 @@ namespace SCPBrowser
                 _dataFilterService.SetOriginalData(originalData);
                 _dataFilterService.SelectedPlateIds = PlateFilterControl.GetSelectedPlateIds();
 
-                Console.WriteLine($"Stored original data: {originalData?.TotalRawFiles ?? 0} runs");
+
 
                 // Apply initial filters
                 await _dataFilterService.ApplyFiltersAsync(_parquetService);
@@ -1206,7 +1206,7 @@ namespace SCPBrowser
                 // Load existing exclusions from database
                 var excludedRunNames = await _parquetService.GetExcludedRunNamesAsync();
                 PeptideTicTab.SetExcludedRuns(excludedRunNames);
-                Console.WriteLine($"Loaded {excludedRunNames.Count} excluded runs from database");
+
 
                 // Load protein annotations BEFORE updating matrix so descriptions are available
                 await ProteinMatrixTab.LoadProteinAnnotationsAsync(_currentProjectPath);
@@ -1238,7 +1238,7 @@ namespace SCPBrowser
 
                 PeptideTicTab.SetGoEnrichmentResults(goResults, goColorMap);
 
-                Console.WriteLine($"GO enrichment results passed: {goResults?.Count ?? 0} runs");
+
 
                 // Auto-run cell type classification if reference database is loaded
                 if (cellTypeAvailable)
@@ -1251,7 +1251,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in DataLoaded handler: {ex.Message}");
+
                 MessageBox.Show($"Error loading data:\n\n{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -1379,7 +1379,7 @@ namespace SCPBrowser
                 var proteomicsData = MainControlTab.GetCurrentData();
                 if (proteomicsData == null)
                 {
-                    Console.WriteLine("No proteomics data available for auto-classification");
+
                     return;
                 }
 
@@ -1387,7 +1387,7 @@ namespace SCPBrowser
                 int? importId = await _parquetService.GetMostRecentImportIdAsync();
                 if (!importId.HasValue)
                 {
-                    Console.WriteLine("No import ID found for auto-classification");
+
                     return;
                 }
 
@@ -1411,7 +1411,7 @@ namespace SCPBrowser
 
                 if (predictions == null || predictions.Count == 0)
                 {
-                    Console.WriteLine("No cell type predictions generated");
+
                     return;
                 }
 
@@ -1421,11 +1421,11 @@ namespace SCPBrowser
                 // Pass predictions to PeptideTicTab (this will also select Cell Type mode)
                 PeptideTicTab.SetCellTypePredictions(predictions, colorMap, selectCellTypeMode: true);
 
-                Console.WriteLine($"Auto cell type classification complete: {predictions.Count} runs classified");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error during auto cell type classification: {ex.Message}");
+
                 // Don't show error to user - this is a background operation
             }
         }
@@ -1437,7 +1437,7 @@ namespace SCPBrowser
         {
             public void ReportMessage(string message)
             {
-                Console.WriteLine($"[AutoClassify] {message}");
+
             }
 
             public void ReportProgress(string progress)
@@ -1450,7 +1450,7 @@ namespace SCPBrowser
         {
             try
             {
-                Console.WriteLine("Cell type predictions requested");
+
 
                 LoadingOverlay.SetMessage("Computing Cell Type Classifications");
                 LoadingOverlay.SetProgress("Analyzing protein expression patterns...");
@@ -1499,7 +1499,7 @@ namespace SCPBrowser
 
                 LoadingOverlay.Hide();
 
-                Console.WriteLine($"Cell type predictions computed: {predictions.Count} runs classified");
+
             }
             catch (Exception ex)
             {
@@ -1587,7 +1587,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error applying contaminant ratio cutoff: {ex.Message}");
+
             }
         }
 
@@ -1596,7 +1596,7 @@ namespace SCPBrowser
             try
             {
                 bool applyMarkers = e.ApplyKeyMarkers;
-                Console.WriteLine($"Reclassification requested (apply key markers: {applyMarkers})");
+
 
                 if (applyMarkers)
                 {
@@ -1661,7 +1661,7 @@ namespace SCPBrowser
                     ? $"Reclassification complete!\n\n{predictions.Count} cells reclassified using {totalMarkers} key marker(s).{excludedNote}"
                     : $"Baseline reclassification complete!\n\n{predictions.Count} cells reclassified without key marker adjustments.{excludedNote}";
                 
-                Console.WriteLine($"Reclassification complete: {predictions.Count} runs, markers applied: {applyMarkers}, excluded: {excludedCount}");
+
                 MessageBox.Show(message, "Reclassification Complete", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
@@ -1707,17 +1707,17 @@ namespace SCPBrowser
                 if (e.IsIncluded)
                 {
                     await _parquetService.IncludeRunAsync(e.RawFileId);
-                    Console.WriteLine($"[Exclusion] Included run: {e.RunName} (ID: {e.RawFileId})");
+
                 }
                 else
                 {
                     await _parquetService.ExcludeRunAsync(e.RawFileId);
-                    Console.WriteLine($"[Exclusion] Excluded run: {e.RunName} (ID: {e.RawFileId})");
+
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Exclusion] Error updating exclusion: {ex.Message}");
+
                 await Dispatcher.InvokeAsync(() =>
                 {
                     MessageBox.Show($"Error updating run exclusion:\n\n{ex.Message}", "Error",
@@ -1731,11 +1731,11 @@ namespace SCPBrowser
             try
             {
                 await _parquetService.ClearAllExclusionsAsync();
-                Console.WriteLine("[Exclusion] Cleared all exclusions");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Exclusion] Error clearing exclusions: {ex.Message}");
+
                 await Dispatcher.InvokeAsync(() =>
                 {
                     MessageBox.Show($"Error clearing exclusions:\n\n{ex.Message}", "Error",
@@ -1772,7 +1772,7 @@ namespace SCPBrowser
             // Save settings
             Settings.Default.Save();
 
-            Console.WriteLine($"Added to recent projects: {projectPath}");
+
         }
 
         private async Task<List<RecentProjectItem>> GetRecentProjectsAsync()
@@ -1829,7 +1829,7 @@ namespace SCPBrowser
                 NoRecentProjectsText.Visibility = Visibility.Visible;
             }
 
-            Console.WriteLine($"Loaded {recentProjects.Count} recent projects for display");
+
         }
 
         private async void RecentProject_Click(object sender, RoutedEventArgs e)
@@ -1839,7 +1839,7 @@ namespace SCPBrowser
                 if (sender is Button button && button.Tag is RecentProjectItem item)
                 {
                     string projectPath = item.Path;
-                    Console.WriteLine($"Recent project clicked: {projectPath}");
+
 
                     // Check if the file still exists
                     if (!File.Exists(projectPath))
@@ -1872,7 +1872,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error opening recent project: {ex.Message}");
+
                 MessageBox.Show($"Error opening project:\n\n{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -1926,7 +1926,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error editing project: {ex.Message}");
+
                 MessageBox.Show($"Error editing project:\n\n{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }

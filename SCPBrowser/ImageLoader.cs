@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Windows.Media.Imaging;
 
@@ -30,7 +30,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error loading image {imagePath}: {ex.Message}");
+
                 return null;
             }
         }

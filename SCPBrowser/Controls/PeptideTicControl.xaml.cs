@@ -1710,8 +1710,8 @@ namespace SCPBrowser
 
         private void ScatterPlot_SelectionChanged(object sender, PlotSelectionChangedEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine($"[SelectionChanged] Received {e.SelectedPoints.Count} selected points, _checkedCellTypes={_checkedCellTypes.Count}, _checkedBioConditions={_checkedBioConditions.Count}, _checkedPlates={_checkedPlates.Count}");
-            System.Diagnostics.Debug.WriteLine($"[SelectionChanged] Caller: {new System.Diagnostics.StackTrace().GetFrame(1)?.GetMethod()?.Name}");
+
+
             _currentSelectedPoints = e.SelectedPoints;
 
             // Detect if this is a lasso selection (polygon-based) or checkbox selection
@@ -1767,7 +1767,7 @@ namespace SCPBrowser
 
                 if (hadCheckedItems)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[SelectionChanged] CLEARING all checked sets! cellTypes={_checkedCellTypes.Count}, bioCond={_checkedBioConditions.Count}, plates={_checkedPlates.Count}");
+
                     _suppressCheckboxEvents = true;
                     try
                     {

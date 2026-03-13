@@ -68,7 +68,7 @@ namespace SCPBrowser
         /// </summary>
         public void ClearDetails()
         {
-            Console.WriteLine("Run details cleared");
+
             _currentSelectedPoints.Clear();
             _goEnrichmentResults = null;
             _currentDetailIndex = 0;

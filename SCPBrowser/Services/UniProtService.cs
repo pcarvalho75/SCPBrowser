@@ -61,7 +61,7 @@ namespace SCPBrowser.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[UniProtService] Error fetching {normalizedId}: {ex.Message}");
+
                 return null;
             }
         }
@@ -193,7 +193,7 @@ namespace SCPBrowser.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[UniProtService] Parse error: {ex.Message}");
+
                 return null;
             }
         }

@@ -53,7 +53,7 @@ namespace SCPBrowser.Services
 
                                 if (!rawFileMap.TryGetValue(runName, out int rawFileId))
                                 {
-                                    Console.WriteLine($"Warning: Could not find raw_file_id for run '{runName}'");
+
                                     continue;
                                 }
 
@@ -83,7 +83,7 @@ namespace SCPBrowser.Services
                             }
                         }
 
-                        Console.WriteLine($"DB SAVE: {savedCount}/{predictions.Count} predictions saved ({rawFileMap.Count} raw files in DB map)");
+
                         transaction.Commit();
                     }
                     catch (Exception ex)
@@ -128,11 +128,6 @@ namespace SCPBrowser.Services
 
             var predictions = rows.ToDictionary(r => r.RunName, r => r.Result);
 
-            Console.WriteLine($"DB LOAD: {predictions.Count} predictions loaded for import {importId}");
-            var typeCounts = predictions.Values.GroupBy(p => p.TopCellType).OrderByDescending(g => g.Count());
-            foreach (var group in typeCounts)
-                Console.WriteLine($"  DB LOAD: {group.Key} = {group.Count()}");
-
             return predictions;
         }
 
@@ -142,7 +137,7 @@ namespace SCPBrowser.Services
         public async Task DeleteAllCellTypeClassificationsAsync(int importId)
         {
             int deletedCount = await ExecuteNonQueryAsync("DELETE FROM raw_file_cell_type_classifications");
-            Console.WriteLine($"Deleted {deletedCount} cell type classifications (all imports)");
+
         }
     }
 }

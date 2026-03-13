@@ -728,7 +728,7 @@ namespace SCPBrowser.Services
         {
             if (string.IsNullOrEmpty(_projectDbPath))
             {
-                Console.WriteLine("No project database path - skipping biological condition population");
+
                 return;
             }
 
@@ -742,7 +742,7 @@ namespace SCPBrowser.Services
                     data.BiologicalConditionPerFile[name] = condition;
             }
 
-            Console.WriteLine($"Populated biological conditions for {data.BiologicalConditionPerFile.Count} raw files");
+
         }
 
         /// <summary>

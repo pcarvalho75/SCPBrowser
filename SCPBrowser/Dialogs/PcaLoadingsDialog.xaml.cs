@@ -131,7 +131,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error fetching protein info: {ex.Message}");
+
                 FetchStatusText.Text = $"Error fetching protein info: {ex.Message}";
             }
         }

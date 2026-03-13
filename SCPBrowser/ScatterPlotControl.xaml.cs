@@ -203,11 +203,11 @@ namespace SCPBrowser
         {
             if (_suppressSelectionEvents)
             {
-                System.Diagnostics.Debug.WriteLine($"[RaiseSelectionChanged] SUPPRESSED ({selectedPoints.Count} points)");
+
                 return;
             }
 
-            System.Diagnostics.Debug.WriteLine($"[RaiseSelectionChanged] FIRING with {selectedPoints.Count} points");
+
             SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = selectedPoints });
         }
 
@@ -329,15 +329,15 @@ namespace SCPBrowser
 
                     if (hvpChanged)
                     {
-                        Console.WriteLine($"HVP set changed: {_hvpProteinIds?.Count ?? 0} -> {newHvpIds?.Count ?? 0}");
+
                     }
                     if (batchCorrectionChanged)
                     {
-                        Console.WriteLine($"Batch correction changed: {_previousApplyBatchCorrection} -> {options?.ApplyBatchCorrection ?? false}");
+
                     }
                     if (dimRedSettingsChanged)
                     {
-                        Console.WriteLine("DimRed settings changed, invalidating PCA/UMAP caches");
+
                     }
                 }
 
@@ -387,20 +387,20 @@ namespace SCPBrowser
                 // Apply checkbox filter styling synchronously (no flicker).
                 // RaiseSelectionChanged is suppressed here (_suppressSelectionEvents = true),
                 // so the PeptideTicControl handler won't receive partial state mid-update.
-                System.Diagnostics.Debug.WriteLine($"[UpdatePlot] CheckedCellTypes={options.CheckedCellTypes?.Count}, CheckedBioConditions={options.CheckedBioConditions?.Count}, CheckedPlates={options.CheckedPlates?.Count}");
+
                 if (options.CheckedCellTypes != null || options.CheckedBioConditions != null || options.CheckedPlates != null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[UpdatePlot] Calling UpdateSelectionWithFilters");
+
                     UpdateSelectionWithFilters(
                         options.CheckedCellTypes ?? new HashSet<string>(),
                         options.CheckedBioConditions ?? new HashSet<string>(),
                         options.CheckedPlates ?? new HashSet<string>());
                     int greyCount = _dataPoints.Count(p => !p.IsSelected);
-                    System.Diagnostics.Debug.WriteLine($"[UpdatePlot] After filter: {greyCount}/{_dataPoints.Count} points greyed out");
+
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"[UpdatePlot] SKIPPED UpdateSelectionWithFilters - all Checked sets are null");
+
                 }
 
                 // Schedule a deferred SelectionChanged event AFTER the finally block
@@ -420,12 +420,12 @@ namespace SCPBrowser
                         // this, our snapshot is outdated; skip.
                         if (gen != _updateGeneration)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[UpdatePlot-Deferred] STALE, skipping (gen={gen}, current={_updateGeneration})");
+
                             return;
                         }
 
                         var selected = _dataPoints.Where(p => p.IsSelected).ToList();
-                        System.Diagnostics.Debug.WriteLine($"[UpdatePlot-Deferred] Firing SelectionChanged with {selected.Count}/{_dataPoints.Count} selected points, _suppressSelectionEvents={_suppressSelectionEvents}");
+
                         RaiseSelectionChanged(selected);
                     }), System.Windows.Threading.DispatcherPriority.Loaded);
                 }
@@ -473,7 +473,7 @@ namespace SCPBrowser
                     if (excluded != null && excluded.Count > 0)
                     {
                         rawFiles = rawFiles.Where(rf => !excluded.Contains(rf)).ToList();
-                        Console.WriteLine($"DimRed: Excluded {excluded.Count} contaminant-ratio runs, {rawFiles.Count} remaining");
+
                     }
 
                     // Determine which proteins to use - HVPs if available, otherwise all
@@ -482,12 +482,12 @@ namespace SCPBrowser
                     proteins = data.ProteinQuantMatrix.Keys
                         .Where(p => _hvpProteinIds.Contains(p))
                         .ToList();
-                    Console.WriteLine($"DimRed: Using {proteins.Count} highly variable proteins");
+
                 }
                 else
                 {
                     proteins = data.ProteinQuantMatrix.Keys.ToList();
-                    Console.WriteLine($"DimRed: Using all {proteins.Count} proteins (no HVP filter)");
+
                 }
 
                 int nSamples = rawFiles.Count;
@@ -518,18 +518,18 @@ namespace SCPBrowser
                     var uniqueBatches = batchLabels.Distinct().Count();
                     if (uniqueBatches >= 2)
                     {
-                        Console.WriteLine($"DimRed: Applying ComBat batch correction ({uniqueBatches} batches)");
+
                         var combatService = new ComBatService();
                         var result = combatService.Apply(matrix, batchLabels);
 
                         if (result.Success)
                         {
                             matrix = result.CorrectedData;
-                            Console.WriteLine($"DimRed: ComBat correction applied successfully");
+
                         }
                         else
                         {
-                            Console.WriteLine($"DimRed: ComBat correction failed - {result.ErrorMessage}");
+
                         }
                     }
                 }
@@ -571,7 +571,7 @@ namespace SCPBrowser
                                 matrix[i, j] = 0;
                         }
                     }
-                    Console.WriteLine($"DimRed: Z-score scaling applied (clip ±{clipMax})");
+
                 }
 
                 return matrix;
@@ -592,13 +592,13 @@ namespace SCPBrowser
                     // Ensure PCA is computed first — UMAP runs on PCA coordinates
                     if (_pcaResult == null)
                     {
-                        Console.WriteLine("UMAP: PCA not yet computed, triggering PCA first...");
+
                         ComputePca(data);
                     }
 
                     if (_pcaResult == null)
                     {
-                        Console.WriteLine("UMAP: PCA computation failed, cannot proceed.");
+
                         _umapResult = null;
                         return;
                     }
@@ -609,12 +609,12 @@ namespace SCPBrowser
 
                     if (nSamples < 15)
                     {
-                        Console.WriteLine($"UMAP requires at least 15 samples, got {nSamples}");
+
                         _umapResult = null;
                         return;
                     }
 
-                    Console.WriteLine($"UMAP: Using {nPcsToUse} PCs from {availablePCs} available");
+
 
                     // Build UMAP input from PCA scores
                     int nDimensions = nPcsToUse;
@@ -645,12 +645,12 @@ namespace SCPBrowser
                         if (uniqueTypes.Length >= 2)
                         {
                             nDimensions += uniqueTypes.Length;
-                            Console.WriteLine($"UMAP: Guided embedding with {uniqueTypes.Length} cell types, weight={settings.GuidedWeight:F2}");
+
                         }
                         else
                         {
                             cellTypeLabels = null;
-                            Console.WriteLine("UMAP: Guided embedding skipped (fewer than 2 cell types)");
+
                         }
                     }
 
@@ -703,7 +703,7 @@ namespace SCPBrowser
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"UMAP computation failed: {ex.Message}");
+
                             _umapResult = null;
                             _labelPurity = null;
                         }
@@ -741,7 +741,7 @@ namespace SCPBrowser
 
                             if (labeledCount < k + 1)
                             {
-                                Console.WriteLine($"Label purity: not enough labeled samples ({labeledCount}) for k={k}");
+
                                 return null;
                             }
 
@@ -776,12 +776,12 @@ namespace SCPBrowser
                             }
 
                             double purity = evaluated > 0 ? totalPurity / evaluated : 0;
-                            Console.WriteLine($"Label purity (kNN k={kActual} in PCA space): {purity:F3} ({evaluated} labeled samples)");
+
                             return purity;
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"Label purity computation failed: {ex.Message}");
+
                             return null;
                         }
                     }
@@ -1034,7 +1034,7 @@ namespace SCPBrowser
 
                 // Run NIPALS PCA - compute N components (capped by matrix dimensions)
                 int maxComponents = Math.Min(settings.NumPcaComponents, Math.Min(nSamples - 1, nProteins - 1));
-                Console.WriteLine($"PCA: Computing {maxComponents} components (requested {settings.NumPcaComponents}, matrix {nSamples}x{nProteins})");
+
 
                 _pcaResult = NipalsAlgorithm.Compute(
                     matrix,
@@ -1048,7 +1048,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"PCA computation failed: {ex.Message}");
+
                 _pcaResult = null;
                 _pcaProteinNames = null;
             }
@@ -1075,11 +1075,11 @@ namespace SCPBrowser
                                _selectionManager.PolygonPointsScreen.Count < 3 &&
                                !hasContaminantExclusions;
 
-            System.Diagnostics.Debug.WriteLine($"[UpdateSelectionWithFilters] hasNoFilters={hasNoFilters}, userInteraction={userInteraction}, cellTypes={checkedCellTypes?.Count}, bioCond={checkedBioConditions?.Count}, plates={checkedPlates?.Count}, polygon={_selectionManager.PolygonPointsScreen.Count}, contExcl={hasContaminantExclusions}");
+
 
             if (hasNoFilters && !userInteraction)
             {
-                System.Diagnostics.Debug.WriteLine($"[UpdateSelectionWithFilters] EARLY RETURN - no filters and not user interaction");
+
                 return;
             }
 
@@ -1739,7 +1739,7 @@ namespace SCPBrowser
 
             if (_selectionManager.PolygonPointsData.Count < 3)
             {
-                Console.WriteLine($"  -> Skipped: Less than 3 polygon points");
+
                 return;
             }
 
@@ -1749,7 +1749,7 @@ namespace SCPBrowser
             _selectionManager.RedrawSelectionFromDataCoordinates(
                 dataPoint => _plotRenderer.DataToScreen(dataPoint.X, dataPoint.Y, canvasWidth, canvasHeight));
 
-            Console.WriteLine($"  -> After redraw, PolygonPointsScreen.Count = {_selectionManager.PolygonPointsScreen.Count}");
+
             UpdateSelectionVisuals();
         }
 
@@ -2049,17 +2049,17 @@ namespace SCPBrowser
 
         private void PlotCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine($"[SizeChanged] ===== RESIZE EVENT ===== prev={e.PreviousSize.Width:F0}x{e.PreviousSize.Height:F0} new={e.NewSize.Width:F0}x{e.NewSize.Height:F0}");
+
 
             if (_currentData == null)
             {
-                Console.WriteLine("  -> Skipped: No data loaded");
+
                 return;
             }
 
             if (_isRefreshing)
             {
-                Console.WriteLine("  -> Skipped: Already refreshing");
+
                 return;
             }
 
@@ -2079,7 +2079,7 @@ namespace SCPBrowser
             }
             else
             {
-                Console.WriteLine($"  -> Skipped: Change too small ({widthChange:F2}px x {heightChange:F2}px)");
+
             }
         }
     }

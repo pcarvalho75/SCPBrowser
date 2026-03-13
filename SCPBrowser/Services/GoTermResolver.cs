@@ -1,4 +1,4 @@
-﻿using BioTessera.Core.Models;
+using BioTessera.Core.Models;
 using BioTessera.GO;
 using BioTessera.Utilities;
 using System;
@@ -44,7 +44,7 @@ namespace SCPBrowser.Services
                 var dbPath = PatternLabPaths.GoDatabasePath;
                 if (!System.IO.File.Exists(dbPath))
                 {
-                    Console.WriteLine($"[GoTermResolver] GO database not found at {dbPath}");
+
                     _geneAnnotations = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
                     _isLoaded = true;
                     return;
@@ -54,11 +54,11 @@ namespace SCPBrowser.Services
                 _geneAnnotations = db.GetAllGeneAnnotations(_taxonId);
                 _isLoaded = true;
 
-                Console.WriteLine($"[GoTermResolver] Loaded {_geneAnnotations.Count} gene annotations for taxon {_taxonId}");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[GoTermResolver] Error loading annotations: {ex.Message}");
+
                 _geneAnnotations = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
                 _isLoaded = true;
             }
@@ -75,8 +75,8 @@ namespace SCPBrowser.Services
             if (!_isLoaded)
                 LoadAnnotations();
 
-            Console.WriteLine($"[GoTermResolver] Starting resolution for {proteins.Count} proteins");
-            Console.WriteLine($"[GoTermResolver] Gene annotations loaded: {_geneAnnotations?.Count ?? 0}");
+
+
 
             ResolvedCount = 0;
             UnresolvedCount = 0;
@@ -118,9 +118,9 @@ namespace SCPBrowser.Services
                 }
             }
 
-            Console.WriteLine($"[GoTermResolver] Sample protein gene names: {string.Join(", ", sampleGeneNames)}");
-            Console.WriteLine($"[GoTermResolver] Sample DB gene names: {string.Join(", ", sampleDbGenes)}");
-            Console.WriteLine($"[GoTermResolver] No gene name: {noGeneNameCount}, Resolved: {ResolvedCount}, Unresolved: {UnresolvedCount}");
+
+
+
         }
 
         /// <summary>

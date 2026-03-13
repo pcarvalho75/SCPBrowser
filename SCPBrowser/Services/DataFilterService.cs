@@ -63,7 +63,7 @@ namespace SCPBrowser.Services
                 if (_proteinCutoff != value)
                 {
                     _proteinCutoff = value;
-                    Console.WriteLine($"DataFilterService: Protein cutoff set to {value}");
+
                 }
             }
         }
@@ -76,27 +76,25 @@ namespace SCPBrowser.Services
                 if (_upperProteinCutoff != value)
                 {
                     _upperProteinCutoff = value;
-                    Console.WriteLine($"DataFilterService: Upper protein cutoff set to {value}");
+
                 }
             }
         }
 
         public void ExcludeRun(string rawFileName)
         {
-            if (_manuallyExcludedRuns.Add(rawFileName))
-                Console.WriteLine($"DataFilterService: Manually excluded run '{rawFileName}'");
+            _manuallyExcludedRuns.Add(rawFileName);
         }
 
         public void RestoreRun(string rawFileName)
         {
-            if (_manuallyExcludedRuns.Remove(rawFileName))
-                Console.WriteLine($"DataFilterService: Restored excluded run '{rawFileName}'");
+            _manuallyExcludedRuns.Remove(rawFileName);
         }
 
         public void ClearManualExclusions()
         {
             _manuallyExcludedRuns.Clear();
-            Console.WriteLine("DataFilterService: Manual exclusions cleared");
+
         }
 
         public HashSet<string> ManuallyExcludedRuns => _manuallyExcludedRuns;
@@ -121,7 +119,7 @@ namespace SCPBrowser.Services
                 if (Math.Abs(_contaminantRatioCutoff - clamped) > 0.0001)
                 {
                     _contaminantRatioCutoff = clamped;
-                    Console.WriteLine($"DataFilterService: Contaminant ratio cutoff set to {clamped * 100:F1}%");
+
                 }
             }
         }
@@ -132,7 +130,7 @@ namespace SCPBrowser.Services
         public void SetOriginalData(ProteomicsData data)
         {
             _originalData = data;
-            Console.WriteLine($"DataFilterService: Original data set with {data?.TotalRawFiles ?? 0} raw files");
+
         }
 
         /// <summary>
@@ -143,7 +141,7 @@ namespace SCPBrowser.Services
             // Use cache if already loaded
             if (_plateMappingLoaded && _rawFileToPlateId != null && _rawFileToPlateId.Count > 0)
             {
-                Console.WriteLine("DataFilterService: Using cached plate mapping");
+
                 return;
             }
 
@@ -173,7 +171,7 @@ namespace SCPBrowser.Services
             }
 
             _plateMappingLoaded = true;
-            Console.WriteLine($"DataFilterService: Loaded plate mapping for {_rawFileToPlateId.Count} raw files, {_plateIdToName.Count} plates");
+
         }
 
         /// <summary>
@@ -184,7 +182,7 @@ namespace SCPBrowser.Services
             _plateMappingLoaded = false;
             _rawFileToPlateId?.Clear();
             _plateIdToName?.Clear();
-            Console.WriteLine("DataFilterService: Plate mapping cache invalidated");
+
         }
 
         /// <summary>
@@ -194,7 +192,7 @@ namespace SCPBrowser.Services
         {
             if (_originalData == null)
             {
-                Console.WriteLine("DataFilterService: No original data to filter");
+
                 return;
             }
 
@@ -217,7 +215,7 @@ namespace SCPBrowser.Services
                 // Step 5: Compute HVP on filtered data
                 ComputeHvpResults();
 
-                Console.WriteLine($"DataFilterService: Filters applied - {_filteredData.TotalRawFiles} raw files pass all filters");
+
             }
             finally
             {
@@ -247,7 +245,7 @@ namespace SCPBrowser.Services
             if (removed > 0)
             {
                 data.TotalProteinGroups = data.ProteinQuantMatrix.Count;
-                Console.WriteLine($"DataFilterService: Excluded {removed} contaminant proteins from {data.TotalRawFiles}-run dataset");
+
             }
         }
 
@@ -260,7 +258,7 @@ namespace SCPBrowser.Services
 
             if (_filteredData == null || _filteredData.ProteinQuantMatrix.Count == 0)
             {
-                Console.WriteLine("DataFilterService: No data for HVP computation");
+
                 return;
             }
 
@@ -275,11 +273,11 @@ namespace SCPBrowser.Services
                     minAbsoluteDetections: 20);
 
                 int hvpCount = _hvpResults?.Count(h => h.IsHighlyVariable) ?? 0;
-                Console.WriteLine($"DataFilterService: HVP computed - {hvpCount} highly variable proteins identified");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"DataFilterService: HVP computation failed - {ex.Message}");
+
                 _hvpResults = null;
             }
         }
@@ -295,7 +293,7 @@ namespace SCPBrowser.Services
             // If no plates selected, return empty data
             if (selectedPlateIds == null || selectedPlateIds.Count == 0)
             {
-                Console.WriteLine("DataFilterService: No plates selected - returning empty data");
+
                 return CreateEmptyProteomicsData();
             }
 
@@ -310,7 +308,7 @@ namespace SCPBrowser.Services
                 }
             }
 
-            Console.WriteLine($"DataFilterService: Plate filter - {allRawFilesInPlates.Count} raw files in selected plates");
+
 
             return FilterDataByRawFiles(_originalData, allRawFilesInPlates);
         }
@@ -331,7 +329,7 @@ namespace SCPBrowser.Services
                 .Select(kvp => kvp.Key)
                 .ToHashSet();
 
-            Console.WriteLine($"DataFilterService: Protein cutoff filter - {passingRawFiles.Count}/{data.RawFileNames.Count} raw files pass (min={cutoff}, max={(_upperProteinCutoff >= 99999 ? "inf" : _upperProteinCutoff.ToString())}, excluded={_manuallyExcludedRuns.Count})");
+
 
             return FilterDataByRawFiles(data, passingRawFiles);
         }
@@ -363,7 +361,7 @@ namespace SCPBrowser.Services
                     ContaminantRatioExcludedRuns.Add(rawFile);
             }
 
-            Console.WriteLine($"DataFilterService: Contaminant ratio filter - {passingRawFiles.Count}/{data.RawFileNames.Count} pass (cutoff {_contaminantRatioCutoff * 100:F1}%, excluded {ContaminantRatioExcludedRuns.Count})");
+
 
             return FilterDataByRawFiles(data, passingRawFiles);
         }

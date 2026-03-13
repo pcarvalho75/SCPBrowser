@@ -50,7 +50,7 @@ namespace SCPBrowser
         {
             InitializeComponent();
             _referenceService = new ReferenceDataService();
-            Console.WriteLine("OmicBrowserControl initialized");
+
         }
 
         /// <summary>
@@ -104,12 +104,12 @@ namespace SCPBrowser
                 if (isEnabled)
                 {
                     _excludedCellTypes.Remove(cellType);
-                    Console.WriteLine($"Cell type '{cellType}' enabled for classification");
+
                 }
                 else
                 {
                     _excludedCellTypes.Add(cellType);
-                    Console.WriteLine($"Cell type '{cellType}' excluded from classification");
+
                 }
 
                 // Fire event to notify listeners
@@ -130,7 +130,7 @@ namespace SCPBrowser
                 if (double.TryParse(textBox.Text, out double weight) && weight >= 0)
                 {
                     _priorWeights[cellType] = weight;
-                    Console.WriteLine($"Prior weight for '{cellType}' set to {weight}");
+
 
                     // Update the card's displayed weight and re-sort
                     if (CellTypeListBox.ItemsSource is System.Collections.Generic.List<CellTypeMetadata> metaList)
@@ -183,14 +183,14 @@ namespace SCPBrowser
         {
             try
             {
-                Console.WriteLine($"OmicBrowserControl: Loading reference data from {databasePath}");
+
 
                 // Load reference data (returns null if no profiles imported yet)
                 _transcriptomicData = await _referenceService.LoadTranscriptomicDataAsync(databasePath);
 
                 if (_transcriptomicData == null)
                 {
-                    Console.WriteLine("OmicBrowserControl: No reference profiles imported yet.");
+
                     PopulateTranscriptomicUI();
                     return;
                 }
@@ -201,11 +201,11 @@ namespace SCPBrowser
                 // Populate the UI
                 PopulateTranscriptomicUI();
 
-                Console.WriteLine("OmicBrowserControl: Reference data loaded successfully");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"OmicBrowserControl Error: {ex.Message}");
+
                 throw; // Let the parent handle the error display
             }
         }

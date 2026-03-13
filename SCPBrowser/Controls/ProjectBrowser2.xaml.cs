@@ -31,7 +31,7 @@ namespace SCPBrowser
             // Subscribe to reclassify request
             OmicBrowser.ReclassifyRequested += (s, e) => ReclassifyRequested?.Invoke(this, e);
             
-            Console.WriteLine("ProjectBrowser2 (mother control) initialized");
+
         }
 
         private async void OmicBrowser_KeyMarkersChanged(object sender, KeyMarkersChangedEventArgs e)
@@ -42,11 +42,11 @@ namespace SCPBrowser
             try
             {
                 await _projectDbService.SaveKeyMarkersAsync(e.CellType, e.Markers);
-                Console.WriteLine($"Saved {e.Markers.Count} key markers for {e.CellType}");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error saving key markers: {ex.Message}");
+
             }
         }
 
@@ -58,17 +58,17 @@ namespace SCPBrowser
             try
             {
                 await _projectDbService.SavePriorWeightAsync(e.CellType, e.Weight);
-                Console.WriteLine($"Saved prior weight {e.Weight} for {e.CellType}");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error saving prior weight: {ex.Message}");
+
             }
         }
 
         public async Task ShowWithDatabaseAsync(string databasePath)
         {
-            Console.WriteLine($"ProjectBrowser2: Loading database from {databasePath}");
+
 
             _databasePath = databasePath;
             _projectDbService = new ProjectDatabaseService(databasePath);
@@ -92,33 +92,33 @@ namespace SCPBrowser
                 }
                 var keyMarkers = await _projectDbService.LoadAllKeyMarkersAsync();
                 OmicBrowser.SetKeyMarkers(keyMarkers);
-                Console.WriteLine($"  ✓ Loaded key markers for {keyMarkers.Count} cell types");
+
 
                 // Load prior weights from database
                 var priorWeights = await _projectDbService.LoadAllPriorWeightsAsync();
                 OmicBrowser.SetPriorWeights(priorWeights);
-                Console.WriteLine($"  ✓ Loaded prior weights for {priorWeights.Count} cell types");
+
 
                 if (mainWindow != null)
                 {
                     mainWindow.LoadingOverlay.SetProgress("Loading reference data...");
                 }
                 await OmicBrowser.LoadDataAsync(databasePath);
-                Console.WriteLine("  ✓ Omic Browser loaded");
+
 
                 if (mainWindow != null)
                 {
                     mainWindow.LoadingOverlay.SetProgress("Loading plate data...");
                 }
                 await PlateBrowser.LoadDataAsync(databasePath);
-                Console.WriteLine("  ✓ Plate Browser loaded");
+
 
                 if (mainWindow != null)
                 {
                     mainWindow.LoadingOverlay.Hide();
                 }
 
-                Console.WriteLine("ProjectBrowser2: All data loaded successfully");
+
             }
             catch (Exception ex)
             {
@@ -127,7 +127,7 @@ namespace SCPBrowser
                     mainWindow.LoadingOverlay.Hide();
                 }
 
-                Console.WriteLine($"ProjectBrowser2 Error: {ex.Message}");
+
                 MessageBox.Show(
                     $"Error loading project browser:\n\n{ex.Message}",
                     "Browser Error",
@@ -165,7 +165,7 @@ namespace SCPBrowser
         /// </summary>
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
-            Console.WriteLine("Closing ProjectBrowser2...");
+
             this.Visibility = Visibility.Collapsed;
 
             // Trigger reclassification with current priors and markers

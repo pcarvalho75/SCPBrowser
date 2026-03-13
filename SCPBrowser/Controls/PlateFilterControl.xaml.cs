@@ -120,7 +120,7 @@ namespace SCPBrowser
             InitializeComponent();
             _plateItems = new ObservableCollection<PlateFilterItem>();
             PlateButtonsControl.ItemsSource = _plateItems;
-            Console.WriteLine("PlateFilterControl initialized");
+
         }
 
         /// <summary>
@@ -131,7 +131,7 @@ namespace SCPBrowser
             try
             {
                 _isInitializing = true;
-                Console.WriteLine($"PlateFilterControl: Loading plates from {databasePath}");
+
 
                 _plateService = new PlateService(databasePath);
                 _parquetService = new ParquetDataService(databasePath);
@@ -168,11 +168,11 @@ namespace SCPBrowser
                 UpdateSummaryText();
                 _isInitializing = false;
 
-                Console.WriteLine($"PlateFilterControl: Loaded {_plateItems.Count} plates");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"PlateFilterControl Error: {ex.Message}");
+
                 _isInitializing = false;
                 throw;
             }
@@ -190,7 +190,7 @@ namespace SCPBrowser
             if (sender is ToggleButton button && button.DataContext is PlateFilterItem item)
             {
                 item.IsSelected = button.IsChecked == true;
-                Console.WriteLine($"Plate '{item.PlateName}' IsSelected set to: {item.IsSelected}");
+
             }
 
             UpdateSummaryText();
@@ -361,7 +361,7 @@ namespace SCPBrowser
                 .Select(p => p.PlateId)
                 .ToList();
 
-            Console.WriteLine($"PlateFilterControl: Selection changed - {selectedIds.Count} plates selected");
+
 
             PlateSelectionChanged?.Invoke(this, new PlateSelectionChangedEventArgs
             {

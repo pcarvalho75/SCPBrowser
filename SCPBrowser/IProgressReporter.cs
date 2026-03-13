@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace SCPBrowser
 {
@@ -18,12 +18,12 @@ namespace SCPBrowser
     {
         public void ReportMessage(string message)
         {
-            Console.WriteLine(message);
+
         }
 
         public void ReportProgress(string progressDetail)
         {
-            Console.WriteLine($"  {progressDetail}");
+
         }
     }
 }

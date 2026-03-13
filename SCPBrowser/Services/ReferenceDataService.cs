@@ -202,7 +202,7 @@ namespace SCPBrowser.Services
                     await command.ExecuteNonQueryAsync();
                 }
 
-                Console.WriteLine("Cleared existing transcriptomic data from database.");
+
             }
         }
 

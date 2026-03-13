@@ -387,7 +387,7 @@ namespace SCPBrowser
                 }
 
                 // *** CRITICAL FIX: Raise the DataLoaded event after everything is loaded ***
-                Console.WriteLine("Raising DataLoaded event to populate other tabs");
+
                 DataLoaded?.Invoke(this, EventArgs.Empty);
             }
             catch (Exception ex)

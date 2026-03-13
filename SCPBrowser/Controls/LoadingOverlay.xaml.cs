@@ -127,7 +127,7 @@ namespace SCPBrowser
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Animation error: {ex.Message}");
+
                     // Continue anyway - the overlay will still show
                 }
             }
@@ -150,7 +150,7 @@ namespace SCPBrowser
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Animation stop error: {ex.Message}");
+
                 }
             }
         }

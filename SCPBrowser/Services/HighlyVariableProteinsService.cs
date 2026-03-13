@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -126,7 +126,7 @@ namespace SCPBrowser.Services
             // 1. Performance Warning
             if (nProteins > 5000)
             {
-                Console.WriteLine($"[HVP] Warning: Analyzing {nProteins} proteins. LOESS fitting is O(N²) and may take time.");
+
             }
 
             // 2. Robust Input Validation
@@ -151,7 +151,7 @@ namespace SCPBrowser.Services
             int nCells = allRuns.Count;
             double clipValue = clipMax ?? Math.Sqrt(nCells);
 
-            Console.WriteLine($"[HVP] Analyzing {nProteins} proteins across {nCells} cells");
+
             ReportProgress(10);
 
             // Step 1: Calculate Basic Stats (ON OBSERVED DATA ONLY)
@@ -167,11 +167,11 @@ namespace SCPBrowser.Services
                 .Where(r => r.DetectionCount >= effectiveMin && r.Variance > 0 && r.Mean > 0)
                 .ToList();
 
-            Console.WriteLine($"[HVP] Detection filter: >= {effectiveMin} cells required. {validResults.Count}/{nProteins} proteins passed.");
+
 
             if (validResults.Count < 10)
             {
-                Console.WriteLine("[HVP] Warning: Too few proteins pass filters for reliable HVP selection.");
+
                 foreach (var r in results)
                 {
                     r.Rank = int.MaxValue;
@@ -201,7 +201,7 @@ namespace SCPBrowser.Services
                 .ToList();
 
             int hvpCount = finalResults.Count(r => r.IsHighlyVariable);
-            Console.WriteLine($"[HVP] Selected {hvpCount} highly variable proteins.");
+
             ReportProgress(100);
 
             return finalResults;
@@ -273,7 +273,7 @@ namespace SCPBrowser.Services
             }
 
             File.WriteAllText(filePath, sb.ToString());
-            Console.WriteLine($"[HVP] Exported results to: {filePath}");
+
         }
 
         /// <summary>

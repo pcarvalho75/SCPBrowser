@@ -1,4 +1,4 @@
-﻿// PlateBrowserControl.xaml.cs
+// PlateBrowserControl.xaml.cs
 // Child control for browsing plate data and raw files
 // Location: SCPBrowser/Controls/PlateBrowserControl.xaml.cs
 
@@ -21,7 +21,7 @@ namespace SCPBrowser
         public PlateBrowserControl()
         {
             InitializeComponent();
-            Console.WriteLine("PlateBrowserControl initialized");
+
         }
 
         /// <summary>
@@ -34,7 +34,7 @@ namespace SCPBrowser
         {
             try
             {
-                Console.WriteLine($"PlateBrowserControl: Loading plate data from {databasePath}");
+
 
                 // Initialize services with the database path
                 _plateService = new PlateService(databasePath);
@@ -46,11 +46,11 @@ namespace SCPBrowser
                 // Populate the UI
                 await PopulatePlateUIAsync();
 
-                Console.WriteLine("PlateBrowserControl: Plate data loaded successfully");
+
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"PlateBrowserControl Error: {ex.Message}");
+
                 throw; // Let the parent handle the error display
             }
         }
@@ -130,7 +130,7 @@ namespace SCPBrowser
                 SelectedPlateStatsPanel.Visibility = Visibility.Collapsed;
             }
 
-            Console.WriteLine($"Loaded {rawFiles.Count} raw files for plate: {plate.PlateName}");
+
         }
     }
 }

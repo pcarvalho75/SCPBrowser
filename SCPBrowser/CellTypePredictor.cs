@@ -491,7 +491,7 @@ namespace SCPBrowser
         {
             if (!_cellTypeMarkers.ContainsKey(cellType))
             {
-                Console.WriteLine($"[DEBUG-HYPER] No markers defined for cell type: {cellType}");
+
                 return 1.0;
             }
 

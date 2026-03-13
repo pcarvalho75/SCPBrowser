@@ -106,6 +106,14 @@ namespace SCPBrowser
         private DimensionReductionSettings? _previousDimRedSettings;
         private const double HoverTolerance = 12;
         private bool _suppressSelectionEvents = false;
+
+        // Generation counter for deferred SelectionChanged events.
+        // Incremented at the start of each UpdatePlot call. Deferred closures capture
+        // the current value; if _updateGeneration has changed by the time the deferred
+        // call executes, it means a newer UpdatePlot superseded it and the stale call
+        // is skipped. This prevents rapid resize from firing outdated events.
+        private int _updateGeneration;
+
         public event EventHandler<PlotSelectionChangedEventArgs> SelectionChanged;
         public event EventHandler<PointInteractionEventArgs> PointHovered;
         public double? LabelPurity => _labelPurity;
@@ -178,6 +186,29 @@ namespace SCPBrowser
                 point.Visual.Opacity = UnselectedOpacity;
                 point.Visual.Visibility = _hideUnselected ? Visibility.Collapsed : Visibility.Visible;
             }
+        }
+
+        /// <summary>
+        /// Centralized gate for firing the SelectionChanged event.
+        /// All code paths that need to notify listeners about selection changes MUST
+        /// go through this method instead of invoking SelectionChanged directly.
+        /// This ensures that events are suppressed during UpdatePlot (when
+        /// _suppressSelectionEvents is true), preventing the PeptideTicControl handler
+        /// from receiving partial/unstable state mid-update.
+        ///
+        /// CODEMERGER NOTE: If you add a new code path that fires SelectionChanged,
+        /// use RaiseSelectionChanged instead of SelectionChanged?.Invoke directly.
+        /// </summary>
+        private void RaiseSelectionChanged(List<DataPoint> selectedPoints)
+        {
+            if (_suppressSelectionEvents)
+            {
+                System.Diagnostics.Debug.WriteLine($"[RaiseSelectionChanged] SUPPRESSED ({selectedPoints.Count} points)");
+                return;
+            }
+
+            System.Diagnostics.Debug.WriteLine($"[RaiseSelectionChanged] FIRING with {selectedPoints.Count} points");
+            SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = selectedPoints });
         }
 
         private bool _hideUnselected = false;
@@ -265,6 +296,10 @@ namespace SCPBrowser
             _isRefreshing = true;
             _suppressSelectionEvents = true;
 
+            // Capture generation so deferred closures can detect staleness.
+            // See _updateGeneration field comments for full explanation.
+            int gen = ++_updateGeneration;
+
             try
             {
                 // Extract HVP protein IDs from options
@@ -349,13 +384,50 @@ namespace SCPBrowser
                     RedrawSelectionFromDataCoordinates();
                 }
 
-                // Apply checkbox selections at the very end
+                // Apply checkbox filter styling synchronously (no flicker).
+                // RaiseSelectionChanged is suppressed here (_suppressSelectionEvents = true),
+                // so the PeptideTicControl handler won't receive partial state mid-update.
+                System.Diagnostics.Debug.WriteLine($"[UpdatePlot] CheckedCellTypes={options.CheckedCellTypes?.Count}, CheckedBioConditions={options.CheckedBioConditions?.Count}, CheckedPlates={options.CheckedPlates?.Count}");
                 if (options.CheckedCellTypes != null || options.CheckedBioConditions != null || options.CheckedPlates != null)
                 {
+                    System.Diagnostics.Debug.WriteLine($"[UpdatePlot] Calling UpdateSelectionWithFilters");
                     UpdateSelectionWithFilters(
                         options.CheckedCellTypes ?? new HashSet<string>(),
                         options.CheckedBioConditions ?? new HashSet<string>(),
                         options.CheckedPlates ?? new HashSet<string>());
+                    int greyCount = _dataPoints.Count(p => !p.IsSelected);
+                    System.Diagnostics.Debug.WriteLine($"[UpdatePlot] After filter: {greyCount}/{_dataPoints.Count} points greyed out");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[UpdatePlot] SKIPPED UpdateSelectionWithFilters - all Checked sets are null");
+                }
+
+                // Schedule a deferred SelectionChanged event AFTER the finally block
+                // has cleared _suppressSelectionEvents. This ensures every caller of
+                // UpdatePlot (RefreshChart, SizeChanged, etc.) gets a single clean event
+                // notification once WPF layout has settled.
+                //
+                // CODEMERGER NOTE: This deferred call is the ONLY place where
+                // SelectionChanged fires after UpdatePlot. Do not add another
+                // SelectionChanged trigger inside or after UpdatePlot; if you need
+                // to change what fires, modify this block.
+                if (_dataPoints.Count > 0)
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        // Stale guard: if another UpdatePlot started since we scheduled
+                        // this, our snapshot is outdated; skip.
+                        if (gen != _updateGeneration)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[UpdatePlot-Deferred] STALE, skipping (gen={gen}, current={_updateGeneration})");
+                            return;
+                        }
+
+                        var selected = _dataPoints.Where(p => p.IsSelected).ToList();
+                        System.Diagnostics.Debug.WriteLine($"[UpdatePlot-Deferred] Firing SelectionChanged with {selected.Count}/{_dataPoints.Count} selected points, _suppressSelectionEvents={_suppressSelectionEvents}");
+                        RaiseSelectionChanged(selected);
+                    }), System.Windows.Threading.DispatcherPriority.Loaded);
                 }
             }
             finally
@@ -1003,8 +1075,13 @@ namespace SCPBrowser
                                _selectionManager.PolygonPointsScreen.Count < 3 &&
                                !hasContaminantExclusions;
 
+            System.Diagnostics.Debug.WriteLine($"[UpdateSelectionWithFilters] hasNoFilters={hasNoFilters}, userInteraction={userInteraction}, cellTypes={checkedCellTypes?.Count}, bioCond={checkedBioConditions?.Count}, plates={checkedPlates?.Count}, polygon={_selectionManager.PolygonPointsScreen.Count}, contExcl={hasContaminantExclusions}");
+
             if (hasNoFilters && !userInteraction)
+            {
+                System.Diagnostics.Debug.WriteLine($"[UpdateSelectionWithFilters] EARLY RETURN - no filters and not user interaction");
                 return;
+            }
 
             var selectedPoints = new List<DataPoint>();
             bool hasPolygonSelection = _selectionManager.PolygonPointsScreen.Count >= 3;
@@ -1089,7 +1166,8 @@ namespace SCPBrowser
                 ApplySelectionStyling(point, shouldBeSelected);
             }
 
-            SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = selectedPoints });
+            // Use centralized gate so events are suppressed during UpdatePlot
+            RaiseSelectionChanged(selectedPoints);
         }
 
         public void ClearSelection()
@@ -1102,7 +1180,7 @@ namespace SCPBrowser
                 ApplySelectionStyling(point, false);
             }
 
-            SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = new List<DataPoint>() });
+            RaiseSelectionChanged(new List<DataPoint>());
         }
 
         public void SelectAll()
@@ -1117,7 +1195,7 @@ namespace SCPBrowser
                 ApplySelectionStyling(point, true);
             }
 
-            SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = _dataPoints.ToList() });
+            RaiseSelectionChanged(_dataPoints.ToList());
         }
 
         public void HighlightPoints(List<string> runNames)
@@ -1696,15 +1774,8 @@ namespace SCPBrowser
                 ApplySelectionStyling(point, isSelected);
             }
 
-            // Only fire SelectionChanged event if not suppressed
-            if (!_suppressSelectionEvents)
-            {
-                SelectionChanged?.Invoke(this, new PlotSelectionChangedEventArgs { SelectedPoints = selectedPoints });
-            }
-            else
-            {
-                Console.WriteLine($"  -> SelectionChanged event suppressed");
-            }
+            // Centralized gate handles suppression check internally
+            RaiseSelectionChanged(selectedPoints);
         }
 
         private void PlotCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1978,6 +2049,7 @@ namespace SCPBrowser
 
         private void PlotCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
         {
+            System.Diagnostics.Debug.WriteLine($"[SizeChanged] ===== RESIZE EVENT ===== prev={e.PreviousSize.Width:F0}x{e.PreviousSize.Height:F0} new={e.NewSize.Width:F0}x{e.NewSize.Height:F0}");
 
             if (_currentData == null)
             {

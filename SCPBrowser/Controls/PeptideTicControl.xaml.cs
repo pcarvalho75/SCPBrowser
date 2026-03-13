@@ -158,9 +158,26 @@ namespace SCPBrowser
             _suppressCheckboxEvents = true;
             try
             {
-                if (cellTypes != null) _checkedCellTypes = cellTypes;
-                if (bioConditions != null) _checkedBioConditions = bioConditions;
-                if (plates != null) _checkedPlates = plates;
+                // CRITICAL: Modify HashSets in place rather than replacing references.
+                // _currentOptions in ScatterPlotControl holds a reference to these same
+                // HashSet objects. If we replace them with new instances, the options
+                // object keeps pointing to the old ones, causing resize to use stale
+                // filter state (all items checked) instead of the restored state.
+                if (cellTypes != null)
+                {
+                    _checkedCellTypes.Clear();
+                    foreach (var ct in cellTypes) _checkedCellTypes.Add(ct);
+                }
+                if (bioConditions != null)
+                {
+                    _checkedBioConditions.Clear();
+                    foreach (var bc in bioConditions) _checkedBioConditions.Add(bc);
+                }
+                if (plates != null)
+                {
+                    _checkedPlates.Clear();
+                    foreach (var p in plates) _checkedPlates.Add(p);
+                }
             }
             finally
             {
@@ -1370,19 +1387,14 @@ namespace SCPBrowser
             // All dots start as selected, so enable the clear button
             ClearSelectionButton.IsEnabled = true;
 
-            // Ensure selection styling is applied after plot is fully rendered (fixes initial load)
-            if (_checkedBioConditions.Count > 0 || _checkedCellTypes.Count > 0 || _checkedPlates.Count > 0)
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    ScatterPlot.UpdateSelectionWithFilters(_checkedCellTypes, _checkedBioConditions, _checkedPlates);
-                    UpdateExcludedRunsGrid();
-                }), System.Windows.Threading.DispatcherPriority.Loaded);
-            }
-            else
-            {
-                UpdateExcludedRunsGrid();
-            }
+            // Deferred SelectionChanged event is now handled inside UpdatePlot itself
+            // (via Dispatcher.BeginInvoke at DispatcherPriority.Loaded). This ensures
+            // every caller of UpdatePlot (RefreshChart, SizeChanged, etc.) gets the
+            // deferred event automatically, eliminating the need for a duplicate here.
+            //
+            // ExclusionReasons are already set by the synchronous UpdateSelectionWithFilters
+            // call inside UpdatePlot, so we can safely read them here.
+            UpdateExcludedRunsGrid();
         }
 
         private Dictionary<string, string> GeneratePlatePerFile()
@@ -1698,6 +1710,8 @@ namespace SCPBrowser
 
         private void ScatterPlot_SelectionChanged(object sender, PlotSelectionChangedEventArgs e)
         {
+            System.Diagnostics.Debug.WriteLine($"[SelectionChanged] Received {e.SelectedPoints.Count} selected points, _checkedCellTypes={_checkedCellTypes.Count}, _checkedBioConditions={_checkedBioConditions.Count}, _checkedPlates={_checkedPlates.Count}");
+            System.Diagnostics.Debug.WriteLine($"[SelectionChanged] Caller: {new System.Diagnostics.StackTrace().GetFrame(1)?.GetMethod()?.Name}");
             _currentSelectedPoints = e.SelectedPoints;
 
             // Detect if this is a lasso selection (polygon-based) or checkbox selection
@@ -1745,16 +1759,21 @@ namespace SCPBrowser
             }
             else
             {
-                // Selection is empty - clear checkboxes if any were checked
-                bool hadCheckedItems = _checkedCellTypes.Count > 0 || _checkedBioConditions.Count > 0;
+                // Selection is empty - clear ALL filter sets if any were checked.
+                // All three sets must be cleared together for consistency.
+                // The Clear button handler (ClearSelectionButton_Click) already clears
+                // all three; this keeps the SelectionChanged path in sync.
+                bool hadCheckedItems = _checkedCellTypes.Count > 0 || _checkedBioConditions.Count > 0 || _checkedPlates.Count > 0;
 
                 if (hadCheckedItems)
                 {
+                    System.Diagnostics.Debug.WriteLine($"[SelectionChanged] CLEARING all checked sets! cellTypes={_checkedCellTypes.Count}, bioCond={_checkedBioConditions.Count}, plates={_checkedPlates.Count}");
                     _suppressCheckboxEvents = true;
                     try
                     {
                         _checkedCellTypes.Clear();
                         _checkedBioConditions.Clear();
+                        _checkedPlates.Clear();
 
                         foreach (var child in BioConditionCheckboxes.Children)
                         {
@@ -1774,6 +1793,9 @@ namespace SCPBrowser
                 UpdateSelectionRuleText();
                 ClearSelectionButton.IsEnabled = false;
             }
+
+            // Keep excluded runs grid in sync after any selection change
+            UpdateExcludedRunsGrid();
 
             // Refresh protein coverage list for the new selection
             RefreshProteinCoverageList();

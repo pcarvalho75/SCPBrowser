@@ -796,6 +796,7 @@ namespace SCPBrowser
                 Content = manager,
                 Width = 700,
                 Height = 550,
+                Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x1E, 0x1E, 0x2E)),
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = this
             };

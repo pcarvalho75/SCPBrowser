@@ -57,26 +57,40 @@ namespace SCPBrowser
 
         private async void SaveCheckedStatesAsync()
         {
-            if (_databaseService == null) return;
-            await _databaseService.SetSettingAsync("CheckedCellTypes", string.Join(",", _checkedCellTypes));
-            await _databaseService.SetSettingAsync("CheckedBioConditions", string.Join(",", _checkedBioConditions));
-            await _databaseService.SetSettingAsync("CheckedPlates", string.Join(",", _checkedPlates));
+            try
+            {
+                if (_databaseService == null) return;
+                await _databaseService.SetSettingAsync("CheckedCellTypes", string.Join(",", _checkedCellTypes));
+                await _databaseService.SetSettingAsync("CheckedBioConditions", string.Join(",", _checkedBioConditions));
+                await _databaseService.SetSettingAsync("CheckedPlates", string.Join(",", _checkedPlates));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[SaveCheckedStatesAsync] {ex}");
+            }
         }
 
         private async void SaveColorMapsAsync()
         {
-            if (_databaseService == null) return;
-
-            static string SerializeColorMap(Dictionary<string, Color> map)
+            try
             {
-                if (map == null || map.Count == 0) return string.Empty;
-                return string.Join(",", map.Select(kvp =>
-                    $"{Uri.EscapeDataString(kvp.Key)}={kvp.Value.R:X2}{kvp.Value.G:X2}{kvp.Value.B:X2}"));
-            }
+                if (_databaseService == null) return;
 
-            await _databaseService.SetSettingAsync("CellTypeColors", SerializeColorMap(_cellTypeColorMap));
-            await _databaseService.SetSettingAsync("BioConditionColors", SerializeColorMap(_bioConditionColorMap));
-            await _databaseService.SetSettingAsync("PlateColors", SerializeColorMap(_plateColorMap));
+                static string SerializeColorMap(Dictionary<string, Color> map)
+                {
+                    if (map == null || map.Count == 0) return string.Empty;
+                    return string.Join(",", map.Select(kvp =>
+                        $"{Uri.EscapeDataString(kvp.Key)}={kvp.Value.R:X2}{kvp.Value.G:X2}{kvp.Value.B:X2}"));
+                }
+
+                await _databaseService.SetSettingAsync("CellTypeColors", SerializeColorMap(_cellTypeColorMap));
+                await _databaseService.SetSettingAsync("BioConditionColors", SerializeColorMap(_bioConditionColorMap));
+                await _databaseService.SetSettingAsync("PlateColors", SerializeColorMap(_plateColorMap));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[SaveColorMapsAsync] {ex}");
+            }
         }
 
         public void RestoreColorMaps(string cellTypeColors, string bioConditionColors, string plateColors)
@@ -92,9 +106,16 @@ namespace SCPBrowser
                     var key = Uri.UnescapeDataString(entry.Substring(0, eq));
                     var hex = entry.Substring(eq + 1);
                     if (hex.Length != 6) continue;
-                    byte r = Convert.ToByte(hex.Substring(0, 2), 16);
-                    byte g = Convert.ToByte(hex.Substring(2, 2), 16);
-                    byte b = Convert.ToByte(hex.Substring(4, 2), 16);
+                    if (!byte.TryParse(hex.Substring(0, 2), System.Globalization.NumberStyles.HexNumber,
+                            System.Globalization.CultureInfo.InvariantCulture, out var r) ||
+                        !byte.TryParse(hex.Substring(2, 2), System.Globalization.NumberStyles.HexNumber,
+                            System.Globalization.CultureInfo.InvariantCulture, out var g) ||
+                        !byte.TryParse(hex.Substring(4, 2), System.Globalization.NumberStyles.HexNumber,
+                            System.Globalization.CultureInfo.InvariantCulture, out var b))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[RestoreColorMaps] Skipping malformed hex for key '{key}': '{hex}'");
+                        continue;
+                    }
                     map[key] = Color.FromRgb(r, g, b);
                 }
                 return map;
@@ -333,20 +354,27 @@ namespace SCPBrowser
         /// </summary>
         public async void SetDatabaseService(ProjectDatabaseService db)
         {
-            _databaseService = db;
-            _dimRedSettings = await DimensionReductionSettings.LoadAsync(db);
-            ApplySettingsToUI(_dimRedSettings);
-
-            if (db != null)
+            try
             {
-                var confStr = await db.GetSettingAsync("ClassificationConfidenceThreshold");
-                if (confStr != null && double.TryParse(confStr, out var conf))
+                _databaseService = db;
+                _dimRedSettings = await DimensionReductionSettings.LoadAsync(db);
+                ApplySettingsToUI(_dimRedSettings);
+
+                if (db != null)
                 {
-                    _suppressSettingsSave = true;
-                    try { ConfidenceThresholdSlider.Value = conf; }
-                    finally { _suppressSettingsSave = false; }
-                    ConfidenceThresholdLabel.Text = $"{conf:P0}";
+                    var confStr = await db.GetSettingAsync("ClassificationConfidenceThreshold");
+                    if (confStr != null && double.TryParse(confStr, out var conf))
+                    {
+                        _suppressSettingsSave = true;
+                        try { ConfidenceThresholdSlider.Value = conf; }
+                        finally { _suppressSettingsSave = false; }
+                        ConfidenceThresholdLabel.Text = $"{conf:P0}";
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PeptideTicControl.SetDatabaseService] {ex}");
             }
         }
 
@@ -1234,6 +1262,8 @@ namespace SCPBrowser
         }
         private async void RefreshChart()
         {
+            try
+            {
             if (_currentData == null || _currentData.PeptideCountPerFile.Count == 0)
             {
                 SelectedPointsGridPanel.ClearGrid();
@@ -1395,6 +1425,11 @@ namespace SCPBrowser
             // ExclusionReasons are already set by the synchronous UpdateSelectionWithFilters
             // call inside UpdatePlot, so we can safely read them here.
             UpdateExcludedRunsGrid();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[RefreshChart] {ex}");
+            }
         }
 
         private Dictionary<string, string> GeneratePlatePerFile()

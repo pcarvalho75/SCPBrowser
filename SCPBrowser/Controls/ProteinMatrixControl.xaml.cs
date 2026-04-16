@@ -86,7 +86,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[ProteinMatrixControl load annotations] {ex}");
                 _proteinAnnotations = new Dictionary<string, FastaParserService.ProteinAnnotation>();
             }
 
@@ -99,7 +99,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[ProteinMatrixControl load contaminants] {ex}");
             }
         }
 
@@ -537,7 +537,7 @@ namespace SCPBrowser
                 }
                 catch (Exception ex)
                 {
-
+                    System.Diagnostics.Debug.WriteLine($"[ProteinMatrixControl save contaminants] {ex}");
                 }
             }
 

@@ -69,6 +69,18 @@ namespace SCPBrowser
             _goTermResolver = new GoTermResolver(9606); // Human default
             UpdateWindowTitle();
 
+            // Build the protein-cutoff debounce timer once so rapid slider drags
+            // don't accumulate Tick closures.
+            _proteinCutoffDebounceTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(ProteinCutoffDebounceDelayMs)
+            };
+            _proteinCutoffDebounceTimer.Tick += async (s, e) =>
+            {
+                _proteinCutoffDebounceTimer.Stop();
+                await ApplyProteinCutoffAsync(_pendingProteinCutoff);
+            };
+
             // CRITICAL: Ensure loading overlay is hidden on startup
             LoadingOverlay.Hide();
 
@@ -238,7 +250,15 @@ namespace SCPBrowser
 
                     foreach (var fileName in allImportedFiles)
                     {
-                        string parquetPath = Path.Combine(projectDirectory, "imports", fileName);
+                        // Only use the pure filename component so a stored absolute
+                        // path or ".." segment cannot escape the imports folder.
+                        string safeName = Path.GetFileName(fileName ?? string.Empty);
+                        if (string.IsNullOrEmpty(safeName))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[OpenProject] Skipping invalid imported filename: '{fileName}'");
+                            continue;
+                        }
+                        string parquetPath = Path.Combine(projectDirectory, "imports", safeName);
                         bool fileExists = await Task.Run(() => File.Exists(parquetPath));
 
                         if (fileExists)
@@ -247,7 +267,7 @@ namespace SCPBrowser
                         }
                         else
                         {
-
+                            System.Diagnostics.Debug.WriteLine($"[OpenProject] Imported parquet missing on disk: {parquetPath}");
                         }
                     }
 
@@ -307,30 +327,32 @@ namespace SCPBrowser
             try
             {
                 if (!_hasOpenProject) return;
+                // Capture services up-front so a mid-flight CloseProject that nulls
+                // them doesn't NPE us further down.
+                var filterService = _dataFilterService;
+                var parquetService = _parquetService;
+                if (filterService == null || parquetService == null) return;
 
                 await RefreshAllTabsWithFilteredDataAsync();
+
+                // Re-check after the await: project may have been closed while we
+                // were suspended.
+                if (!_hasOpenProject) return;
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[DataFilterService_FilteredDataChanged] {ex}");
             }
         }
 
         private void MainControlTab_ProteinCutoffChanged(object sender, int newCutoff)
         {
-            // Use debouncing to avoid excessive filter operations when dragging slider
+            // Use debouncing to avoid excessive filter operations when dragging slider.
+            // Timer and Tick handler are wired once in the constructor; here we just
+            // update the pending value and restart the timer.
             _pendingProteinCutoff = newCutoff;
             _proteinCutoffDebounceTimer?.Stop();
-            _proteinCutoffDebounceTimer = new System.Windows.Threading.DispatcherTimer
-            {
-                Interval = TimeSpan.FromMilliseconds(ProteinCutoffDebounceDelayMs)
-            };
-            _proteinCutoffDebounceTimer.Tick += async (s, e) =>
-            {
-                _proteinCutoffDebounceTimer.Stop();
-                await ApplyProteinCutoffAsync(_pendingProteinCutoff);
-            };
-            _proteinCutoffDebounceTimer.Start();
+            _proteinCutoffDebounceTimer?.Start();
         }
 
         private async Task ApplyProteinCutoffAsync(int newCutoff)
@@ -365,7 +387,9 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 LoadingOverlay.Hide();
-
+                System.Diagnostics.Debug.WriteLine($"[ApplyProteinCutoffAsync] {ex}");
+                MessageBox.Show($"Error applying protein cutoff:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -384,7 +408,9 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[MainControlTab_MaxProteinCutoffChanged] {ex}");
+                MessageBox.Show($"Error applying upper protein cutoff:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -398,7 +424,9 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[MainControlTab_RunExcludeRequested] {ex}");
+                MessageBox.Show($"Error excluding run:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -412,7 +440,9 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[MainControlTab_RunRestoreRequested] {ex}");
+                MessageBox.Show($"Error restoring run:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -426,7 +456,9 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[MainControlTab_ClearExclusionsRequested] {ex}");
+                MessageBox.Show($"Error clearing exclusions:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -538,7 +570,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[BioTessera load/generate] {ex}");
             }
         }
 
@@ -567,7 +599,9 @@ namespace SCPBrowser
                 {
                     foreach (var fileName in allImportedFiles)
                     {
-                        string path = Path.Combine(projectDirectory, "imports", fileName);
+                        string safeName = Path.GetFileName(fileName ?? string.Empty);
+                        if (string.IsNullOrEmpty(safeName)) continue;
+                        string path = Path.Combine(projectDirectory, "imports", safeName);
                         if (System.IO.File.Exists(path))
                             parquetPaths.Add(path);
                     }
@@ -584,7 +618,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[InitializeProteinCoverageAsync] {ex}");
             }
         }
 
@@ -1349,9 +1383,16 @@ namespace SCPBrowser
                         string key = Uri.UnescapeDataString(entry.Substring(0, eq));
                         string hex = entry.Substring(eq + 1);
                         if (hex.Length != 6) continue;
-                        byte r = Convert.ToByte(hex.Substring(0, 2), 16);
-                        byte g = Convert.ToByte(hex.Substring(2, 2), 16);
-                        byte b = Convert.ToByte(hex.Substring(4, 2), 16);
+                        if (!byte.TryParse(hex.Substring(0, 2), System.Globalization.NumberStyles.HexNumber,
+                                System.Globalization.CultureInfo.InvariantCulture, out var r) ||
+                            !byte.TryParse(hex.Substring(2, 2), System.Globalization.NumberStyles.HexNumber,
+                                System.Globalization.CultureInfo.InvariantCulture, out var g) ||
+                            !byte.TryParse(hex.Substring(4, 2), System.Globalization.NumberStyles.HexNumber,
+                                System.Globalization.CultureInfo.InvariantCulture, out var b))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[Restore plate colors] Skipping malformed hex for '{key}': '{hex}'");
+                            continue;
+                        }
                         plateColorMap[key] = System.Windows.Media.Color.FromRgb(r, g, b);
                     }
 
@@ -1588,7 +1629,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[PeptideTicTab_ContaminantRatioCutoffChanged] {ex}");
             }
         }
 

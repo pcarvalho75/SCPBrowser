@@ -150,7 +150,7 @@ namespace SCPBrowser
                 }
                 catch (Exception ex)
                 {
-
+                    System.Diagnostics.Debug.WriteLine($"[LoadingOverlay.Hide animation stop] {ex}");
                 }
             }
         }

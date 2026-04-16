@@ -46,7 +46,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[OmicBrowser_KeyMarkersChanged] {ex}");
             }
         }
 
@@ -62,7 +62,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-
+                System.Diagnostics.Debug.WriteLine($"[OmicBrowser_PriorWeightsChanged] {ex}");
             }
         }
 

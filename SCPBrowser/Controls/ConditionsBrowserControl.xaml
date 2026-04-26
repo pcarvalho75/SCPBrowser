@@ -1,0 +1,296 @@
+<!--
+ConditionsBrowserControl.xaml
+Child control for browsing biological conditions and triggering condition-level cascade deletes.
+Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
+-->
+<UserControl x:Class="SCPBrowser.ConditionsBrowserControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="600" d:DesignWidth="900"
+             Background="White">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top summary -->
+        <Border Grid.Row="0"
+                Background="#f1f5f9"
+                Padding="15"
+                BorderBrush="#cbd5e1"
+                BorderThickness="0,0,0,1">
+            <StackPanel>
+                <TextBlock Text="Biological Conditions"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,4"/>
+                <TextBlock Text="Select a condition on the left to inspect what would be deleted by a cascade purge."
+                           FontSize="11"
+                           Foreground="#64748b"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Conditions list + details -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: Conditions list -->
+            <Border Grid.Column="0"
+                    BorderBrush="#cbd5e1"
+                    BorderThickness="0,0,1,0"
+                    Padding="10">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="Conditions"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Margin="5,5,5,10"/>
+                    <ListBox x:Name="ConditionsListBox"
+                             SelectionChanged="ConditionsListBox_SelectionChanged"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"
+                             ScrollViewer.IsDeferredScrollingEnabled="True">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="White"
+                                        BorderBrush="#e2e8f0"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Padding="10"
+                                        Margin="0,2">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0"
+                                                   Text="{Binding Name}"
+                                                   FontWeight="SemiBold"
+                                                   FontSize="13"/>
+                                        <TextBlock Grid.Row="1"
+                                                   FontSize="11"
+                                                   Foreground="#64748b"
+                                                   Margin="0,2,0,0">
+                                            <Run Text="{Binding RawFileCount, StringFormat='{}{0} raw files'}"/>
+                                        </TextBlock>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <GridSplitter Grid.Column="1"
+                          Width="5"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch"
+                          Background="#e2e8f0"/>
+
+            <!-- Right: Details + destructive button -->
+            <Border Grid.Column="2" Padding="15">
+                <DockPanel>
+                    <!-- Header -->
+                    <Border DockPanel.Dock="Top"
+                            Background="#f8fafc"
+                            BorderBrush="#e2e8f0"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="15"
+                            Margin="0,0,0,15">
+                        <StackPanel>
+                            <TextBlock x:Name="ConditionHeaderText"
+                                       Text="Select a condition to view its impact"
+                                       FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,5"/>
+                            <TextBlock x:Name="ConditionSubText"
+                                       FontSize="11"
+                                       Foreground="#64748b"
+                                       TextWrapping="Wrap"
+                                       Visibility="Collapsed"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Destructive action bar (bottom) -->
+                    <Border DockPanel.Dock="Bottom"
+                            x:Name="DangerZonePanel"
+                            Background="#fef2f2"
+                            BorderBrush="#fecaca"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="15"
+                            Margin="0,15,0,0"
+                            Visibility="Collapsed">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right"
+                                    x:Name="DeleteConditionButton"
+                                    Content="Delete Condition + All Data"
+                                    Padding="14,8"
+                                    Background="#dc2626"
+                                    Foreground="White"
+                                    BorderThickness="0"
+                                    FontWeight="SemiBold"
+                                    Cursor="Hand"
+                                    Click="DeleteConditionButton_Click"/>
+                            <StackPanel>
+                                <TextBlock Text="Danger Zone"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="#991b1b"/>
+                                <TextBlock Text="This permanently removes all raw files and dependent data for the selected condition. A full project backup is created before the delete runs."
+                                           FontSize="11"
+                                           Foreground="#7f1d1d"
+                                           TextWrapping="Wrap"
+                                           Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Stats grid -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="StatsPanel" Visibility="Collapsed">
+                            <TextBlock Text="Blast Radius"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,8"/>
+
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- Raw files -->
+                                <Border Grid.Row="0" Grid.Column="0"
+                                        Background="White"
+                                        CornerRadius="4"
+                                        Padding="10"
+                                        Margin="0,0,5,5"
+                                        BorderBrush="#e2e8f0"
+                                        BorderThickness="1">
+                                    <StackPanel>
+                                        <TextBlock Text="Raw Files" FontSize="11" Foreground="#64748b"/>
+                                        <TextBlock x:Name="StatRawFilesText" Text="0"
+                                                   FontSize="20" FontWeight="Bold" Foreground="#dc2626"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Plates touched -->
+                                <Border Grid.Row="0" Grid.Column="1"
+                                        Background="White"
+                                        CornerRadius="4"
+                                        Padding="10"
+                                        Margin="0,0,5,5"
+                                        BorderBrush="#e2e8f0"
+                                        BorderThickness="1">
+                                    <StackPanel>
+                                        <TextBlock Text="Plates Touched" FontSize="11" Foreground="#64748b"/>
+                                        <TextBlock x:Name="StatPlatesText" Text="0"
+                                                   FontSize="20" FontWeight="Bold" Foreground="#2563eb"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Protein quant rows -->
+                                <Border Grid.Row="0" Grid.Column="2"
+                                        Background="White"
+                                        CornerRadius="4"
+                                        Padding="10"
+                                        Margin="0,0,0,5"
+                                        BorderBrush="#e2e8f0"
+                                        BorderThickness="1">
+                                    <StackPanel>
+                                        <TextBlock Text="Protein Quant Rows" FontSize="11" Foreground="#64748b"/>
+                                        <TextBlock x:Name="StatProteinQuantText" Text="0"
+                                                   FontSize="20" FontWeight="Bold" Foreground="#10b981"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Classifications -->
+                                <Border Grid.Row="1" Grid.Column="0"
+                                        Background="White"
+                                        CornerRadius="4"
+                                        Padding="10"
+                                        Margin="0,0,5,0"
+                                        BorderBrush="#e2e8f0"
+                                        BorderThickness="1">
+                                    <StackPanel>
+                                        <TextBlock Text="Classifications" FontSize="11" Foreground="#64748b"/>
+                                        <TextBlock x:Name="StatClassificationsText" Text="0"
+                                                   FontSize="20" FontWeight="Bold" Foreground="#f59e0b"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Exclusions -->
+                                <Border Grid.Row="1" Grid.Column="1"
+                                        Background="White"
+                                        CornerRadius="4"
+                                        Padding="10"
+                                        Margin="0,0,5,0"
+                                        BorderBrush="#e2e8f0"
+                                        BorderThickness="1">
+                                    <StackPanel>
+                                        <TextBlock Text="Run Exclusions" FontSize="11" Foreground="#64748b"/>
+                                        <TextBlock x:Name="StatExclusionsText" Text="0"
+                                                   FontSize="20" FontWeight="Bold" Foreground="#64748b"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Orphan imports -->
+                                <Border Grid.Row="1" Grid.Column="2"
+                                        Background="White"
+                                        CornerRadius="4"
+                                        Padding="10"
+                                        BorderBrush="#e2e8f0"
+                                        BorderThickness="1">
+                                    <StackPanel>
+                                        <TextBlock Text="Orphan Imports" FontSize="11" Foreground="#64748b"/>
+                                        <TextBlock x:Name="StatOrphanImportsText" Text="0"
+                                                   FontSize="20" FontWeight="Bold" Foreground="#64748b"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <!-- Plate names list -->
+                            <TextBlock Text="Plates Affected"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Margin="0,8,0,4"/>
+                            <Border Background="#f8fafc"
+                                    BorderBrush="#e2e8f0"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    Padding="10">
+                                <ItemsControl x:Name="PlateNamesList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}"
+                                                       FontSize="11"
+                                                       Foreground="#334155"
+                                                       Margin="0,1"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

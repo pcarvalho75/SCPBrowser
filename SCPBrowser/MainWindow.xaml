@@ -12,6 +12,14 @@
         <converters:FileNameConverter x:Key="FileNameConverter"/>
         <converters:DirectoryConverter x:Key="DirectoryConverter"/>
     </Window.Resources>
+    <Window.InputBindings>
+        <KeyBinding Key="F5" Command="local:MainWindow.ReloadProjectDataCommand"/>
+    </Window.InputBindings>
+    <Window.CommandBindings>
+        <CommandBinding Command="local:MainWindow.ReloadProjectDataCommand"
+                        Executed="ReloadProjectData_Click"
+                        CanExecute="ReloadProjectData_CanExecute"/>
+    </Window.CommandBindings>
 
     <Grid>
         <Grid.RowDefinitions>
@@ -31,6 +39,11 @@
                   x:Name="CloseProjectMenuItem"
                   Click="CloseProject_Click"
                   IsEnabled="False"/>
+                <MenuItem Header="_Reload Project Data"
+                  x:Name="ReloadProjectDataMenuItem"
+                  Click="ReloadProjectData_Click"
+                  IsEnabled="False"
+                  InputGestureText="F5"/>
                 <Separator/>
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
             </MenuItem>

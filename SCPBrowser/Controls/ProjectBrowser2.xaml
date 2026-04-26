@@ -55,6 +55,11 @@ Location: SCPBrowser/Controls/ProjectBrowser2.xaml
                 <local:PlateBrowserControl x:Name="PlateBrowser"/>
             </TabItem>
 
+            <!-- Conditions Tab -->
+            <TabItem Header="Conditions">
+                <local:ConditionsBrowserControl x:Name="ConditionsBrowser"/>
+            </TabItem>
+
         </TabControl>
     </Grid>
 </UserControl>

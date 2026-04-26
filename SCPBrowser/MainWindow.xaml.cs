@@ -16,6 +16,10 @@ namespace SCPBrowser
 {
     public partial class MainWindow : Window
     {
+        // Routed command for the F5 / menu "Reload Project Data" action.
+        public static readonly System.Windows.Input.RoutedCommand ReloadProjectDataCommand =
+            new System.Windows.Input.RoutedCommand("ReloadProjectData", typeof(MainWindow));
+
         // Project management fields
         private string _currentProjectPath;
         private ProjectDatabaseService _projectDatabaseService;
@@ -62,6 +66,9 @@ namespace SCPBrowser
 
             // Subscribe to ProjectBrowser reclassify request
             ProjectBrowserDialog.ReclassifyRequested += ProjectBrowserDialog_ReclassifyRequested;
+
+            // Subscribe to ProjectBrowser cascade-delete completion so we can reload data
+            ProjectBrowserDialog.ConditionDeleted += ProjectBrowserDialog_ConditionDeleted;
 
             // Subscribe to Settings changes
             SettingsDialog.SettingsSaved += (s, args) => PeptideTicTab.ApplyConfidenceThresholdFromSettings();
@@ -201,6 +208,7 @@ namespace SCPBrowser
                 ImportOmicProfileMenuItem.IsEnabled = true;
                 CloseProjectMenuItem.IsEnabled = true;
                 ClearCellTypeClassificationsMenuItem.IsEnabled = true;
+                ReloadProjectDataMenuItem.IsEnabled = true;
 
                 // Load and show plate filter control
                 LoadingOverlay.SetProgress("Loading plates...");
@@ -720,6 +728,7 @@ namespace SCPBrowser
             ImportOmicProfileMenuItem.IsEnabled = false;
             CloseProjectMenuItem.IsEnabled = false;
             ClearCellTypeClassificationsMenuItem.IsEnabled = false;
+            ReloadProjectDataMenuItem.IsEnabled = false;
 
             ProjectBrowserMenuItem.IsEnabled = false;
             ExportPLPMenuItem.IsEnabled = false;
@@ -1630,6 +1639,123 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[PeptideTicTab_ContaminantRatioCutoffChanged] {ex}");
+            }
+        }
+
+        private async void ProjectBrowserDialog_ConditionDeleted(object? sender, ConditionDeletedEventArgs e)
+        {
+            try
+            {
+                if (!_hasOpenProject) return;
+                await ReloadProjectDataAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ProjectBrowserDialog_ConditionDeleted] {ex}");
+                MessageBox.Show(
+                    $"Condition was deleted but reloading the project data failed:\n\n{ex.Message}\n\nPlease close and re-open the project.",
+                    "Reload Failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>
+        /// Click handler for the File &gt; Reload Project Data menu item AND the F5 KeyBinding.
+        /// Both routes funnel through here. Signature accepts either RoutedEventArgs (menu)
+        /// or ExecutedRoutedEventArgs (KeyBinding) since both inherit from RoutedEventArgs.
+        /// </summary>
+        private async void ReloadProjectData_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_hasOpenProject) return;
+
+            try
+            {
+                await ReloadProjectDataAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Reloading project data failed:\n\n{ex.Message}",
+                    "Reload Failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// CanExecute for the F5 KeyBinding. Mirrors the menu item's IsEnabled state.
+        /// </summary>
+        private void ReloadProjectData_CanExecute(object sender, System.Windows.Input.CanExecuteRoutedEventArgs e)
+        {
+            e.CanExecute = _hasOpenProject;
+        }
+
+        /// <summary>
+        /// Re-runs the project data load chain after an in-place destructive change
+        /// (e.g. cascade delete of a biological condition). Re-pulls the imported
+        /// parquet list, reloads plate filter and plate mapping, and pushes the new
+        /// data through MainControlTab which propagates to all dependent tabs.
+        /// </summary>
+        public async Task ReloadProjectDataAsync()
+        {
+            if (!_hasOpenProject || _parquetService == null) return;
+
+            try
+            {
+                LoadingOverlay.SetMessage("Reloading Project Data");
+                LoadingOverlay.SetProgress("Refreshing imports...");
+                LoadingOverlay.Show();
+                await Task.Delay(50);
+
+                // 1. Refresh plate filter and plate mapping in the data filter pipeline.
+                await PlateFilterControl.LoadPlatesAsync(_currentProjectPath);
+                PeptideTicTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMap());
+                MainControlTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMapById());
+                if (_dataFilterService != null)
+                {
+                    await _dataFilterService.LoadPlateMappingAsync(_parquetService, _plateService);
+                }
+
+                // 2. Resolve the surviving parquet imports back to disk paths.
+                var allImportedFiles = await _parquetService.GetAllImportedParquetFilesAsync();
+                var parquetPaths = new List<string>();
+                if (allImportedFiles != null && allImportedFiles.Count > 0)
+                {
+                    string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
+
+                    foreach (var fileName in allImportedFiles)
+                    {
+                        string safeName = Path.GetFileName(fileName ?? string.Empty);
+                        if (string.IsNullOrEmpty(safeName)) continue;
+
+                        string parquetPath = Path.Combine(projectDirectory, "imports", safeName);
+                        bool fileExists = await Task.Run(() => File.Exists(parquetPath));
+                        if (fileExists)
+                            parquetPaths.Add(parquetPath);
+                    }
+                }
+
+                // 3. Push refreshed data through MainControlTab; its existing DataLoaded
+                //    event chain refreshes ScatterPlot, PeptideTic, ProteinMatrix, etc.
+                LoadingOverlay.SetProgress($"Reloading data from {parquetPaths.Count} file(s)...");
+                await MainControlTab.LoadDataFromProject(parquetPaths, _projectReferenceDatabasePath);
+
+                // 4. If the user has the Project Browser dialog open, refresh its inner
+                //    controls (omic / plate / conditions) too. When it's collapsed there's
+                //    nothing to do; ShowWithDatabaseAsync will reload it next time it opens.
+                if (ProjectBrowserDialog.Visibility == Visibility.Visible)
+                {
+                    LoadingOverlay.SetProgress("Refreshing project browser...");
+                    await ProjectBrowserDialog.RefreshAsync();
+                }
+
+                LoadingOverlay.Hide();
+            }
+            catch
+            {
+                LoadingOverlay.Hide();
+                throw;
             }
         }
 

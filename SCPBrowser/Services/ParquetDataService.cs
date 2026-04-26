@@ -98,6 +98,36 @@ namespace SCPBrowser.Services
         public List<string> TargetProteinIdentifiers { get; set; } = new();
     }
 
+    /// <summary>
+    /// Blast-radius numbers for a biological condition: how many rows in each
+    /// affected table would be removed by a cascade delete of this condition.
+    /// </summary>
+    public class ConditionStats
+    {
+        public string Condition { get; set; } = string.Empty;
+        public int RawFileCount { get; set; }
+        public int PlateCount { get; set; }
+        public List<string> PlateNames { get; set; } = new();
+        public int ClassificationCount { get; set; }
+        public int ProteinQuantRowCount { get; set; }
+        public int ExclusionCount { get; set; }
+        public List<int> OrphanImportIdsAfterDelete { get; set; } = new();
+        public int OrphanImportCount => OrphanImportIdsAfterDelete?.Count ?? 0;
+    }
+
+    /// <summary>
+    /// Counts of rows actually deleted by DeleteConditionCascadeAsync.
+    /// </summary>
+    public class DeleteConditionResult
+    {
+        public string Condition { get; set; } = string.Empty;
+        public int DeletedRawFiles { get; set; }
+        public int DeletedClassifications { get; set; }
+        public int DeletedProteinQuantRows { get; set; }
+        public int DeletedExclusions { get; set; }
+        public int DeletedOrphanImports { get; set; }
+    }
+
     public class ParquetDataService : DatabaseServiceBase
     {
         // Constructor for database operations
@@ -603,6 +633,33 @@ namespace SCPBrowser.Services
                             if (result == null || !int.TryParse(result.ToString(), out importId)) return;
                         }
 
+                        // Clean child rows that reference raw_files of this import.
+                        // Without this, deletes leave orphans behind in three tables since
+                        // SQLite foreign keys are not enforced (no PRAGMA foreign_keys = ON).
+                        const string doomedRawFilesSubquery =
+                            "SELECT raw_file_id FROM raw_files WHERE import_id = @importId";
+
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = $"DELETE FROM protein_quant_summary WHERE raw_file_id IN ({doomedRawFilesSubquery})";
+                            command.Parameters.AddWithValue("@importId", importId);
+                            await command.ExecuteNonQueryAsync();
+                        }
+
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = $"DELETE FROM raw_file_cell_type_classifications WHERE raw_file_id IN ({doomedRawFilesSubquery})";
+                            command.Parameters.AddWithValue("@importId", importId);
+                            await command.ExecuteNonQueryAsync();
+                        }
+
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = $"DELETE FROM excluded_runs WHERE raw_file_id IN ({doomedRawFilesSubquery})";
+                            command.Parameters.AddWithValue("@importId", importId);
+                            await command.ExecuteNonQueryAsync();
+                        }
+
                         using (var command = connection.CreateCommand())
                         {
                             command.CommandText = "DELETE FROM raw_files WHERE import_id = @importId";
@@ -894,6 +951,211 @@ namespace SCPBrowser.Services
                 "SELECT COUNT(*) FROM excluded_runs WHERE raw_file_id = @rawFileId",
                 cmd => cmd.Parameters.AddWithValue("@rawFileId", rawFileId));
             return count > 0;
+        }
+
+        /// <summary>
+        /// Returns the blast-radius numbers for a biological condition: how many
+        /// raw files, plates, classifications, protein quant rows, exclusions, and
+        /// parquet imports would be removed by a cascade delete. Read-only.
+        /// </summary>
+        public async Task<ConditionStats> GetConditionStatsAsync(string condition)
+        {
+            var stats = new ConditionStats { Condition = condition ?? string.Empty };
+
+            if (string.IsNullOrWhiteSpace(condition))
+                return stats;
+
+            return await WithConnectionAsync(async connection =>
+            {
+                // 1. Raw file count
+                using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT COUNT(*) FROM raw_files WHERE biological_condition = @condition";
+                    cmd.Parameters.AddWithValue("@condition", condition);
+                    stats.RawFileCount = Convert.ToInt32(await cmd.ExecuteScalarAsync() ?? 0);
+                }
+
+                if (stats.RawFileCount == 0)
+                    return stats;
+
+                // 2. Distinct plate names touched
+                using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT DISTINCT p.plate_name
+                        FROM raw_files rf
+                        INNER JOIN plates p ON rf.plate_id = p.plate_id
+                        WHERE rf.biological_condition = @condition
+                        ORDER BY p.plate_name";
+                    cmd.Parameters.AddWithValue("@condition", condition);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                            stats.PlateNames.Add(reader.GetString(0));
+                    }
+                }
+                stats.PlateCount = stats.PlateNames.Count;
+
+                // 3. Protein quant rows
+                using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT COUNT(*) FROM protein_quant_summary
+                        WHERE raw_file_id IN (SELECT raw_file_id FROM raw_files WHERE biological_condition = @condition)";
+                    cmd.Parameters.AddWithValue("@condition", condition);
+                    stats.ProteinQuantRowCount = Convert.ToInt32(await cmd.ExecuteScalarAsync() ?? 0);
+                }
+
+                // 4. Cell type classifications
+                using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT COUNT(*) FROM raw_file_cell_type_classifications
+                        WHERE raw_file_id IN (SELECT raw_file_id FROM raw_files WHERE biological_condition = @condition)";
+                    cmd.Parameters.AddWithValue("@condition", condition);
+                    stats.ClassificationCount = Convert.ToInt32(await cmd.ExecuteScalarAsync() ?? 0);
+                }
+
+                // 5. Run exclusions
+                using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT COUNT(*) FROM excluded_runs
+                        WHERE raw_file_id IN (SELECT raw_file_id FROM raw_files WHERE biological_condition = @condition)";
+                    cmd.Parameters.AddWithValue("@condition", condition);
+                    stats.ExclusionCount = Convert.ToInt32(await cmd.ExecuteScalarAsync() ?? 0);
+                }
+
+                // 6. parquet_imports rows that would become orphan after the delete
+                //    (an import is orphaned only when EVERY raw_file under it carries the doomed condition)
+                using (var cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = @"
+                        SELECT import_id FROM (
+                            SELECT import_id,
+                                   SUM(CASE WHEN biological_condition = @condition THEN 1 ELSE 0 END) AS doomed,
+                                   COUNT(*) AS total
+                            FROM raw_files
+                            GROUP BY import_id
+                        ) WHERE doomed = total AND doomed > 0";
+                    cmd.Parameters.AddWithValue("@condition", condition);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                            stats.OrphanImportIdsAfterDelete.Add(reader.GetInt32(0));
+                    }
+                }
+
+                return stats;
+            });
+        }
+
+        /// <summary>
+        /// Cascade-deletes a biological condition and all data attached to its raw files.
+        /// Order: protein_quant_summary, raw_file_cell_type_classifications, excluded_runs,
+        /// raw_files, then any parquet_imports that became orphan as a result.
+        /// All deletes run inside a single transaction; on any failure everything rolls back.
+        /// Disk parquet files in the imports folder are NOT touched.
+        /// </summary>
+        public async Task<DeleteConditionResult> DeleteConditionCascadeAsync(string condition)
+        {
+            var result = new DeleteConditionResult { Condition = condition ?? string.Empty };
+
+            if (string.IsNullOrWhiteSpace(condition))
+                return result;
+
+            await WithConnectionAsync(async connection =>
+            {
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        // 1. Capture orphan import IDs BEFORE any raw_files are deleted.
+                        var orphanImportIds = new List<int>();
+                        using (var cmd = connection.CreateCommand())
+                        {
+                            cmd.Transaction = transaction;
+                            cmd.CommandText = @"
+                                SELECT import_id FROM (
+                                    SELECT import_id,
+                                           SUM(CASE WHEN biological_condition = @condition THEN 1 ELSE 0 END) AS doomed,
+                                           COUNT(*) AS total
+                                    FROM raw_files
+                                    GROUP BY import_id
+                                ) WHERE doomed = total AND doomed > 0";
+                            cmd.Parameters.AddWithValue("@condition", condition);
+                            using (var reader = await cmd.ExecuteReaderAsync())
+                            {
+                                while (await reader.ReadAsync())
+                                    orphanImportIds.Add(reader.GetInt32(0));
+                            }
+                        }
+
+                        // 2. Delete child rows that reference doomed raw_files.
+                        const string doomedIdsSubquery =
+                            "SELECT raw_file_id FROM raw_files WHERE biological_condition = @condition";
+
+                        result.DeletedProteinQuantRows = await ExecuteInTxAsync(connection, transaction,
+                            $"DELETE FROM protein_quant_summary WHERE raw_file_id IN ({doomedIdsSubquery})",
+                            cmd => cmd.Parameters.AddWithValue("@condition", condition));
+
+                        result.DeletedClassifications = await ExecuteInTxAsync(connection, transaction,
+                            $"DELETE FROM raw_file_cell_type_classifications WHERE raw_file_id IN ({doomedIdsSubquery})",
+                            cmd => cmd.Parameters.AddWithValue("@condition", condition));
+
+                        result.DeletedExclusions = await ExecuteInTxAsync(connection, transaction,
+                            $"DELETE FROM excluded_runs WHERE raw_file_id IN ({doomedIdsSubquery})",
+                            cmd => cmd.Parameters.AddWithValue("@condition", condition));
+
+                        // 3. Delete the raw_files themselves.
+                        result.DeletedRawFiles = await ExecuteInTxAsync(connection, transaction,
+                            "DELETE FROM raw_files WHERE biological_condition = @condition",
+                            cmd => cmd.Parameters.AddWithValue("@condition", condition));
+
+                        // 4. Delete the now-orphan parquet_imports rows.
+                        if (orphanImportIds.Count > 0)
+                        {
+                            var paramNames = new List<string>(orphanImportIds.Count);
+                            for (int i = 0; i < orphanImportIds.Count; i++)
+                                paramNames.Add("@p" + i);
+
+                            string sql = "DELETE FROM parquet_imports WHERE import_id IN ("
+                                + string.Join(",", paramNames) + ")";
+
+                            result.DeletedOrphanImports = await ExecuteInTxAsync(connection, transaction, sql,
+                                cmd =>
+                                {
+                                    for (int i = 0; i < orphanImportIds.Count; i++)
+                                        cmd.Parameters.AddWithValue(paramNames[i], orphanImportIds[i]);
+                                });
+                        }
+
+                        await transaction.CommitAsync();
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync();
+                        throw;
+                    }
+                }
+            });
+
+            return result;
+        }
+
+        /// <summary>
+        /// Helper: run a non-query command on a specific connection and transaction.
+        /// </summary>
+        private static async Task<int> ExecuteInTxAsync(SqliteConnection connection, SqliteTransaction transaction,
+            string sql, Action<SqliteCommand> paramSetup)
+        {
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.Transaction = transaction;
+                cmd.CommandText = sql;
+                paramSetup(cmd);
+                return await cmd.ExecuteNonQueryAsync();
+            }
         }
 
         // Helper class for protein statistics

@@ -46,7 +46,7 @@ namespace SCPBrowser.Services
             return QueryAsync(@"
                 SELECT cell_id, cellenone_run_id, plate_id, drop_no, target_well, target, field, x_pos, y_pos, image_x, image_y,
                        diameter, elongation, circularity, intensity, flu_diameter, flu_intensity,
-                       status, isolated_at, raw_file_id, link_method, link_confidence
+                       status, isolated_at, raw_file_id, link_method, link_confidence, n_objects, blob_count
                 FROM isolated_cells
                 WHERE cellenone_run_id = @r
                 ORDER BY drop_no",
@@ -73,7 +73,9 @@ namespace SCPBrowser.Services
                     IsolatedAt = StrN(r, 18),
                     RawFileId = IntN(r, 19),
                     LinkMethod = StrN(r, 20),
-                    LinkConfidence = DblN(r, 21)
+                    LinkConfidence = DblN(r, 21),
+                    NObjects = IntN(r, 22),
+                    BlobCount = IntN(r, 23)
                 },
                 cmd => cmd.Parameters.AddWithValue("@r", cellenOneRunId));
         }

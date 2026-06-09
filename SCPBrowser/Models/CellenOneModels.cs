@@ -62,6 +62,23 @@ namespace SCPBrowser.Models
         public string? FileHash { get; set; }
 
         public List<IsolatedCell> Cells { get; set; } = new();
+
+        /// <summary>All detected objects across all drops (the geoprops superset). Used for doublet/QC analysis.</summary>
+        public List<CellDetection> Detections { get; set; } = new();
+    }
+
+    /// <summary>One detected object within a drop's image (a row of the geoprops superset).</summary>
+    public class CellDetection
+    {
+        public int DropNo { get; set; }
+        public string? Channel { get; set; }
+        public int ObjectIndex { get; set; }
+        public double? X { get; set; }
+        public double? Y { get; set; }
+        public double? Diameter { get; set; }
+        public double? Elongation { get; set; }
+        public double? Circularity { get; set; }
+        public double? Intensity { get; set; }
     }
 
     /// <summary>
@@ -97,6 +114,12 @@ namespace SCPBrowser.Models
         // Blue (fluorescence) channel
         public double? FluDiameter { get; set; }
         public double? FluIntensity { get; set; }
+
+        /// <summary>Objects the instrument detected in this cell's drop (from geoprops); &gt;1 ⇒ doublet/multiplet risk.</summary>
+        public int? NObjects { get; set; }
+
+        /// <summary>Cell-sized blobs found in the brightfield frame by image analysis; &gt;1 ⇒ likely doublet (catches ones the instrument missed).</summary>
+        public int? BlobCount { get; set; }
 
         public string? Status { get; set; }
         public string? IsolatedAt { get; set; }

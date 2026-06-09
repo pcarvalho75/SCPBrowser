@@ -65,7 +65,7 @@ namespace SCPBrowser.Services
 
             byte[]? background = ReadFileOrNull(run.BackgroundImagePath);
 
-            return await WithConnectionAsync(async connection =>
+            int newRunId = await WithConnectionAsync(async connection =>
             {
                 using var transaction = connection.BeginTransaction();
                 try
@@ -86,6 +86,7 @@ namespace SCPBrowser.Services
                             progress?.Report($"Importing cells... {i + 1}/{n}");
                     }
 
+                    await InsertDetectionsAsync(connection, transaction, runId, run.Detections, ct);
                     await transaction.CommitAsync(ct);
                     progress?.Report($"Imported {n} cells.");
                     return runId;
@@ -96,6 +97,16 @@ namespace SCPBrowser.Services
                     throw;
                 }
             });
+
+            // Image-based doublet detection (best-effort; never fails the import).
+            try
+            {
+                await new CellImageAnalysisService(_projectDbPath).AnalyzeRunAsync(newRunId, progress, ct);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { /* non-critical */ }
+
+            return newRunId;
         }
 
         private static async Task<int> InsertRunAsync(SqliteConnection connection, SqliteTransaction transaction, CellenOneRun run, byte[]? background)
@@ -149,10 +160,10 @@ namespace SCPBrowser.Services
             cmd.Transaction = transaction;
             cmd.CommandText = @"
                 INSERT INTO isolated_cells
-                    (cellenone_run_id, plate_id, drop_no, target_well, target, field, x_pos, y_pos, image_x, image_y,
+                    (cellenone_run_id, plate_id, drop_no, target_well, target, field, x_pos, y_pos, image_x, image_y, n_objects,
                      diameter, elongation, circularity, intensity, flu_diameter, flu_intensity, status, isolated_at)
                 VALUES
-                    (@run_id, @plate_id, @drop_no, @target_well, @target, @field, @x_pos, @y_pos, @image_x, @image_y,
+                    (@run_id, @plate_id, @drop_no, @target_well, @target, @field, @x_pos, @y_pos, @image_x, @image_y, @n_objects,
                      @diameter, @elongation, @circularity, @intensity, @flu_diameter, @flu_intensity, @status, @isolated_at);
                 SELECT last_insert_rowid();";
 
@@ -166,6 +177,7 @@ namespace SCPBrowser.Services
             AddParam(cmd, "@y_pos", cell.YPos);
             AddParam(cmd, "@image_x", cell.ImageX);
             AddParam(cmd, "@image_y", cell.ImageY);
+            AddParam(cmd, "@n_objects", cell.NObjects);
             AddParam(cmd, "@diameter", cell.Diameter);
             AddParam(cmd, "@elongation", cell.Elongation);
             AddParam(cmd, "@circularity", cell.Circularity);
@@ -209,6 +221,42 @@ namespace SCPBrowser.Services
             AddParam(cmd, "@width", width > 0 ? width : (int?)null);
             AddParam(cmd, "@height", height > 0 ? height : (int?)null);
             await cmd.ExecuteNonQueryAsync();
+        }
+
+        private static async Task InsertDetectionsAsync(SqliteConnection connection, SqliteTransaction transaction, int runId, System.Collections.Generic.List<CellDetection> detections, CancellationToken ct)
+        {
+            if (detections.Count == 0) return;
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = transaction;
+            cmd.CommandText = @"
+                INSERT INTO cell_detections (cellenone_run_id, drop_no, channel, object_index, x, y, diameter, elongation, circularity, intensity)
+                VALUES (@run, @drop, @ch, @idx, @x, @y, @dia, @elong, @circ, @int)";
+            var pRun = cmd.Parameters.Add("@run", SqliteType.Integer);
+            var pDrop = cmd.Parameters.Add("@drop", SqliteType.Integer);
+            var pCh = cmd.Parameters.Add("@ch", SqliteType.Text);
+            var pIdx = cmd.Parameters.Add("@idx", SqliteType.Integer);
+            var pX = cmd.Parameters.Add("@x", SqliteType.Real);
+            var pY = cmd.Parameters.Add("@y", SqliteType.Real);
+            var pDia = cmd.Parameters.Add("@dia", SqliteType.Real);
+            var pElong = cmd.Parameters.Add("@elong", SqliteType.Real);
+            var pCirc = cmd.Parameters.Add("@circ", SqliteType.Real);
+            var pInt = cmd.Parameters.Add("@int", SqliteType.Real);
+
+            foreach (var d in detections)
+            {
+                ct.ThrowIfCancellationRequested();
+                pRun.Value = runId;
+                pDrop.Value = d.DropNo;
+                pCh.Value = (object?)d.Channel ?? DBNull.Value;
+                pIdx.Value = d.ObjectIndex;
+                pX.Value = (object?)d.X ?? DBNull.Value;
+                pY.Value = (object?)d.Y ?? DBNull.Value;
+                pDia.Value = (object?)d.Diameter ?? DBNull.Value;
+                pElong.Value = (object?)d.Elongation ?? DBNull.Value;
+                pCirc.Value = (object?)d.Circularity ?? DBNull.Value;
+                pInt.Value = (object?)d.Intensity ?? DBNull.Value;
+                await cmd.ExecuteNonQueryAsync();
+            }
         }
 
         // ----------------------------------------------------------------- helpers

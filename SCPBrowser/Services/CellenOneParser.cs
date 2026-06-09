@@ -61,6 +61,10 @@ namespace SCPBrowser.Services
             var xlsPath = FindIsolatedXls(runDir);
             if (xlsPath != null) ParseIsolatedXls(xlsPath, runDir, run);
 
+            var geoPath = FindGeoprops(runDir);
+            if (geoPath != null) ParseGeoprops(geoPath, run);
+            ComputeObjectCounts(run);
+
             // Fallback background image if the xls did not name one.
             if (run.BackgroundImagePath == null)
             {
@@ -253,6 +257,71 @@ namespace SCPBrowser.Services
             }
 
             run.Cells = byDrop.Values.OrderBy(c => c.DropNo).ToList();
+        }
+
+        // ----------------------------------------------------------------- geoprops (superset)
+
+        /// <summary>
+        /// Parses the geoprops superset: every detected object in every drop (multiple per drop = doublet/multiplet).
+        /// Only Transmission-channel objects are kept (Blue is all-zero for unstained runs).
+        /// </summary>
+        private static void ParseGeoprops(string path, CellenOneRun run)
+        {
+            var lines = SplitLines(File.ReadAllText(path, FileEncoding));
+            int currentDrop = -1;
+            bool inTransmission = false;
+            int objIndex = 0;
+
+            for (int i = 1; i < lines.Length; i++)
+            {
+                var cols = lines[i].Split('\t');
+                if (cols.Length < 2) continue;
+
+                var channel = cols[1].Trim();
+                bool isMeta = channel.Equals("Transmission", StringComparison.OrdinalIgnoreCase)
+                           || channel.Equals("Blue", StringComparison.OrdinalIgnoreCase);
+                if (isMeta)
+                {
+                    if (TryParseDropNo(cols[0], out var d))
+                    {
+                        currentDrop = d;
+                        inTransmission = channel.Equals("Transmission", StringComparison.OrdinalIgnoreCase);
+                        objIndex = 0;
+                    }
+                    else { currentDrop = -1; inTransmission = false; }
+                }
+                else if (inTransmission && currentDrop >= 0 && IsNumericToken(cols[0]))
+                {
+                    run.Detections.Add(new CellDetection
+                    {
+                        DropNo = currentDrop,
+                        Channel = "Transmission",
+                        ObjectIndex = objIndex++,
+                        X = ParseDoubleOrNull(Get(cols, 1)),
+                        Y = ParseDoubleOrNull(Get(cols, 2)),
+                        Diameter = ParseDoubleOrNull(Get(cols, 3)),
+                        Elongation = ParseDoubleOrNull(Get(cols, 4)),
+                        Circularity = ParseDoubleOrNull(Get(cols, 5)),
+                        Intensity = ParseDoubleOrNull(Get(cols, 6))
+                    });
+                }
+            }
+        }
+
+        /// <summary>Sets each isolated cell's NObjects = number of objects detected in its drop (from geoprops).</summary>
+        private static void ComputeObjectCounts(CellenOneRun run)
+        {
+            if (run.Detections.Count == 0) return;
+            var perDrop = run.Detections.GroupBy(d => d.DropNo).ToDictionary(g => g.Key, g => g.Count());
+            foreach (var cell in run.Cells)
+                if (perDrop.TryGetValue(cell.DropNo, out var n)) cell.NObjects = n;
+        }
+
+        private static string? FindGeoprops(string dir)
+        {
+            var matches = Directory.GetFiles(dir, "*_geoprops.xls", SearchOption.TopDirectoryOnly);
+            return matches.FirstOrDefault(f => !Path.GetFileName(f).StartsWith("Reordered", StringComparison.OrdinalIgnoreCase))
+                   ?? matches.FirstOrDefault();
         }
 
         // ----------------------------------------------------------------- helpers

@@ -68,6 +68,8 @@ namespace SCPBrowser.Services
                 y_pos INTEGER,
                 image_x REAL,
                 image_y REAL,
+                n_objects INTEGER,
+                blob_count INTEGER,
                 diameter REAL,
                 elongation REAL,
                 circularity REAL,
@@ -103,6 +105,24 @@ namespace SCPBrowser.Services
             CREATE INDEX IF NOT EXISTS idx_isolated_cells_plate ON isolated_cells(plate_id);
             CREATE INDEX IF NOT EXISTS idx_isolated_cells_rawfile ON isolated_cells(raw_file_id);
             CREATE INDEX IF NOT EXISTS idx_cell_images_cell ON cell_images(cell_id);
+
+            -- Every detected object in every drop (the geoprops superset). >1 per drop = doublet/multiplet signal.
+            CREATE TABLE IF NOT EXISTS cell_detections (
+                detection_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cellenone_run_id INTEGER NOT NULL,
+                drop_no INTEGER,
+                channel TEXT,
+                object_index INTEGER,
+                x REAL,
+                y REAL,
+                diameter REAL,
+                elongation REAL,
+                circularity REAL,
+                intensity REAL,
+                FOREIGN KEY (cellenone_run_id) REFERENCES cellenone_runs(cellenone_run_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_cell_detections_run ON cell_detections(cellenone_run_id);
+            CREATE INDEX IF NOT EXISTS idx_cell_detections_drop ON cell_detections(cellenone_run_id, drop_no);
         ";
 
         /// <summary>
@@ -418,6 +438,40 @@ namespace SCPBrowser.Services
                 {
                     using var alter = connection.CreateCommand();
                     alter.CommandText = "ALTER TABLE isolated_cells ADD COLUMN image_x REAL; ALTER TABLE isolated_cells ADD COLUMN image_y REAL;";
+                    await alter.ExecuteNonQueryAsync();
+                }
+
+                bool hasNObjects = false;
+                using (var check = connection.CreateCommand())
+                {
+                    check.CommandText = "PRAGMA table_info(isolated_cells)";
+                    using var reader = await check.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        if (reader.GetString(1).Equals("n_objects", StringComparison.OrdinalIgnoreCase)) { hasNObjects = true; break; }
+                    }
+                }
+                if (!hasNObjects)
+                {
+                    using var alter = connection.CreateCommand();
+                    alter.CommandText = "ALTER TABLE isolated_cells ADD COLUMN n_objects INTEGER;";
+                    await alter.ExecuteNonQueryAsync();
+                }
+
+                bool hasBlobCount = false;
+                using (var check = connection.CreateCommand())
+                {
+                    check.CommandText = "PRAGMA table_info(isolated_cells)";
+                    using var reader = await check.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        if (reader.GetString(1).Equals("blob_count", StringComparison.OrdinalIgnoreCase)) { hasBlobCount = true; break; }
+                    }
+                }
+                if (!hasBlobCount)
+                {
+                    using var alter = connection.CreateCommand();
+                    alter.CommandText = "ALTER TABLE isolated_cells ADD COLUMN blob_count INTEGER;";
                     await alter.ExecuteNonQueryAsync();
                 }
             }

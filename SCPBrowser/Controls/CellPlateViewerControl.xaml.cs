@@ -53,6 +53,8 @@ namespace SCPBrowser.Controls
             GatingChart.MouseLeftButtonDown += GatingChart_MouseLeftButtonDown;
             GridScroll.SizeChanged += (s, e) => RelayoutGrid();
             SizeChanged += (s, e) => RelayoutGrid();
+            Focusable = true;
+            PreviewKeyDown += OnPreviewKeyDown;
 
             var names = Metrics.Select(m => m.Name).ToList();
             XAxisCombo.ItemsSource = names;
@@ -112,17 +114,27 @@ namespace SCPBrowser.Controls
             var unlinkedBrush = new SolidColorBrush(Color.FromRgb(0xcb, 0xd5, 0xe1));
             foreach (var cell in _cells)
             {
+                int dcount = DoubletCount(cell);
+                bool doublet = dcount > 1;
                 var border = new Border
                 {
-                    BorderBrush = cell.RawFileId != null ? Brushes.SeaGreen : unlinkedBrush,
-                    BorderThickness = new Thickness(cell.RawFileId != null ? 2 : 1),
+                    BorderBrush = doublet ? new SolidColorBrush(Color.FromRgb(0xdc, 0x26, 0x26))
+                                          : (cell.RawFileId != null ? Brushes.SeaGreen : unlinkedBrush),
+                    BorderThickness = new Thickness(doublet || cell.RawFileId != null ? 2 : 1),
                     Background = Brushes.Black,
                     Tag = cell,
                     Cursor = Cursors.Hand,
-                    ToolTip = $"drop {cell.DropNo}  Ø {cell.Diameter:F1}µm"
+                    ToolTip = doublet
+                        ? $"drop {cell.DropNo}  Ø {cell.Diameter:F1}µm  ⚠ {dcount} cells (doublet?)"
+                        : $"drop {cell.DropNo}  Ø {cell.Diameter:F1}µm"
                 };
+
+                var content = new Grid();
                 if (_thumbs.TryGetValue(cell.CellId, out var tb))
-                    border.Child = new Image { Source = BytesToImage(tb), Stretch = Stretch.UniformToFill };
+                    content.Children.Add(new Image { Source = BytesToImage(tb), Stretch = Stretch.UniformToFill });
+                if (doublet)
+                    content.Children.Add(MakeDoubletBadge(dcount));
+                border.Child = content;
 
                 border.MouseLeftButtonUp += (s, _) => { if ((s as Border)?.Tag is IsolatedCell c) SelectCell(c); };
                 GridCanvas.Children.Add(border);
@@ -244,18 +256,17 @@ namespace SCPBrowser.Controls
 
         private async void SelectCell(IsolatedCell cell)
         {
-            // Update tile highlight (restore previous first).
+            // Update tile highlight (restore the previous tile's normal border first).
             if (_selected != null && _tiles.TryGetValue(_selected.CellId, out var prev))
-            {
-                prev.BorderBrush = _selected.RawFileId != null ? Brushes.SeaGreen : new SolidColorBrush(Color.FromRgb(0xcb, 0xd5, 0xe1));
-                prev.BorderThickness = new Thickness(_selected.RawFileId != null ? 2 : 1);
-            }
+                ApplyNormalBorder(_selected, prev);
             _selected = cell;
             if (_tiles.TryGetValue(cell.CellId, out var tile))
             {
                 tile.BorderBrush = Brushes.OrangeRed;
                 tile.BorderThickness = new Thickness(3);
+                tile.BringIntoView();
             }
+            Focus(); // keep keyboard focus so arrow keys navigate after a click
 
             DetailHint.Visibility = Visibility.Collapsed;
             string link = cell.RawFileId != null && _rawById.TryGetValue(cell.RawFileId.Value, out var rf)
@@ -269,6 +280,8 @@ namespace SCPBrowser.Controls
                 $"Elongation:  {cell.Elongation:F2}\n" +
                 $"Circularity: {cell.Circularity:F2}\n" +
                 $"Intensity:   {cell.Intensity:F1}\n" +
+                $"Objects:     {(cell.NObjects?.ToString() ?? "?")} (instrument)\n" +
+                $"Cells (img): {(cell.BlobCount?.ToString() ?? "?")}{(DoubletCount(cell) > 1 ? "  ⚠ DOUBLET" : "")}\n" +
                 $"Isolated:    {cell.IsolatedAt}\n" +
                 $"DIA-NN run:  {link}";
 
@@ -280,10 +293,59 @@ namespace SCPBrowser.Controls
             {
                 var t = await _query!.GetCellImageAsync(cell.CellId, "Trans");
                 var b = await _query!.GetCellImageAsync(cell.CellId, "Blue");
+                if (!ReferenceEquals(_selected, cell)) return; // superseded by a newer selection (rapid arrow nav)
                 TransImage.Source = t != null ? BytesToImage(t) : null;
                 BlueImage.Source = b != null ? BytesToImage(b) : null;
             }
             catch { /* image load failure shouldn't break selection */ }
+        }
+
+        private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (_selected == null) return;
+            // Don't hijack arrows while the run picker or size slider has focus.
+            if (e.OriginalSource is System.Windows.Controls.Primitives.Selector || e.OriginalSource is Slider) return;
+            switch (e.Key)
+            {
+                case Key.Left: MoveSelection(-1, 0); e.Handled = true; break;
+                case Key.Right: MoveSelection(1, 0); e.Handled = true; break;
+                case Key.Up: MoveSelection(0, -1); e.Handled = true; break;
+                case Key.Down: MoveSelection(0, 1); e.Handled = true; break;
+            }
+        }
+
+        /// <summary>Moves the selection to the nearest cell in the given grid direction (prefers staying in the same row/column).</summary>
+        private void MoveSelection(int dx, int dy)
+        {
+            if (_cells.Count == 0) return;
+            if (_selected == null) { SelectCell(_cells[0]); return; }
+
+            int cx = _selected.XPos ?? 1, cy = _selected.YPos ?? 1;
+            IsolatedCell? best = null;
+            double bestScore = double.MaxValue;
+            foreach (var c in _cells)
+            {
+                if (c.CellId == _selected.CellId) continue;
+                int ox = (c.XPos ?? 1) - cx, oy = (c.YPos ?? 1) - cy;
+                if (dx != 0 && Math.Sign(ox) != dx) continue;
+                if (dy != 0 && Math.Sign(oy) != dy) continue;
+                double along = dx != 0 ? Math.Abs(ox) : Math.Abs(oy);
+                double cross = dx != 0 ? Math.Abs(oy) : Math.Abs(ox);
+                double score = along + cross * 3.0; // prefer the same row / column
+                if (score < bestScore) { bestScore = score; best = c; }
+            }
+            if (best != null) SelectCell(best);
+        }
+
+        /// <summary>Doublet count = the larger of the instrument's object count and the image blob count.</summary>
+        private static int DoubletCount(IsolatedCell cell) => Math.Max(cell.NObjects ?? 0, cell.BlobCount ?? 0);
+
+        private static void ApplyNormalBorder(IsolatedCell cell, Border tile)
+        {
+            bool doublet = DoubletCount(cell) > 1;
+            tile.BorderBrush = doublet ? new SolidColorBrush(Color.FromRgb(0xdc, 0x26, 0x26))
+                              : (cell.RawFileId != null ? Brushes.SeaGreen : new SolidColorBrush(Color.FromRgb(0xcb, 0xd5, 0xe1)));
+            tile.BorderThickness = new Thickness(doublet || cell.RawFileId != null ? 2 : 1);
         }
 
         private void ClearDetail()
@@ -302,6 +364,20 @@ namespace SCPBrowser.Controls
             dlg.Initialize(_projectDbPath, _currentRun.CellenOneRunId);
             dlg.ShowDialog();
             _ = LoadRunAsync(_currentRun); // refresh link state
+        }
+
+        private static Border MakeDoubletBadge(int count)
+        {
+            return new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(0xdc, 0x26, 0x26)),
+                CornerRadius = new CornerRadius(7),
+                Padding = new Thickness(3, 0, 3, 0),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                VerticalAlignment = System.Windows.VerticalAlignment.Top,
+                Margin = new Thickness(0, 1, 1, 0),
+                Child = new TextBlock { Text = count.ToString(), Foreground = Brushes.White, FontSize = 9, FontWeight = FontWeights.Bold }
+            };
         }
 
         private static BitmapImage BytesToImage(byte[] bytes)

@@ -48,7 +48,13 @@
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
             </MenuItem>
             <MenuItem Header="_Import">
-                <MenuItem Header="_Parquet File..." 
+                <MenuItem Header="Import _Plate Metadata..."
+                  x:Name="ImportPlateMetadataMenuItem"
+                  Click="ImportPlateMetadata_Click"
+                  IsEnabled="False"
+                  ToolTip="Register a plate and optionally attach a cellenONE isolation run (cells + images)"/>
+                <Separator/>
+                <MenuItem Header="_Parquet File..."
                   x:Name="ImportParquetMenuItem"
                   Click="ImportParquet_Click"
                   IsEnabled="False"/>
@@ -67,6 +73,15 @@
             <MenuItem Header="_Utils">
                 <MenuItem Header="_GO Database..." Click="GoDatabase_Click"/>
                 <MenuItem Header="_Settings" Click="Settings_Click"/>
+                <Separator/>
+                <MenuItem Header="Cell Plate _Viewer..."
+                          x:Name="CellViewerMenuItem"
+                          Click="CellViewer_Click"
+                          ToolTip="View isolated cells: position grid, brightfield/fluorescence images, gating scatter"/>
+                <MenuItem Header="_Reconcile Cells ↔ Runs..."
+                          x:Name="ReconcileCellsMenuItem"
+                          Click="ReconcileCells_Click"
+                          ToolTip="Match isolated cells to DIA-NN raw files"/>
                 <Separator/>
                 <MenuItem Header="_Project Browser" 
       x:Name="ProjectBrowserMenuItem"

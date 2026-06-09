@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell.exe -Command \"Get-Disk | Format-Table -AutoSize Number, FriendlyName, OperationalStatus, HealthStatus, BusType, Size, PartitionStyle\")",
+      "PowerShell(Get-Partition -DiskNumber 2 -ErrorAction SilentlyContinue)",
+      "Bash(powershell.exe -NoProfile -Command \"Get-Disk -Number 2 | Select-Object Number,FriendlyName,SerialNumber,Size,PartitionStyle,IsOffline,IsReadOnly | Format-List\")",
+      "Bash(powershell.exe -NoProfile -Command 'Initialize-Disk -Number 2 -PartitionStyle GPT; New-Partition -DiskNumber 2 -UseMaximumSize -AssignDriveLetter | Format-Volume -FileSystem exFAT -NewFileSystemLabel '\\\\''USB20TB'\\\\'' -Confirm:$false | Format-List DriveLetter,FileSystemLabel,FileSystem,Size,SizeRemaining')",
+      "PowerShell(Get-Printer)",
+      "Bash(npm install *)",
+      "Bash(codex --version)",
+      "Bash(npm --version)"
+    ]
+  }
+}

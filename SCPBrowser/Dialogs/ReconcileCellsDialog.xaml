@@ -1,0 +1,67 @@
+<Window x:Class="SCPBrowser.ReconcileCellsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Reconcile Cells ↔ DIA-NN Runs"
+        Height="620" Width="860"
+        WindowStartupLocation="CenterOwner"
+        Background="#f8fafc">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="Reconcile Cells ↔ DIA-NN Runs" FontSize="18" FontWeight="Bold" Foreground="#0f172a"/>
+            <TextBlock Text="Match each isolated cell to the DIA-NN raw file it became. Suggest automatically, edit any row, then Apply."
+                       FontSize="11" Foreground="#64748b" Margin="0,3,0,0"/>
+        </StackPanel>
+
+        <DockPanel Grid.Row="1" Margin="0,0,0,8" LastChildFill="False">
+            <TextBlock Text="Run:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,8,0"/>
+            <ComboBox x:Name="RunCombo" Width="320" Height="26" VerticalContentAlignment="Center"
+                      SelectionChanged="RunCombo_SelectionChanged"/>
+            <TextBlock Text="Strategy:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#334155" Margin="16,0,8,0"/>
+            <ComboBox x:Name="StrategyCombo" Width="160" Height="26" VerticalContentAlignment="Center">
+                <ComboBoxItem Content="By name (drop # / well)"/>
+                <ComboBoxItem Content="By order (drop # ↔ run)"/>
+            </ComboBox>
+            <Button Content="Suggest" Click="Suggest_Click" Padding="12,4" Margin="10,0,0,0"/>
+            <Button Content="Clear all links" Click="ClearAll_Click" Padding="12,4" Margin="8,0,0,0"/>
+            <TextBlock x:Name="InfoText" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#64748b"/>
+        </DockPanel>
+
+        <DataGrid Grid.Row="2" x:Name="MatchGrid"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False" CanUserDeleteRows="False"
+                  HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                  RowHeight="30" BorderBrush="#e2e8f0" BorderThickness="1"
+                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Drop #" Binding="{Binding DropNo}" Width="70" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Well" Binding="{Binding Well}" Width="70" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Ø (µm)" Binding="{Binding DiameterText}" Width="70" IsReadOnly="True"/>
+                <DataGridTemplateColumn Header="DIA-NN raw file" Width="*">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <ComboBox ItemsSource="{Binding DataContext.RawFileNames, RelativeSource={RelativeSource AncestorType=Window}}"
+                                      SelectedItem="{Binding RawFileName, UpdateSourceTrigger=PropertyChanged}"
+                                      IsEditable="False" BorderThickness="0" Background="Transparent"
+                                      VerticalContentAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Method" Binding="{Binding Method}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Conf" Binding="{Binding ConfidenceText}" Width="60" IsReadOnly="True"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Apply links" Click="Apply_Click" Padding="18,6" Margin="0,0,10,0"
+                    Background="#2563eb" Foreground="White" BorderThickness="0" FontWeight="SemiBold"/>
+            <Button Content="Close" Click="Close_Click" IsCancel="True" Padding="18,6"/>
+        </StackPanel>
+    </Grid>
+</Window>

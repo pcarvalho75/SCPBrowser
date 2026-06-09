@@ -208,7 +208,7 @@
                            Margin="0,8,0,0"
                            ToolTip="Step 2: Assign raw files to an experimental plate"/>
 
-                <ComboBox Grid.Row="2" Grid.Column="1"
+                <ComboBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
                          
                            x:Name="PlateComboBox"
                           ItemsSource="{Binding Plates}"
@@ -217,19 +217,20 @@
                     
                           Padding="6,4"
                           VerticalContentAlignment="Center"
-                          Margin="0,8,8,0"
+                          Margin="0,8,0,0"
                           SelectionChanged="PlateComboBox_SelectionChanged"
                 
                            ToolTip="Select the plate/experiment for these raw files"/>
 
-                <Button Grid.Row="2" Grid.Column="2"
-                        Content="New Plate..."
-                        Click="NewPlate_Click"
-                 
-                        Padding="12,6"
-                        Height="28"
-                        Margin="0,8,0,0"
-                        ToolTip="Create a new plate/experiment"/>
+                <!-- "New Plate" removed: plate creation now lives in Import ▸ Plate Metadata -->
+                <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2"
+                           x:Name="PlateEmptyHint"
+                           Text="No plates yet — use the Import ▸ Plate Metadata menu to register one."
+                           FontSize="10"
+                           FontStyle="Italic"
+                           Foreground="#dc2626"
+                           Margin="0,4,0,0"
+                           Visibility="Collapsed"/>
             </Grid>
 
         </Border>

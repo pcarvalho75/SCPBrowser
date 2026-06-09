@@ -17,6 +17,95 @@ namespace SCPBrowser.Services
         }
 
         /// <summary>
+        /// DDL for the cellenONE isolation tables (per-cell metadata + images stored as blobs).
+        /// Defined once and reused by both initial schema creation and the migration path so the two cannot drift.
+        /// IMPORTANT: image blobs live ONLY in cell_images. Never SELECT blob columns in list/scan/plot queries -
+        /// SQLite keeps large blobs on overflow pages, so row scans stay fast as long as the blob is not projected.
+        /// </summary>
+        private const string CellenOneSchemaSql = @"
+            -- ==================== CELLENONE ISOLATION ====================
+
+            -- One row per imported cellenONE .Run (isolation, or reagent-dispense provenance)
+            CREATE TABLE IF NOT EXISTS cellenone_runs (
+                cellenone_run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plate_id INTEGER NOT NULL,
+                run_uid TEXT,
+                run_type TEXT NOT NULL DEFAULT 'isolation',
+                instrument TEXT,
+                sw_version TEXT,
+                operator_name TEXT,
+                run_date TEXT,
+                humidity REAL,
+                total_detected INTEGER,
+                volume_dispensed_nl REAL,
+                concentration REAL,
+                channels TEXT,
+                target_labware TEXT,
+                field_size_x INTEGER,
+                field_size_y INTEGER,
+                dot_pitch INTEGER,
+                id_template TEXT,
+                source_dir TEXT,
+                gating_params_json TEXT,
+                background_image BLOB,
+                logfile_text TEXT,
+                file_hash TEXT,
+                imported_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (plate_id) REFERENCES plates(plate_id)
+            );
+
+            -- One row per isolated (printed) cell.
+            -- raw_file_id is the DEFERRED link to the DIA-NN run; NULL until the reconcile step matches it.
+            CREATE TABLE IF NOT EXISTS isolated_cells (
+                cell_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cellenone_run_id INTEGER NOT NULL,
+                plate_id INTEGER NOT NULL,
+                drop_no INTEGER,
+                target_well TEXT,
+                target INTEGER,
+                field INTEGER,
+                x_pos INTEGER,
+                y_pos INTEGER,
+                image_x REAL,
+                image_y REAL,
+                diameter REAL,
+                elongation REAL,
+                circularity REAL,
+                intensity REAL,
+                flu_diameter REAL,
+                flu_intensity REAL,
+                status TEXT,
+                isolated_at TEXT,
+                raw_file_id INTEGER,
+                link_method TEXT,
+                link_confidence REAL,
+                FOREIGN KEY (cellenone_run_id) REFERENCES cellenone_runs(cellenone_run_id),
+                FOREIGN KEY (plate_id) REFERENCES plates(plate_id),
+                FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
+            );
+
+            -- Per-cell images as blobs (one row per channel: 'Trans' | 'Blue').
+            -- thumb_blob drives the plate/grid overview; image_blob is fetched lazily by cell_id on click.
+            CREATE TABLE IF NOT EXISTS cell_images (
+                image_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cell_id INTEGER NOT NULL,
+                channel TEXT NOT NULL,
+                image_blob BLOB,
+                thumb_blob BLOB,
+                format TEXT,
+                width INTEGER,
+                height INTEGER,
+                FOREIGN KEY (cell_id) REFERENCES isolated_cells(cell_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_cellenone_runs_plate ON cellenone_runs(plate_id);
+            CREATE INDEX IF NOT EXISTS idx_isolated_cells_run ON isolated_cells(cellenone_run_id);
+            CREATE INDEX IF NOT EXISTS idx_isolated_cells_plate ON isolated_cells(plate_id);
+            CREATE INDEX IF NOT EXISTS idx_isolated_cells_rawfile ON isolated_cells(raw_file_id);
+            CREATE INDEX IF NOT EXISTS idx_cell_images_cell ON cell_images(cell_id);
+        ";
+
+        /// <summary>
         /// Creates a new project database with all necessary tables
         /// </summary>
         public async Task CreateProjectAsync(string projectName, string description)
@@ -288,6 +377,49 @@ namespace SCPBrowser.Services
             CREATE INDEX IF NOT EXISTS idx_cell_type_profiles_gene ON cell_type_profiles(gene_name);
         ";
                 await command.ExecuteNonQueryAsync();
+            }
+
+            // cellenONE isolation tables - run as a separate statement batch so the exact same DDL
+            // can be reused by EnsureCellenOneTablesExistAsync() for databases created before this feature.
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = CellenOneSchemaSql;
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        /// <summary>
+        /// Ensures the cellenONE isolation tables exist (migration for databases created before this feature).
+        /// Idempotent - safe to call on every project open.
+        /// </summary>
+        public async Task EnsureCellenOneTablesExistAsync()
+        {
+            using (var connection = new SqliteConnection(ConnectionString))
+            {
+                await connection.OpenAsync();
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = CellenOneSchemaSql;
+                    await command.ExecuteNonQueryAsync();
+                }
+
+                // Migration: add the in-frame pixel position columns to databases created before that feature.
+                bool hasImageX = false;
+                using (var check = connection.CreateCommand())
+                {
+                    check.CommandText = "PRAGMA table_info(isolated_cells)";
+                    using var reader = await check.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        if (reader.GetString(1).Equals("image_x", StringComparison.OrdinalIgnoreCase)) { hasImageX = true; break; }
+                    }
+                }
+                if (!hasImageX)
+                {
+                    using var alter = connection.CreateCommand();
+                    alter.CommandText = "ALTER TABLE isolated_cells ADD COLUMN image_x REAL; ALTER TABLE isolated_cells ADD COLUMN image_y REAL;";
+                    await alter.ExecuteNonQueryAsync();
+                }
             }
         }
 

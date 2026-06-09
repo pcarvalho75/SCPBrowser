@@ -104,7 +104,7 @@
                                FontSize="20" 
                                FontWeight="Bold"
                                Foreground="#0f172a"/>
-                    <TextBlock Text="Define technical metadata for an MS run/plate" 
+                    <TextBlock Text="Define plate metadata — optionally import a cellenONE isolation run"
                                FontSize="12"
                                Foreground="#64748b"
                                Margin="0,5,0,0"/>
@@ -213,20 +213,43 @@
                 BorderBrush="#e2e8f0"
                 BorderThickness="0,1,0,0"
                 Padding="30,15">
-            <StackPanel Orientation="Horizontal" 
-                        HorizontalAlignment="Right">
-                <Button Content="Create Plate" 
-                        x:Name="CreateButton"
-                        Click="Create_Click"
-                        IsDefault="True"
-                        Style="{StaticResource PrimaryButton}"
-                        IsEnabled="False"
-                        Margin="0,0,10,0"/>
-                <Button Content="Cancel" 
-                        Click="Cancel_Click"
-                        IsCancel="True"
-                        Style="{StaticResource SecondaryButton}"/>
-            </StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Optional cellenONE attach (left) -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="📷 Import cellenONE data..."
+                            x:Name="ImportCellenOneButton"
+                            Click="ImportCellenOne_Click"
+                            Style="{StaticResource SecondaryButton}"
+                            ToolTip="Pick a cellenONE isolation .Run folder to attach its cells/images and auto-fill metadata"/>
+                    <TextBlock x:Name="CellenOneStatusText"
+                               VerticalAlignment="Center"
+                               Margin="12,0,0,0"
+                               FontSize="11"
+                               Foreground="#059669"
+                               TextTrimming="CharacterEllipsis"
+                               MaxWidth="170"/>
+                </StackPanel>
+
+                <!-- Confirm / cancel (right) -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Create Plate"
+                            x:Name="CreateButton"
+                            Click="Create_Click"
+                            IsDefault="True"
+                            Style="{StaticResource PrimaryButton}"
+                            IsEnabled="False"
+                            Margin="0,0,10,0"/>
+                    <Button Content="Cancel"
+                            Click="Cancel_Click"
+                            IsCancel="True"
+                            Style="{StaticResource SecondaryButton}"/>
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </Window>

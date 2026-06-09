@@ -109,6 +109,7 @@ namespace SCPBrowser
                 {
                     PlateComboBox.SelectedIndex = 0;
                 }
+                PlateEmptyHint.Visibility = Plates.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
                 // Load existing biological conditions from database
 
@@ -420,45 +421,8 @@ namespace SCPBrowser
             }
         }
 
-        private void NewPlate_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new NewPlateDialog
-            {
-                Owner = this
-            };
-
-            if (dialog.ShowDialog() == true)
-            {
-                CreatePlateAsync(dialog.PlateInfo);
-            }
-        }
-
-        private async void CreatePlateAsync(PlateInfo plateInfo)
-        {
-            try
-            {
-                int plateId = await _plateService.CreatePlateAsync(plateInfo).ConfigureAwait(true);
-                plateInfo.PlateId = plateId;
-
-                Plates.Add(plateInfo);
-                PlateComboBox.SelectedItem = plateInfo;
-
-                MessageBox.Show(
-                    $"Plate '{plateInfo.PlateName}' created successfully!",
-                    "Plate Created",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-
-                MessageBox.Show(
-                    $"Error creating plate:\n\n{ex.Message}",
-                    "Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-            }
-        }
+        // Plate creation moved to the dedicated "Import Plate Metadata" entry on the Import menu;
+        // this dialog now only selects among already-registered plates.
 
         private void PlateComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {

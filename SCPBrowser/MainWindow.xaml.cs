@@ -182,6 +182,7 @@ namespace SCPBrowser
                     await _projectDatabaseService.EnsureCellTypeClassificationsTableExistsAsync();
 
                     await _projectDatabaseService.EnsureExcludedRunsTableExistsAsync();
+                    await _projectDatabaseService.EnsureCellenOneTablesExistAsync();
 
                     // Load project info
                     projectInfo = await _projectDatabaseService.GetProjectInfoAsync();
@@ -203,6 +204,7 @@ namespace SCPBrowser
                 // Update UI (must be on UI thread)
                 WelcomeScreen.Visibility = Visibility.Collapsed;
                 MainTabControl.Visibility = Visibility.Visible;
+                ImportPlateMetadataMenuItem.IsEnabled = true;
                 ImportParquetMenuItem.IsEnabled = true;
                 ImportFastaMenuItem.IsEnabled = true;
                 ImportOmicProfileMenuItem.IsEnabled = true;
@@ -724,6 +726,7 @@ namespace SCPBrowser
             // Reset UI
             WelcomeScreen.Visibility = Visibility.Visible;
             MainTabControl.Visibility = Visibility.Collapsed;
+            ImportPlateMetadataMenuItem.IsEnabled = false;
             ImportParquetMenuItem.IsEnabled = false;
             ImportOmicProfileMenuItem.IsEnabled = false;
             CloseProjectMenuItem.IsEnabled = false;
@@ -754,6 +757,65 @@ namespace SCPBrowser
             else
             {
                 Title = $"SCP Browser v{version} - {projectName}";
+            }
+        }
+
+        private async void ImportPlateMetadata_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_hasOpenProject || _plateService == null)
+            {
+                MessageBox.Show(
+                    "Please open or create a project first.",
+                    "No Project Open",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            var dialog = new NewPlateDialog { Owner = this };
+            if (dialog.ShowDialog() != true)
+                return;
+
+            try
+            {
+                // Persist the plate first so we have a plate_id to attach cellenONE cells to.
+                int plateId = await _plateService.CreatePlateAsync(dialog.PlateInfo);
+
+                // Optionally import the attached cellenONE isolation run (cells + images) against this plate.
+                if (!string.IsNullOrEmpty(dialog.CellenOneRunDir))
+                {
+                    LoadingOverlay.SetMessage("Importing cellenONE data");
+                    LoadingOverlay.SetProgress("Reading run...");
+                    LoadingOverlay.Show();
+                    // Let the overlay paint before the heavy work starts.
+                    await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);
+
+                    var importer = new CellenOneImportService(_currentProjectPath);
+                    var progress = new Progress<string>(msg => LoadingOverlay.SetProgress(msg));
+                    // Run the import (file parse + 800 image decodes/thumbnails + ~65 MB write) on a background
+                    // thread so the UI thread stays free to render and animate the overlay. The import's WPF
+                    // imaging works on frozen bitmaps, which is safe off the UI thread.
+                    await Task.Run(() => importer.ImportRunAsync(dialog.CellenOneRunDir, plateId, progress));
+
+                    LoadingOverlay.Hide();
+                }
+
+                // Refresh the plate filter so the new plate is available immediately.
+                await PlateFilterControl.LoadPlatesAsync(_currentProjectPath);
+
+                string msg = string.IsNullOrEmpty(dialog.CellenOneRunDir)
+                    ? $"Plate '{dialog.PlateInfo.PlateName}' registered."
+                    : $"Plate '{dialog.PlateInfo.PlateName}' registered with {dialog.CellenOneCellCount} isolated cells.";
+                MessageBox.Show(msg, "Plate Registered", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                LoadingOverlay.Hide();
+                MessageBox.Show(
+                    $"Error registering plate:\n\n{ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
         }
 
@@ -829,6 +891,41 @@ namespace SCPBrowser
         }
 
         // ==================== EXISTING MENU HANDLERS ====================
+
+        private void CellViewer_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_hasOpenProject || _currentProjectPath == null)
+            {
+                MessageBox.Show("Please open or create a project first.", "No Project Open", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var viewer = new Controls.CellPlateViewerControl();
+            var window = new Window
+            {
+                Title = "Cell Plate Viewer",
+                Content = viewer,
+                Width = 1150,
+                Height = 740,
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
+            viewer.Initialize(_currentProjectPath);
+            window.Show();
+        }
+
+        private void ReconcileCells_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_hasOpenProject || _currentProjectPath == null)
+            {
+                MessageBox.Show("Please open or create a project first.", "No Project Open", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dlg = new ReconcileCellsDialog { Owner = this };
+            dlg.Initialize(_currentProjectPath);
+            dlg.ShowDialog();
+        }
 
         private void GoDatabase_Click(object sender, RoutedEventArgs e)
         {

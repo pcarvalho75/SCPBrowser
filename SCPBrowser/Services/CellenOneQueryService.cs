@@ -22,6 +22,7 @@ namespace SCPBrowser.Services
         {
             return QueryAsync(@"
                 SELECT r.cellenone_run_id, r.plate_id, p.plate_name, r.run_uid, r.run_date,
+                       r.ejection_bound, r.sedimentation_bound,
                        COUNT(ic.cell_id) AS cell_count
                 FROM cellenone_runs r
                 LEFT JOIN plates p ON p.plate_id = r.plate_id
@@ -36,7 +37,9 @@ namespace SCPBrowser.Services
                     PlateName = StrN(r, 2),
                     RunUid = StrN(r, 3),
                     RunDate = StrN(r, 4),
-                    CellCount = r.GetInt32(5)
+                    EjectionBound = IntN(r, 5),
+                    SedimentationBound = IntN(r, 6),
+                    CellCount = r.GetInt32(7)
                 });
         }
 
@@ -82,6 +85,17 @@ namespace SCPBrowser.Services
                 },
                 cmd => cmd.Parameters.AddWithValue("@r", cellenOneRunId));
         }
+
+        /// <summary>Persists user-edited (or re-parsed) ejection/sedimentation zone boundaries for a run.</summary>
+        public Task SetRunBoundsAsync(int cellenOneRunId, int? ejection, int? sedimentation)
+            => ExecuteNonQueryAsync(
+                "UPDATE cellenone_runs SET ejection_bound = @e, sedimentation_bound = @s WHERE cellenone_run_id = @r",
+                cmd =>
+                {
+                    cmd.Parameters.AddWithValue("@e", (object?)ejection ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@s", (object?)sedimentation ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@r", cellenOneRunId);
+                });
 
         /// <summary>CellProfiler-style phenotype features (feature name → value) for one cell, computed by CellPhenotypeService. Empty until a run is profiled.</summary>
         public Task<List<(string Feature, double Value)>> GetCellFeaturesAsync(int cellId)

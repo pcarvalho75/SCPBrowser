@@ -43,6 +43,12 @@ namespace SCPBrowser.Models
         public int? FieldSizeY { get; set; }
         public int? DotPitch { get; set; }
 
+        /// <summary>Camera-pixel position (along the saved frame's X/along-channel axis) of the ejection-zone boundary — the "fire" line; a cell that meets the criteria is ejected at/crossing this position. Run-level constant. Source of truth: logfile "Ejection zone boundary".</summary>
+        public int? EjectionBound { get; set; }
+
+        /// <summary>Camera-pixel position of the sedimentation-zone boundary (start of the active corridor where cells settle/wait). Run-level constant. Logfile "Sedimentation zone boundary" / .par AdditionalParams "Sedimentation".</summary>
+        public int? SedimentationBound { get; set; }
+
         /// <summary>Well-ID template from the .par RunDirSettings ID (e.g. 2V58C18M-BM-$). Used later for run linkage.</summary>
         public string? IdTemplate { get; set; }
 
@@ -151,6 +157,12 @@ namespace SCPBrowser.Models
         public string? RunUid { get; set; }
         public string? RunDate { get; set; }
         public int CellCount { get; set; }
+
+        /// <summary>Run-level ejection-zone boundary (camera px, along-channel/X axis). Null if not recorded.</summary>
+        public int? EjectionBound { get; set; }
+
+        /// <summary>Run-level sedimentation-zone boundary (camera px). Null if not recorded.</summary>
+        public int? SedimentationBound { get; set; }
 
         public override string ToString()
             => $"{PlateName ?? "(plate?)"} — {RunUid ?? "run"} ({CellCount} cells)";

@@ -33,6 +33,7 @@ namespace SCPBrowser.Controls
         private CellRunSummary? _currentRun;
         private IsolatedCell? _selected;
         private ScottPlot.Plottables.Scatter? _highlightDot;
+        private BitmapSource? _lastTrans, _lastBlue; // raw detail images, kept so zone stripes toggle without a DB reload
 
         private double _zoom = 1.0; // tile-size multiplier from the Size slider (1.0 = fill width)
 
@@ -101,7 +102,11 @@ namespace SCPBrowser.Controls
                 ComputeMorphStats(); // per-run robust baseline used by the morphology-outlier auto-flag
 
                 int linked = _cells.Count(c => c.RawFileId != null);
-                InfoText.Text = $"{_cells.Count} cells · {linked} linked to runs · plate \"{run.PlateName}\"";
+                EjBoundBox.Value = run.EjectionBound;
+                SedBoundBox.Value = run.SedimentationBound;
+                int outOfZone = (run.EjectionBound != null || run.SedimentationBound != null) ? _cells.Count(c => !WithinBounds(c)) : 0;
+                InfoText.Text = $"{_cells.Count} cells · {linked} linked · plate \"{run.PlateName}\""
+                              + (outOfZone > 0 ? $" · {outOfZone} outside ejection zone" : "");
 
                 RenderGrid();
                 RenderScatter();
@@ -298,8 +303,10 @@ namespace SCPBrowser.Controls
                 var t = await _query!.GetCellImageAsync(cell.CellId, "Trans");
                 var b = await _query!.GetCellImageAsync(cell.CellId, "Blue");
                 if (!ReferenceEquals(_selected, cell)) return; // superseded by a newer selection (rapid arrow nav)
-                TransImage.Source = t != null ? BytesToImage(t) : null;
-                BlueImage.Source = b != null ? BytesToImage(b) : null;
+                _lastTrans = t != null ? BytesToImage(t) : null;
+                _lastBlue = b != null ? BytesToImage(b) : null;
+                TransImage.Source = _lastTrans != null ? ApplyZoneStripes(_lastTrans) : null;
+                BlueImage.Source = _lastBlue != null ? ApplyZoneStripes(_lastBlue) : null;
 
                 var feats = await _query!.GetCellFeaturesAsync(cell.CellId);
                 if (!ReferenceEquals(_selected, cell)) return;
@@ -366,6 +373,8 @@ namespace SCPBrowser.Controls
             PhenotypeText.Text = "";
             TransImage.Source = null;
             BlueImage.Source = null;
+            _lastTrans = null;
+            _lastBlue = null;
             ReviewPanel.Visibility = Visibility.Collapsed;
         }
 
@@ -388,10 +397,13 @@ namespace SCPBrowser.Controls
                 return;
 
             var run = _currentRun;
+            run.EjectionBound = EjBoundBox.Value;            // reanalyze with exactly the bounds shown on screen
+            run.SedimentationBound = SedBoundBox.Value;
             ReanalyzeButton.IsEnabled = false;
             ReconcileButton.IsEnabled = false;
             try
             {
+                await _query.SetRunBoundsAsync(run.CellenOneRunId, run.EjectionBound, run.SedimentationBound);
                 var progress = new Progress<string>(m => InfoText.Text = m);
                 int flagged = await Task.Run(async () =>
                 {
@@ -618,8 +630,9 @@ namespace SCPBrowser.Controls
 
         private bool PassesFilter(IsolatedCell c)
         {
+            if (WithinBoundsCheck?.IsChecked == true && !WithinBounds(c)) return false; // ejection-zone filter ANDs with review
             int fi = ReviewFilterCombo?.SelectedIndex ?? 0;
-            if (fi <= 0) return true; // All
+            if (fi <= 0) return true; // All review states
             return fi switch
             {
                 1 => StateOf(c) == ReviewState.NeedsReview,
@@ -627,6 +640,75 @@ namespace SCPBrowser.Controls
                 3 => StateOf(c) == ReviewState.Discarded,
                 _ => true
             };
+        }
+
+        // ----- ejection / sedimentation zone boundaries -----
+
+        /// <summary>A cell is "within bounds" if its detected X (along-channel) position lies between the sedimentation and ejection boundaries. Cells with unknown position, or runs with no bounds, are not excluded.</summary>
+        private bool WithinBounds(IsolatedCell c)
+        {
+            int? ej = _currentRun?.EjectionBound, sed = _currentRun?.SedimentationBound;
+            int? cutoff = ej.HasValue && sed.HasValue ? Math.Max(ej.Value, sed.Value) : (ej ?? sed);
+            if (cutoff == null || c.ImageX == null) return true; // a cell is valid if it sits at/before the ejection line
+            return c.ImageX.Value <= cutoff.Value;
+        }
+
+        /// <summary>Returns the image with vertical ejection (red) / sedimentation (green) boundary lines drawn at their camera-pixel X when "Show zones" is on. Pixel-accurate (drawn into the bitmap, so it scales with the Uniform-stretched display).</summary>
+        private BitmapSource ApplyZoneStripes(BitmapSource src)
+        {
+            if (ShowZonesCheck.IsChecked != true) return src;
+            int? ej = _currentRun?.EjectionBound, sed = _currentRun?.SedimentationBound;
+            if (ej == null && sed == null) return src;
+
+            int w = src.PixelWidth, h = src.PixelHeight;
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                dc.DrawImage(src, new System.Windows.Rect(0, 0, w, h));
+                double lw = Math.Max(1.0, w / 320.0);
+                if (sed is int s && s >= 0 && s <= w)
+                    dc.DrawLine(new Pen(Brushes.LimeGreen, lw), new System.Windows.Point(s, 0), new System.Windows.Point(s, h));
+                if (ej is int e && e >= 0 && e <= w)
+                    dc.DrawLine(new Pen(Brushes.Red, lw), new System.Windows.Point(e, 0), new System.Windows.Point(e, h));
+            }
+            var rtb = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(dv);
+            rtb.Freeze();
+            return rtb;
+        }
+
+        private void RefreshDetailImages()
+        {
+            if (_lastTrans != null) TransImage.Source = ApplyZoneStripes(_lastTrans);
+            if (_lastBlue != null) BlueImage.Source = ApplyZoneStripes(_lastBlue);
+        }
+
+        private void ZoneDisplay_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            RefreshDetailImages();
+        }
+
+        private void ZoneFilter_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            RefreshFilterAndCounts();
+        }
+
+        private async void SaveBounds_Click(object sender, RoutedEventArgs e)
+        {
+            if (_query == null || _currentRun == null) return;
+            int? ej = EjBoundBox.Value, sed = SedBoundBox.Value;
+            _currentRun.EjectionBound = ej;
+            _currentRun.SedimentationBound = sed;
+            try
+            {
+                await _query.SetRunBoundsAsync(_currentRun.CellenOneRunId, ej, sed);
+                InfoText.Text = $"Saved zones for \"{_currentRun.PlateName}\": ejection {ej?.ToString() ?? "—"}, sedimentation {sed?.ToString() ?? "—"} px.";
+            }
+            catch (Exception ex) { InfoText.Text = "Save zones failed: " + ex.Message; }
+            RefreshDetailImages();
+            RefreshFilterAndCounts();
         }
 
         private static Border MakeDoubletBadge(int count)

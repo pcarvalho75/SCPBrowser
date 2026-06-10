@@ -49,6 +49,24 @@ namespace SCPBrowser.Services
 
             var (bg, bw, bh) = ToGray(bgPng);
 
+            // Isolation ROI: only objects inside the ejection/sedimentation bounds are co-dispensed cells. Objects
+            // elsewhere in the frame (the nozzle beyond the ejection/fire line, off-channel edges) are NOT co-isolated
+            // and must not be counted, or the doublet rate is grossly inflated. Null bounds (runs predating zone
+            // parsing) ⇒ whole frame, as before.
+            int? ejBound = null, sedBound = null;
+            await WithConnectionAsync(async conn =>
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT ejection_bound, sedimentation_bound FROM cellenone_runs WHERE cellenone_run_id=@r";
+                cmd.Parameters.AddWithValue("@r", cellenOneRunId);
+                using var rd = await cmd.ExecuteReaderAsync();
+                if (await rd.ReadAsync())
+                {
+                    ejBound = rd.IsDBNull(0) ? (int?)null : rd.GetInt32(0);
+                    sedBound = rd.IsDBNull(1) ? (int?)null : rd.GetInt32(1);
+                }
+            });
+
             var items = new List<(int cellId, byte[] png)>();
             await WithConnectionAsync(async conn =>
             {
@@ -69,7 +87,7 @@ namespace SCPBrowser.Services
             {
                 ct.ThrowIfCancellationRequested();
                 var (g, w, h) = ToGray(items[i].png);
-                perCell.Add((items[i].cellId, CandidateAreas(g, w, h, bg, bw, bh)));
+                perCell.Add((items[i].cellId, CandidateAreas(g, w, h, bg, bw, bh, ejBound, sedBound)));
                 if (i % 50 == 0) progress?.Report($"Analyzing images for doublets... {i}/{items.Count}");
             }
 
@@ -98,11 +116,13 @@ namespace SCPBrowser.Services
                 await tx.CommitAsync();
             });
 
-            progress?.Report($"Doublet analysis: {flagged}/{perCell.Count} flagged (cell≈{median}px, threshold {eff}px).");
+            int? cut = ejBound.HasValue && sedBound.HasValue ? Math.Max(ejBound.Value, sedBound.Value) : (ejBound ?? sedBound);
+            string roi = cut.HasValue ? $", ROI x≤{cut}px (ejection line)" : ", whole frame (no bounds)";
+            progress?.Report($"Doublet analysis: {flagged}/{perCell.Count} flagged (cell≈{median}px, threshold {eff}px{roi}).");
             return flagged;
         }
 
-        private List<int> CandidateAreas(byte[] fr, int w, int h, byte[] bg, int bw, int bh)
+        private List<int> CandidateAreas(byte[] fr, int w, int h, byte[] bg, int bw, int bh, int? ejBound, int? sedBound)
         {
             int W = Math.Min(w, bw), H = Math.Min(h, bh);
             var mask = new bool[w * h];
@@ -111,10 +131,25 @@ namespace SCPBrowser.Services
                     if (Math.Abs(fr[y * w + x] - bg[y * bw + x]) > DiffThreshold)
                         mask[y * w + x] = true;
             return ConnectedComponents(mask, w, h)
-                .Where(b => b.Area >= CandidateFloor && b.Area <= MaxArea && b.Fill >= MinFill)
+                .Where(b => b.Area >= CandidateFloor && b.Area <= MaxArea && b.Fill >= MinFill
+                            && InIsolationRoi((b.MinX + b.MaxX) / 2.0, (b.MinY + b.MaxY) / 2.0, ejBound, sedBound))
                 .Select(b => b.Area)
                 .OrderByDescending(a => a)
                 .ToList();
+        }
+
+        /// <summary>True if a blob centroid lies inside the isolation corridor — the band on the along-channel X axis
+        /// BETWEEN the two (vertical) zone boundary lines. Order-agnostic (ejection may be left or right of
+        /// sedimentation depending on the run). Objects outside the band (the nozzle beyond the fire line, far edges)
+        /// are excluded so only genuinely co-isolated cells count. Needs both bounds; missing either ⇒ no restriction.</summary>
+        private static bool InIsolationRoi(double x, double y, int? ejBound, int? sedBound)
+        {
+            // Over-flagging junk (the nozzle, reflections) sits BEYOND the ejection/fire line at high X. Real
+            // co-isolated cells lie at/before it and can sit anywhere down to the far-left channel start (the confirmed
+            // doublet 2676 is at X≈35-87). So the rule is a single high-X cutoff = the OUTER (larger) boundary; no lower
+            // cutoff, which would wrongly drop far-left real cells. A null bound ⇒ no restriction.
+            int? cutoff = ejBound.HasValue && sedBound.HasValue ? Math.Max(ejBound.Value, sedBound.Value) : (ejBound ?? sedBound);
+            return !cutoff.HasValue || x <= cutoff.Value;
         }
 
         private class Blob

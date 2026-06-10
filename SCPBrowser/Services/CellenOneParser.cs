@@ -120,6 +120,14 @@ namespace SCPBrowser.Services
                     run.VolumeDispensedNl = ExtractLabeledNumber(line);
                 else if (line.Contains("Concentration estimated", StringComparison.OrdinalIgnoreCase))
                     run.Concentration = ExtractLabeledNumber(line);
+                else if (StartsWith(line, "Ejection zone boundary"))
+                {
+                    // "Ejection zone boundary: 386 <tab> Sedimentation zone boundary: 150" — the source of truth.
+                    var mEj = Regex.Match(line, @"Ejection zone boundary:\s*(\d+)");
+                    if (mEj.Success && int.TryParse(mEj.Groups[1].Value, out var ej)) run.EjectionBound = ej;
+                    var mSed = Regex.Match(line, @"Sedimentation zone boundary:\s*(\d+)");
+                    if (mSed.Success && int.TryParse(mSed.Groups[1].Value, out var sed)) run.SedimentationBound = sed;
+                }
             }
         }
 
@@ -162,6 +170,13 @@ namespace SCPBrowser.Services
                         gating[key] = val;
                 if (gating.Count > 0)
                     run.GatingParamsJson = JsonSerializer.Serialize(gating);
+
+                // Sedimentation boundary fallback from AdditionalParams JSON (the .par doesn't carry the ejection bound).
+                if (run.SedimentationBound == null && cells.TryGetValue("AdditionalParams", out var addl) && !string.IsNullOrEmpty(addl))
+                {
+                    var m = Regex.Match(addl, "\"Sedimentation\"\\s*:\\s*(\\d+)");
+                    if (m.Success && int.TryParse(m.Groups[1].Value, out var sed)) run.SedimentationBound = sed;
+                }
             }
 
             // Fallback target labware from the last-used UI settings if the logfile did not provide one.
@@ -230,6 +245,11 @@ namespace SCPBrowser.Services
                         var bg = ExtractHyperlink(Get(cols, 16));
                         if (!string.IsNullOrEmpty(bg)) run.BackgroundImagePath = Path.Combine(runDir, bg);
                     }
+
+                    // Run-level zone boundaries (cols EjBound=17, SedBound=18; constant across rows). Fallback only —
+                    // the logfile/.par are preferred as the source of truth and are parsed before this.
+                    if (run.EjectionBound == null) run.EjectionBound = ParseIntOrNull(Get(cols, 17));
+                    if (run.SedimentationBound == null) run.SedimentationBound = ParseIntOrNull(Get(cols, 18));
 
                     pending = cell;
                     pendingChannel = channel;

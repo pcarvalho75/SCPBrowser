@@ -44,6 +44,22 @@ namespace SCPBrowser.Services
             if (bgPng == null) return 0;
             var (bg, bw, bh) = ToGray(bgPng);
 
+            // Isolation ROI (same as the doublet detector): restrict segmentation to objects co-isolated within the
+            // ejection/sedimentation bounds, not the whole frame. Null bounds ⇒ whole frame.
+            int? ejBound = null, sedBound = null;
+            await WithConnectionAsync(async conn =>
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT ejection_bound, sedimentation_bound FROM cellenone_runs WHERE cellenone_run_id=@r";
+                cmd.Parameters.AddWithValue("@r", cellenOneRunId);
+                using var rd = await cmd.ExecuteReaderAsync();
+                if (await rd.ReadAsync())
+                {
+                    ejBound = rd.IsDBNull(0) ? (int?)null : rd.GetInt32(0);
+                    sedBound = rd.IsDBNull(1) ? (int?)null : rd.GetInt32(1);
+                }
+            });
+
             var items = new List<(int cellId, double? ix, double? iy, double? dia, byte[] png)>();
             await WithConnectionAsync(async conn =>
             {
@@ -72,7 +88,7 @@ namespace SCPBrowser.Services
                 {
                     var (g, w, h) = ToGray(it.png);
                     var feats = ProfileCell(g, w, h, bg, bw, bh, it.ix, it.iy, it.dia,
-                                            DiffThreshold, CandidateFloor, MaxArea, TextureLevels);
+                                            DiffThreshold, CandidateFloor, MaxArea, TextureLevels, ejBound, sedBound);
                     if (feats != null)
                     {
                         foreach (var kv in feats) rows.Add((it.cellId, kv.Key, kv.Value));
@@ -119,7 +135,8 @@ namespace SCPBrowser.Services
         /// </summary>
         public static Dictionary<string, double>? ProfileCell(
             byte[] g, int w, int h, byte[] bg, int bw, int bh,
-            double? ix, double? iy, double? dia, int diffThreshold, int floor, int maxArea, int levels)
+            double? ix, double? iy, double? dia, int diffThreshold, int floor, int maxArea, int levels,
+            int? ejBound = null, int? sedBound = null)
         {
             int W = Math.Min(w, bw), H = Math.Min(h, bh);
             var mask = new bool[w * h];
@@ -128,7 +145,10 @@ namespace SCPBrowser.Services
                     if (Math.Abs(g[y * w + x] - bg[y * bw + x]) > diffThreshold)
                         mask[y * w + x] = true;
 
-            var blobs = ConnectedComponents(mask, w, h).Where(b => b.Count >= floor && b.Count <= maxArea).ToList();
+            var blobs = ConnectedComponents(mask, w, h)
+                .Where(b => b.Count >= floor && b.Count <= maxArea)
+                .Where(b => { var c = Centroid(b, w); return InRoi(c.x, c.y, ejBound, sedBound); })
+                .ToList();
             if (blobs.Count == 0) return null;
 
             // Primary = the cell-sized blob nearest the instrument's cell coordinate (else the largest).
@@ -176,11 +196,6 @@ namespace SCPBrowser.Services
                 m20 += dx * dx; m02 += dy * dy; m11 += dx * dy;
             }
             m20 /= n; m02 /= n; m11 /= n;
-            double common = Math.Sqrt(Math.Max(0, (m20 - m02) * (m20 - m02) / 4 + m11 * m11));
-            double lam1 = (m20 + m02) / 2 + common; // major
-            double lam2 = (m20 + m02) / 2 - common; // minor
-            double major = 4 * Math.Sqrt(Math.Max(0, lam1));
-            double minor = 4 * Math.Sqrt(Math.Max(0, lam2));
 
             // --- perimeter (boundary pixels with a 4-neighbor outside the blob) + convex hull ---
             var blobSet = new HashSet<int>(pixels);
@@ -197,34 +212,27 @@ namespace SCPBrowser.Services
             double perimeter = Math.Max(1, perim);
             double hullArea = ConvexHullArea(pixels, w);
 
+            // Shape features the cellenONE does NOT already report. (It provides Diameter/Elongation/Circularity per
+            // cell, so EquivalentDiameter/FormFactor/Eccentricity/AspectRatio/axis-lengths are intentionally omitted
+            // as redundant — the instrument's own values stay primary.)
             f["AreaShape_Area"] = n;
             f["AreaShape_Perimeter"] = perimeter;
-            f["AreaShape_EquivalentDiameter"] = 2 * Math.Sqrt(n / Math.PI);
-            f["AreaShape_FormFactor"] = 4 * Math.PI * n / (perimeter * perimeter);      // 1.0 = perfect circle
-            f["AreaShape_Compactness"] = perimeter * perimeter / (4 * Math.PI * n);     // inverse of FormFactor
-            f["AreaShape_Eccentricity"] = lam1 > 0 ? Math.Sqrt(Math.Max(0, 1 - lam2 / lam1)) : 0;
-            f["AreaShape_MajorAxisLength"] = major;
-            f["AreaShape_MinorAxisLength"] = minor;
-            f["AreaShape_AspectRatio"] = minor > 1e-9 ? major / minor : 0;
             f["AreaShape_Orientation"] = 0.5 * Math.Atan2(2 * m11, m20 - m02) * 180.0 / Math.PI;
             f["AreaShape_Extent"] = (double)n / Math.Max(1, (maxx - minx + 1) * (maxy - miny + 1));
-            f["AreaShape_Solidity"] = hullArea > 0 ? Math.Min(1.0, n / hullArea) : 1.0;
+            f["AreaShape_Solidity"] = hullArea > 0 ? Math.Min(1.0, n / hullArea) : 1.0; // convex-hull irregularity
 
-            // --- intensity within the mask (rescaled 0..1, CellProfiler convention) ---
-            double iSum = 0, iSum2 = 0, iMin = double.MaxValue, iMax = double.MinValue;
+            // --- intensity within the mask (rescaled 0..1). The instrument already reports mean Intensity, so we keep
+            //     only the spread/total it does NOT provide (Std, Integrated, MAD); Mean/Min/Max are omitted. ---
+            double iSum = 0, iSum2 = 0;
             var vals = new double[n];
             for (int k = 0; k < n; k++)
             {
                 double v = g[pixels[k]] / 255.0;
                 vals[k] = v; iSum += v; iSum2 += v * v;
-                if (v < iMin) iMin = v; if (v > iMax) iMax = v;
             }
             double iMean = iSum / n;
-            f["Intensity_MeanIntensity"] = iMean;
             f["Intensity_StdIntensity"] = Math.Sqrt(Math.Max(0, iSum2 / n - iMean * iMean));
             f["Intensity_IntegratedIntensity"] = iSum;
-            f["Intensity_MinIntensity"] = iMin;
-            f["Intensity_MaxIntensity"] = iMax;
             f["Intensity_MADIntensity"] = MedianAbsDev(vals);
 
             // --- Haralick texture (GLCM, intra-mask neighbor pairs, symmetric, d=1, 0°+90°) ---
@@ -318,6 +326,15 @@ namespace SCPBrowser.Services
             double sx = 0, sy = 0;
             foreach (int p in blob) { sx += p % w; sy += p / w; }
             return (sx / blob.Count, sy / blob.Count);
+        }
+
+        /// <summary>True if a blob centroid is inside the isolation corridor — the X band between the two zone boundary lines (order-agnostic). Needs both bounds; missing either ⇒ no restriction.</summary>
+        private static bool InRoi(double x, double y, int? ejBound, int? sedBound)
+        {
+            // Single high-X cutoff at the outer (ejection) boundary; objects past it (nozzle) are excluded, real cells
+            // anywhere before it are kept. See CellImageAnalysisService.InIsolationRoi for the rationale.
+            int? cutoff = ejBound.HasValue && sedBound.HasValue ? Math.Max(ejBound.Value, sedBound.Value) : (ejBound ?? sedBound);
+            return !cutoff.HasValue || x <= cutoff.Value;
         }
 
         private static double MedianAbsDev(double[] vals)

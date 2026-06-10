@@ -44,6 +44,8 @@ namespace SCPBrowser.Services
                 field_size_x INTEGER,
                 field_size_y INTEGER,
                 dot_pitch INTEGER,
+                ejection_bound INTEGER,
+                sedimentation_bound INTEGER,
                 id_template TEXT,
                 source_dir TEXT,
                 gating_params_json TEXT,
@@ -537,6 +539,24 @@ namespace SCPBrowser.Services
                 {
                     using var alter = connection.CreateCommand();
                     alter.CommandText = "ALTER TABLE isolated_cells ADD COLUMN review_status TEXT; ALTER TABLE isolated_cells ADD COLUMN review_note TEXT;";
+                    await alter.ExecuteNonQueryAsync();
+                }
+
+                // Migration: run-level ejection/sedimentation zone boundaries (camera pixels).
+                bool hasEjBound = false;
+                using (var check = connection.CreateCommand())
+                {
+                    check.CommandText = "PRAGMA table_info(cellenone_runs)";
+                    using var reader = await check.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        if (reader.GetString(1).Equals("ejection_bound", StringComparison.OrdinalIgnoreCase)) { hasEjBound = true; break; }
+                    }
+                }
+                if (!hasEjBound)
+                {
+                    using var alter = connection.CreateCommand();
+                    alter.CommandText = "ALTER TABLE cellenone_runs ADD COLUMN ejection_bound INTEGER; ALTER TABLE cellenone_runs ADD COLUMN sedimentation_bound INTEGER;";
                     await alter.ExecuteNonQueryAsync();
                 }
             }

@@ -125,12 +125,12 @@ namespace SCPBrowser.Services
                 INSERT INTO cellenone_runs
                     (plate_id, run_uid, run_type, instrument, sw_version, operator_name, run_date, humidity,
                      total_detected, volume_dispensed_nl, concentration, channels, target_labware,
-                     field_size_x, field_size_y, dot_pitch, id_template, source_dir, gating_params_json,
+                     field_size_x, field_size_y, dot_pitch, ejection_bound, sedimentation_bound, id_template, source_dir, gating_params_json,
                      background_image, logfile_text, file_hash, imported_at)
                 VALUES
                     (@plate_id, @run_uid, @run_type, @instrument, @sw_version, @operator_name, @run_date, @humidity,
                      @total_detected, @volume_dispensed_nl, @concentration, @channels, @target_labware,
-                     @field_size_x, @field_size_y, @dot_pitch, @id_template, @source_dir, @gating_params_json,
+                     @field_size_x, @field_size_y, @dot_pitch, @ejection_bound, @sedimentation_bound, @id_template, @source_dir, @gating_params_json,
                      @background_image, @logfile_text, @file_hash, @imported_at);
                 SELECT last_insert_rowid();";
 
@@ -150,6 +150,8 @@ namespace SCPBrowser.Services
             AddParam(cmd, "@field_size_x", run.FieldSizeX);
             AddParam(cmd, "@field_size_y", run.FieldSizeY);
             AddParam(cmd, "@dot_pitch", run.DotPitch);
+            AddParam(cmd, "@ejection_bound", run.EjectionBound);
+            AddParam(cmd, "@sedimentation_bound", run.SedimentationBound);
             AddParam(cmd, "@id_template", run.IdTemplate);
             AddParam(cmd, "@source_dir", run.SourceDir);
             AddParam(cmd, "@gating_params_json", run.GatingParamsJson);

@@ -46,7 +46,8 @@ namespace SCPBrowser.Services
             return QueryAsync(@"
                 SELECT cell_id, cellenone_run_id, plate_id, drop_no, target_well, target, field, x_pos, y_pos, image_x, image_y,
                        diameter, elongation, circularity, intensity, flu_diameter, flu_intensity,
-                       status, isolated_at, raw_file_id, link_method, link_confidence, n_objects, blob_count
+                       status, isolated_at, raw_file_id, link_method, link_confidence, n_objects, blob_count,
+                       review_status, review_note
                 FROM isolated_cells
                 WHERE cellenone_run_id = @r
                 ORDER BY drop_no",
@@ -75,9 +76,37 @@ namespace SCPBrowser.Services
                     LinkMethod = StrN(r, 20),
                     LinkConfidence = DblN(r, 21),
                     NObjects = IntN(r, 22),
-                    BlobCount = IntN(r, 23)
+                    BlobCount = IntN(r, 23),
+                    ReviewStatus = StrN(r, 24),
+                    ReviewNote = StrN(r, 25)
                 },
                 cmd => cmd.Parameters.AddWithValue("@r", cellenOneRunId));
+        }
+
+        /// <summary>CellProfiler-style phenotype features (feature name → value) for one cell, computed by CellPhenotypeService. Empty until a run is profiled.</summary>
+        public Task<List<(string Feature, double Value)>> GetCellFeaturesAsync(int cellId)
+            => QueryAsync(
+                "SELECT feature, value FROM cell_features WHERE cell_id = @c ORDER BY feature",
+                r => (r.GetString(0), r.IsDBNull(1) ? double.NaN : r.GetDouble(1)),
+                cmd => cmd.Parameters.AddWithValue("@c", cellId));
+
+        /// <summary>Clears the image-analysis doublet flags (blob_count) for a whole run, so a reanalysis starts from a clean slate. Instrument n_objects and manual review decisions are left untouched.</summary>
+        public Task ResetDoubletFlagsAsync(int cellenOneRunId)
+            => ExecuteNonQueryAsync(
+                "UPDATE isolated_cells SET blob_count = NULL WHERE cellenone_run_id = @r",
+                cmd => cmd.Parameters.AddWithValue("@r", cellenOneRunId));
+
+        /// <summary>Persists a cell's QC review disposition (null = unreviewed / "flag" / "keep" / "discard") and an optional note. Non-destructive — records the decision only.</summary>
+        public Task SetReviewStatusAsync(int cellId, string? status, string? note)
+        {
+            return ExecuteNonQueryAsync(
+                "UPDATE isolated_cells SET review_status = @s, review_note = @n WHERE cell_id = @c",
+                cmd =>
+                {
+                    cmd.Parameters.AddWithValue("@s", (object?)status ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@n", (object?)note ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@c", cellId);
+                });
         }
 
         /// <summary>cell_id → thumbnail bytes for one channel, for fast grid rendering.</summary>

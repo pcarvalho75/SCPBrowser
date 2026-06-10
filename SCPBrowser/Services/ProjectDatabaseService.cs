@@ -81,6 +81,8 @@ namespace SCPBrowser.Services
                 raw_file_id INTEGER,
                 link_method TEXT,
                 link_confidence REAL,
+                review_status TEXT,
+                review_note TEXT,
                 FOREIGN KEY (cellenone_run_id) REFERENCES cellenone_runs(cellenone_run_id),
                 FOREIGN KEY (plate_id) REFERENCES plates(plate_id),
                 FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
@@ -123,6 +125,31 @@ namespace SCPBrowser.Services
             );
             CREATE INDEX IF NOT EXISTS idx_cell_detections_run ON cell_detections(cellenone_run_id);
             CREATE INDEX IF NOT EXISTS idx_cell_detections_drop ON cell_detections(cellenone_run_id, drop_no);
+
+            -- CellProfiler-style per-cell phenotype features (long format: one row per cell per feature),
+            -- computed in C# from the segmented cell image. See CellPhenotypeService.
+            CREATE TABLE IF NOT EXISTS cell_features (
+                cell_id INTEGER NOT NULL,
+                feature TEXT NOT NULL,
+                value REAL,
+                PRIMARY KEY (cell_id, feature),
+                FOREIGN KEY (cell_id) REFERENCES isolated_cells(cell_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_cell_features_cell ON cell_features(cell_id);
+        ";
+
+        /// <summary>DDL for user-defined marker-only classes (class name + marker genes, no expression profile).</summary>
+        private const string MarkerClassSchemaSql = @"
+            CREATE TABLE IF NOT EXISTS marker_classes (
+                class_name TEXT PRIMARY KEY,
+                color TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS marker_class_genes (
+                class_name TEXT NOT NULL,
+                gene_name TEXT NOT NULL,
+                PRIMARY KEY (class_name, gene_name)
+            ) WITHOUT ROWID;
         ";
 
         /// <summary>
@@ -406,6 +433,26 @@ namespace SCPBrowser.Services
                 command.CommandText = CellenOneSchemaSql;
                 await command.ExecuteNonQueryAsync();
             }
+
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = MarkerClassSchemaSql;
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        /// <summary>Ensures the marker-class tables exist (migration for older databases). Idempotent.</summary>
+        public async Task EnsureMarkerClassesTablesExistAsync()
+        {
+            using (var connection = new SqliteConnection(ConnectionString))
+            {
+                await connection.OpenAsync();
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = MarkerClassSchemaSql;
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
         }
 
         /// <summary>
@@ -472,6 +519,24 @@ namespace SCPBrowser.Services
                 {
                     using var alter = connection.CreateCommand();
                     alter.CommandText = "ALTER TABLE isolated_cells ADD COLUMN blob_count INTEGER;";
+                    await alter.ExecuteNonQueryAsync();
+                }
+
+                // Migration: per-cell QC review disposition (manual flag / keep / discard) set in the viewer.
+                bool hasReviewStatus = false;
+                using (var check = connection.CreateCommand())
+                {
+                    check.CommandText = "PRAGMA table_info(isolated_cells)";
+                    using var reader = await check.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        if (reader.GetString(1).Equals("review_status", StringComparison.OrdinalIgnoreCase)) { hasReviewStatus = true; break; }
+                    }
+                }
+                if (!hasReviewStatus)
+                {
+                    using var alter = connection.CreateCommand();
+                    alter.CommandText = "ALTER TABLE isolated_cells ADD COLUMN review_status TEXT; ALTER TABLE isolated_cells ADD COLUMN review_note TEXT;";
                     await alter.ExecuteNonQueryAsync();
                 }
             }

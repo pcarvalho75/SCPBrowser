@@ -9,6 +9,7 @@ Location: SCPBrowser/Controls/ProjectBrowser2.xaml
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:local="clr-namespace:SCPBrowser"
+             xmlns:controls="clr-namespace:SCPBrowser.Controls"
              mc:Ignorable="d" 
              d:DesignHeight="600" d:DesignWidth="900"
              Background="White">
@@ -58,6 +59,11 @@ Location: SCPBrowser/Controls/ProjectBrowser2.xaml
             <!-- Conditions Tab -->
             <TabItem Header="Conditions">
                 <local:ConditionsBrowserControl x:Name="ConditionsBrowser"/>
+            </TabItem>
+
+            <!-- Marker Classes Tab -->
+            <TabItem Header="Marker Classes">
+                <controls:MarkerClassesControl x:Name="MarkerClassesBrowser"/>
             </TabItem>
 
         </TabControl>

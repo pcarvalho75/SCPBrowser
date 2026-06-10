@@ -70,6 +70,9 @@ namespace SCPBrowser.Controls
             _query = new CellenOneQueryService(projectDbPath);
             try
             {
+                // Self-migrate so review_status/review_note (and earlier cellenONE columns) exist even on a DB
+                // that hasn't been re-imported since these features landed.
+                await new ProjectDatabaseService(projectDbPath).EnsureCellenOneTablesExistAsync();
                 var runs = await _query.GetRunsWithCellsAsync();
                 RunCombo.ItemsSource = runs;
                 if (runs.Count > 0) RunCombo.SelectedIndex = 0;
@@ -95,12 +98,15 @@ namespace SCPBrowser.Controls
                 var raws = await _query.GetRawFilesForPlateAsync(run.PlateId);
                 _rawById = raws.ToDictionary(r => r.RawFileId, r => r);
 
+                ComputeMorphStats(); // per-run robust baseline used by the morphology-outlier auto-flag
+
                 int linked = _cells.Count(c => c.RawFileId != null);
                 InfoText.Text = $"{_cells.Count} cells · {linked} linked to runs · plate \"{run.PlateName}\"";
 
                 RenderGrid();
                 RenderScatter();
                 ClearDetail();
+                RefreshFilterAndCounts();
             }
             catch (Exception ex) { InfoText.Text = "Error loading run: " + ex.Message; }
         }
@@ -111,30 +117,25 @@ namespace SCPBrowser.Controls
             _tiles.Clear();
             if (_cells.Count == 0) { GridCanvas.Width = GridCanvas.Height = 0; return; }
 
-            var unlinkedBrush = new SolidColorBrush(Color.FromRgb(0xcb, 0xd5, 0xe1));
             foreach (var cell in _cells)
             {
-                int dcount = DoubletCount(cell);
-                bool doublet = dcount > 1;
                 var border = new Border
                 {
-                    BorderBrush = doublet ? new SolidColorBrush(Color.FromRgb(0xdc, 0x26, 0x26))
-                                          : (cell.RawFileId != null ? Brushes.SeaGreen : unlinkedBrush),
-                    BorderThickness = new Thickness(doublet || cell.RawFileId != null ? 2 : 1),
                     Background = Brushes.Black,
                     Tag = cell,
                     Cursor = Cursors.Hand,
-                    ToolTip = doublet
-                        ? $"drop {cell.DropNo}  Ø {cell.Diameter:F1}µm  ⚠ {dcount} cells (doublet?)"
-                        : $"drop {cell.DropNo}  Ø {cell.Diameter:F1}µm"
+                    ToolTip = BuildTileTooltip(cell)
                 };
 
                 var content = new Grid();
                 if (_thumbs.TryGetValue(cell.CellId, out var tb))
-                    content.Children.Add(new Image { Source = BytesToImage(tb), Stretch = Stretch.UniformToFill });
-                if (doublet)
-                    content.Children.Add(MakeDoubletBadge(dcount));
+                {
+                    var img = new Image { Source = BytesToImage(tb), Stretch = Stretch.UniformToFill };
+                    RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+                    content.Children.Add(img);
+                }
                 border.Child = content;
+                StyleTile(cell, border); // border colour + doublet/review badges from current state
 
                 border.MouseLeftButtonUp += (s, _) => { if ((s as Border)?.Tag is IsolatedCell c) SelectCell(c); };
                 GridCanvas.Children.Add(border);
@@ -285,6 +286,9 @@ namespace SCPBrowser.Controls
                 $"Isolated:    {cell.IsolatedAt}\n" +
                 $"DIA-NN run:  {link}";
 
+            ReviewPanel.Visibility = Visibility.Visible;
+            UpdateReviewDetail(cell);
+
             // Highlight the selected cell on the scatter (using whichever axes are active).
             HighlightSelectedOnScatter();
 
@@ -296,21 +300,31 @@ namespace SCPBrowser.Controls
                 if (!ReferenceEquals(_selected, cell)) return; // superseded by a newer selection (rapid arrow nav)
                 TransImage.Source = t != null ? BytesToImage(t) : null;
                 BlueImage.Source = b != null ? BytesToImage(b) : null;
+
+                var feats = await _query!.GetCellFeaturesAsync(cell.CellId);
+                if (!ReferenceEquals(_selected, cell)) return;
+                PhenotypeText.Text = feats.Count == 0
+                    ? "(none yet — use ↻ Reanalyze to compute phenotype features)"
+                    : string.Join("\n", feats.Select(ft => $"{ft.Feature,-34} {ft.Value,9:0.###}"));
             }
-            catch { /* image load failure shouldn't break selection */ }
+            catch { /* image / feature load failure shouldn't break selection */ }
         }
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (_selected == null) return;
-            // Don't hijack arrows while the run picker or size slider has focus.
-            if (e.OriginalSource is System.Windows.Controls.Primitives.Selector || e.OriginalSource is Slider) return;
+            // Don't hijack keys while the run picker, size slider, or the note box has focus.
+            if (e.OriginalSource is System.Windows.Controls.Primitives.Selector || e.OriginalSource is Slider || e.OriginalSource is TextBox) return;
             switch (e.Key)
             {
                 case Key.Left: MoveSelection(-1, 0); e.Handled = true; break;
                 case Key.Right: MoveSelection(1, 0); e.Handled = true; break;
                 case Key.Up: MoveSelection(0, -1); e.Handled = true; break;
                 case Key.Down: MoveSelection(0, 1); e.Handled = true; break;
+                case Key.F: SetSelectedReview("flag"); e.Handled = true; break;
+                case Key.K: SetSelectedReview("keep"); e.Handled = true; break;
+                case Key.D: SetSelectedReview("discard"); e.Handled = true; break;
+                case Key.Back: SetSelectedReview(null); e.Handled = true; break;
             }
         }
 
@@ -326,6 +340,7 @@ namespace SCPBrowser.Controls
             foreach (var c in _cells)
             {
                 if (c.CellId == _selected.CellId) continue;
+                if (!PassesFilter(c)) continue; // stay within the cells the current filter shows
                 int ox = (c.XPos ?? 1) - cx, oy = (c.YPos ?? 1) - cy;
                 if (dx != 0 && Math.Sign(ox) != dx) continue;
                 if (dy != 0 && Math.Sign(oy) != dy) continue;
@@ -340,21 +355,18 @@ namespace SCPBrowser.Controls
         /// <summary>Doublet count = the larger of the instrument's object count and the image blob count.</summary>
         private static int DoubletCount(IsolatedCell cell) => Math.Max(cell.NObjects ?? 0, cell.BlobCount ?? 0);
 
-        private static void ApplyNormalBorder(IsolatedCell cell, Border tile)
-        {
-            bool doublet = DoubletCount(cell) > 1;
-            tile.BorderBrush = doublet ? new SolidColorBrush(Color.FromRgb(0xdc, 0x26, 0x26))
-                              : (cell.RawFileId != null ? Brushes.SeaGreen : new SolidColorBrush(Color.FromRgb(0xcb, 0xd5, 0xe1)));
-            tile.BorderThickness = new Thickness(doublet || cell.RawFileId != null ? 2 : 1);
-        }
+        /// <summary>Restores a tile to its non-selected appearance (border + doublet/review badges) from current state.</summary>
+        private void ApplyNormalBorder(IsolatedCell cell, Border tile) => StyleTile(cell, tile);
 
         private void ClearDetail()
         {
             _selected = null;
             DetailHint.Visibility = Visibility.Visible;
             DetailText.Text = "";
+            PhenotypeText.Text = "";
             TransImage.Source = null;
             BlueImage.Source = null;
+            ReviewPanel.Visibility = Visibility.Collapsed;
         }
 
         private void ReconcileButton_Click(object sender, RoutedEventArgs e)
@@ -364,6 +376,257 @@ namespace SCPBrowser.Controls
             dlg.Initialize(_projectDbPath, _currentRun.CellenOneRunId);
             dlg.ShowDialog();
             _ = LoadRunAsync(_currentRun); // refresh link state
+        }
+
+        /// <summary>Resets this run's automatic doublet flags and re-runs the image-based detector in place (no re-import; manual keep/discard kept).</summary>
+        private async void ReanalyzeButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_projectDbPath == null || _currentRun == null || _query == null) return;
+            if (MessageBox.Show(
+                    "Re-run image analysis for this run?\n\nThis clears the automatic doublet flags (image blob counts) and recomputes them — plus the CellProfiler-style phenotype features — from the cell images already in the database. Your manual keep/discard decisions are kept.",
+                    "Reanalyze run", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+                return;
+
+            var run = _currentRun;
+            ReanalyzeButton.IsEnabled = false;
+            ReconcileButton.IsEnabled = false;
+            try
+            {
+                var progress = new Progress<string>(m => InfoText.Text = m);
+                int flagged = await Task.Run(async () =>
+                {
+                    await _query.ResetDoubletFlagsAsync(run.CellenOneRunId);          // reset this run's flags
+                    int fl = await new CellImageAnalysisService(_projectDbPath)
+                        .AnalyzeRunAsync(run.CellenOneRunId, progress);               // recompute blob_count
+                    await new CellPhenotypeService(_projectDbPath)
+                        .AnalyzeRunAsync(run.CellenOneRunId, progress);               // recompute phenotype features
+                    return fl;
+                });
+                await LoadRunAsync(run); // reload so tiles/counts reflect the new flags
+                InfoText.Text = $"Reanalyzed plate \"{run.PlateName}\": {flagged} doublet(s) flagged; phenotype features updated.";
+            }
+            catch (Exception ex) { InfoText.Text = "Reanalyze failed: " + ex.Message; }
+            finally { ReanalyzeButton.IsEnabled = true; ReconcileButton.IsEnabled = true; }
+        }
+
+        // ----- QC review: auto-flag (doublet + morphology outlier) + manual keep/discard disposition -----
+
+        private static readonly SolidColorBrush DoubletBrush = new(Color.FromRgb(0xdc, 0x26, 0x26));
+        private static readonly SolidColorBrush UnlinkedBrush = new(Color.FromRgb(0xcb, 0xd5, 0xe1));
+
+        // Robust-z threshold (MAD-scaled) for the morphology-outlier auto-flag. Conservative; tune if it over/under-flags.
+        private const double ReviewOutlierK = 3.5;
+
+        // Per-run robust baseline (median + 1.4826·MAD) for each morphology metric, computed on run load.
+        private double _diMed, _diScale, _elMed, _elScale, _ciMed, _ciScale;
+
+        private enum ReviewState { Normal, NeedsReview, Kept, Discarded }
+
+        /// <summary>Effective review state: an explicit keep/discard/flag wins; otherwise a cell auto-flagged (doublet or morphology outlier) is "needs review".</summary>
+        private ReviewState StateOf(IsolatedCell c)
+        {
+            switch (c.ReviewStatus?.Trim().ToLowerInvariant())
+            {
+                case "discard": return ReviewState.Discarded;
+                case "keep": return ReviewState.Kept;
+                case "flag": return ReviewState.NeedsReview;
+            }
+            return AutoFlagReasons(c).Count > 0 ? ReviewState.NeedsReview : ReviewState.Normal;
+        }
+
+        /// <summary>Why the heuristics would flag this cell for review (doublet and/or morphology outliers); empty = nothing automatic.</summary>
+        private List<string> AutoFlagReasons(IsolatedCell c)
+        {
+            var reasons = new List<string>();
+            int dc = DoubletCount(c);
+            if (dc > 1) reasons.Add($"doublet ({dc} cells)");
+            if (c.Diameter is double d && _diScale > 0 && Math.Abs(d - _diMed) > ReviewOutlierK * _diScale)
+                reasons.Add(d > _diMed ? "large diameter" : "small diameter");
+            if (c.Elongation is double el && _elScale > 0 && (el - _elMed) > ReviewOutlierK * _elScale)
+                reasons.Add("high elongation");
+            if (c.Circularity is double ci && _ciScale > 0 && (_ciMed - ci) > ReviewOutlierK * _ciScale)
+                reasons.Add("low circularity");
+            return reasons;
+        }
+
+        private void ComputeMorphStats()
+        {
+            (_diMed, _diScale) = RobustStats(_cells.Where(c => c.Diameter.HasValue).Select(c => c.Diameter!.Value));
+            (_elMed, _elScale) = RobustStats(_cells.Where(c => c.Elongation.HasValue).Select(c => c.Elongation!.Value));
+            (_ciMed, _ciScale) = RobustStats(_cells.Where(c => c.Circularity.HasValue).Select(c => c.Circularity!.Value));
+        }
+
+        /// <summary>Returns (median, 1.4826·MAD). Scale is 0 when undefined (no spread / too few points), which disables that metric's outlier test.</summary>
+        private static (double med, double scale) RobustStats(IEnumerable<double> values)
+        {
+            var a = values.ToArray();
+            if (a.Length < 8) return (a.Length > 0 ? Median(a) : double.NaN, 0); // too few to judge outliers robustly
+            double med = Median(a);
+            var dev = a.Select(v => Math.Abs(v - med)).ToArray();
+            return (med, 1.4826 * Median(dev));
+        }
+
+        private static double Median(double[] xs)
+        {
+            var s = (double[])xs.Clone();
+            Array.Sort(s);
+            int n = s.Length;
+            if (n == 0) return double.NaN;
+            return n % 2 == 1 ? s[n / 2] : 0.5 * (s[n / 2 - 1] + s[n / 2]);
+        }
+
+        /// <summary>Applies the non-selected appearance to a tile: border colour (doublet/link), discard dimming, and the doublet + review badges.</summary>
+        private void StyleTile(IsolatedCell cell, Border border)
+        {
+            var state = StateOf(cell);
+            int dcount = DoubletCount(cell);
+            bool doublet = dcount > 1;
+
+            border.BorderBrush = doublet ? DoubletBrush : (cell.RawFileId != null ? Brushes.SeaGreen : UnlinkedBrush);
+            border.BorderThickness = new Thickness(doublet || cell.RawFileId != null ? 2 : 1);
+            border.Opacity = state == ReviewState.Discarded ? 0.5 : 1.0;
+
+            if (border.Child is Grid g)
+            {
+                for (int i = g.Children.Count - 1; i >= 0; i--)
+                    if (g.Children[i] is not Image) g.Children.RemoveAt(i);
+                if (doublet) g.Children.Add(MakeDoubletBadge(dcount));
+                var rb = MakeReviewBadge(state);
+                if (rb != null) g.Children.Add(rb);
+            }
+        }
+
+        /// <summary>Top-left corner badge encoding the review disposition (amber flag / green keep / grey discard); null when normal.</summary>
+        private static Border? MakeReviewBadge(ReviewState s)
+        {
+            string glyph; Color bg;
+            switch (s)
+            {
+                case ReviewState.NeedsReview: glyph = "⚑"; bg = Color.FromRgb(0xf5, 0x9e, 0x0b); break;
+                case ReviewState.Kept:        glyph = "✓"; bg = Color.FromRgb(0x16, 0xa3, 0x4a); break;
+                case ReviewState.Discarded:   glyph = "✗"; bg = Color.FromRgb(0x6b, 0x72, 0x80); break;
+                default: return null;
+            }
+            return new Border
+            {
+                Background = new SolidColorBrush(bg),
+                CornerRadius = new CornerRadius(7),
+                Padding = new Thickness(3, 0, 3, 0),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+                VerticalAlignment = System.Windows.VerticalAlignment.Top,
+                Margin = new Thickness(1, 1, 0, 0),
+                Child = new TextBlock { Text = glyph, Foreground = Brushes.White, FontSize = 9, FontWeight = FontWeights.Bold }
+            };
+        }
+
+        private string BuildTileTooltip(IsolatedCell cell)
+        {
+            string t = $"drop {cell.DropNo}  Ø {cell.Diameter:F1}µm";
+            int dc = DoubletCount(cell);
+            if (dc > 1) t += $"  ⚠ {dc} cells";
+            switch (StateOf(cell))
+            {
+                case ReviewState.Kept: t += "  ✓ kept"; break;
+                case ReviewState.Discarded: t += "  ✗ discarded"; break;
+                case ReviewState.NeedsReview:
+                    var r = AutoFlagReasons(cell);
+                    t += r.Count > 0 ? "  ⚑ review: " + string.Join(", ", r) : "  ⚑ flagged";
+                    break;
+            }
+            return t;
+        }
+
+        private void UpdateReviewDetail(IsolatedCell cell)
+        {
+            var reasons = AutoFlagReasons(cell);
+            string auto = reasons.Count > 0 ? "   (auto-flag: " + string.Join(", ", reasons) + ")" : "";
+            ReviewStateText.Text = StateOf(cell) switch
+            {
+                ReviewState.Discarded => "✗ DISCARDED" + auto,
+                ReviewState.Kept => "✓ kept" + auto,
+                ReviewState.NeedsReview => (string.Equals(cell.ReviewStatus, "flag", StringComparison.OrdinalIgnoreCase)
+                                            ? "⚑ flagged for review" : "⚑ needs review") + auto,
+                _ => "— not flagged"
+            };
+            ReviewNoteBox.Text = cell.ReviewNote ?? "";
+        }
+
+        /// <summary>Sets (and persists) the selected cell's disposition, then refreshes its tile, the detail panel, and the counts/filter.</summary>
+        private async void SetSelectedReview(string? status)
+        {
+            if (_selected == null || _query == null) return;
+            var cell = _selected;
+            cell.ReviewStatus = status;
+            string? note = string.IsNullOrWhiteSpace(ReviewNoteBox.Text) ? null : ReviewNoteBox.Text.Trim();
+            cell.ReviewNote = note;
+
+            try { await _query.SetReviewStatusAsync(cell.CellId, status, note); }
+            catch (Exception ex) { InfoText.Text = "Review save failed: " + ex.Message; }
+
+            if (_tiles.TryGetValue(cell.CellId, out var tile))
+            {
+                StyleTile(cell, tile);
+                tile.ToolTip = BuildTileTooltip(cell);
+                if (ReferenceEquals(_selected, cell)) // keep the selection highlight on top of the restyle
+                {
+                    tile.BorderBrush = Brushes.OrangeRed;
+                    tile.BorderThickness = new Thickness(3);
+                }
+            }
+            UpdateReviewDetail(cell);
+            RefreshFilterAndCounts();
+        }
+
+        private void FlagBtn_Click(object sender, RoutedEventArgs e) => SetSelectedReview("flag");
+        private void KeepBtn_Click(object sender, RoutedEventArgs e) => SetSelectedReview("keep");
+        private void DiscardBtn_Click(object sender, RoutedEventArgs e) => SetSelectedReview("discard");
+        private void ClearReviewBtn_Click(object sender, RoutedEventArgs e) => SetSelectedReview(null);
+
+        private async void ReviewNoteBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (_selected == null || _query == null) return;
+            string? note = string.IsNullOrWhiteSpace(ReviewNoteBox.Text) ? null : ReviewNoteBox.Text.Trim();
+            if (note == _selected.ReviewNote) return; // unchanged
+            _selected.ReviewNote = note;
+            try { await _query.SetReviewStatusAsync(_selected.CellId, _selected.ReviewStatus, note); }
+            catch (Exception ex) { InfoText.Text = "Note save failed: " + ex.Message; }
+        }
+
+        private void ReviewFilterCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            RefreshFilterAndCounts();
+        }
+
+        /// <summary>Updates the review counts and shows/hides tiles per the active "Show:" filter.</summary>
+        private void RefreshFilterAndCounts()
+        {
+            int needs = 0, kept = 0, disc = 0;
+            foreach (var c in _cells)
+            {
+                switch (StateOf(c))
+                {
+                    case ReviewState.NeedsReview: needs++; break;
+                    case ReviewState.Kept: kept++; break;
+                    case ReviewState.Discarded: disc++; break;
+                }
+                if (_tiles.TryGetValue(c.CellId, out var t))
+                    t.Visibility = PassesFilter(c) ? Visibility.Visible : Visibility.Collapsed;
+            }
+            ReviewCountText.Text = $"⚑ {needs} review · ✓ {kept} kept · ✗ {disc} discarded";
+        }
+
+        private bool PassesFilter(IsolatedCell c)
+        {
+            int fi = ReviewFilterCombo?.SelectedIndex ?? 0;
+            if (fi <= 0) return true; // All
+            return fi switch
+            {
+                1 => StateOf(c) == ReviewState.NeedsReview,
+                2 => StateOf(c) == ReviewState.Kept,
+                3 => StateOf(c) == ReviewState.Discarded,
+                _ => true
+            };
         }
 
         private static Border MakeDoubletBadge(int count)

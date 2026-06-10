@@ -21,9 +21,22 @@
             <Button x:Name="ReconcileButton" Content="Reconcile ↔ runs..." Margin="12,0,0,0" Padding="10,4"
                     Click="ReconcileButton_Click"
                     ToolTip="Match these cells to DIA-NN raw files"/>
+            <Button x:Name="ReanalyzeButton" Content="↻ Reanalyze" Margin="6,0,0,0" Padding="10,4"
+                    Click="ReanalyzeButton_Click"
+                    ToolTip="Reset this run's automatic doublet flags and re-run image-based doublet detection (your keep/discard decisions are kept)"/>
             <TextBlock Text="Size:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#334155" Margin="16,0,4,0"/>
             <Slider x:Name="ZoomSlider" Width="120" Minimum="0.4" Maximum="3.0" Value="1.0" SmallChange="0.1" LargeChange="0.5"
                     VerticalAlignment="Center" ValueChanged="ZoomSlider_ValueChanged" ToolTip="Cell image size (the grid also rescales as you resize the window)"/>
+            <TextBlock Text="Show:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#334155" Margin="16,0,4,0"/>
+            <ComboBox x:Name="ReviewFilterCombo" Width="120" Height="26" VerticalContentAlignment="Center"
+                      SelectionChanged="ReviewFilterCombo_SelectionChanged"
+                      ToolTip="Filter the grid to cells in a given review state">
+                <ComboBoxItem Content="All" IsSelected="True"/>
+                <ComboBoxItem Content="Needs review"/>
+                <ComboBoxItem Content="Kept"/>
+                <ComboBoxItem Content="Discarded"/>
+            </ComboBox>
+            <TextBlock x:Name="ReviewCountText" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#92400e" FontWeight="SemiBold"/>
             <TextBlock x:Name="InfoText" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#64748b"/>
         </DockPanel>
 
@@ -90,6 +103,35 @@
 
                         <Border Background="#f8fafc" BorderBrush="#e2e8f0" BorderThickness="1" CornerRadius="4" Margin="0,10,0,0" Padding="8">
                             <TextBlock x:Name="DetailText" FontFamily="Consolas" FontSize="12" Foreground="#334155" TextWrapping="Wrap"/>
+                        </Border>
+
+                        <!-- CellProfiler-style phenotype features (computed by CellPhenotypeService on Reanalyze/import). -->
+                        <Expander Header="Phenotype (image features)" Margin="0,10,0,0" Foreground="#334155" FontWeight="SemiBold">
+                            <Border Background="#f8fafc" BorderBrush="#e2e8f0" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,4,0,0">
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" MaxHeight="240">
+                                    <TextBlock x:Name="PhenotypeText" FontFamily="Consolas" FontSize="11" Foreground="#334155"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Expander>
+
+                        <!-- Quality review: flag / keep / discard disposition for the selected cell (recorded only, non-destructive). -->
+                        <Border x:Name="ReviewPanel" Visibility="Collapsed" Background="#fffbeb" BorderBrush="#fde68a" BorderThickness="1" CornerRadius="4" Margin="0,10,0,0" Padding="8">
+                            <StackPanel>
+                                <TextBlock Text="Quality review" FontWeight="SemiBold" Foreground="#92400e"/>
+                                <TextBlock x:Name="ReviewStateText" Margin="0,2,0,6" TextWrapping="Wrap" Foreground="#334155" FontFamily="Consolas" FontSize="12"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="FlagBtn" Content="⚑ Flag" Click="FlagBtn_Click" Padding="9,3" ToolTip="Mark this cell as needing review (F)"/>
+                                    <Button x:Name="KeepBtn" Content="✓ Keep" Click="KeepBtn_Click" Padding="9,3" Margin="6,0,0,0"
+                                            Background="#16a34a" Foreground="White" BorderThickness="0" ToolTip="Reviewed — keep this cell (K)"/>
+                                    <Button x:Name="DiscardBtn" Content="✗ Discard" Click="DiscardBtn_Click" Padding="9,3" Margin="6,0,0,0"
+                                            Background="#dc2626" Foreground="White" BorderThickness="0" ToolTip="Reviewed — discard this cell (D)"/>
+                                    <Button x:Name="ClearReviewBtn" Content="Clear" Click="ClearReviewBtn_Click" Padding="9,3" Margin="6,0,0,0" ToolTip="Clear the disposition (Backspace)"/>
+                                </StackPanel>
+                                <TextBlock Text="Note (optional)" Foreground="#64748b" FontSize="10" Margin="0,8,0,2"/>
+                                <TextBox x:Name="ReviewNoteBox" Padding="4" TextWrapping="Wrap" AcceptsReturn="True" Height="44"
+                                         VerticalScrollBarVisibility="Auto" LostKeyboardFocus="ReviewNoteBox_LostFocus"/>
+                                <TextBlock Text="Keys: F flag · K keep · D discard · Backspace clear" Foreground="#94a3b8" FontSize="9" Margin="0,4,0,0"/>
+                            </StackPanel>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>

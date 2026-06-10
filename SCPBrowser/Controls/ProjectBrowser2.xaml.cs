@@ -185,6 +185,8 @@ namespace SCPBrowser
                 }
                 await ConditionsBrowser.LoadDataAsync(databasePath);
 
+                await MarkerClassesBrowser.LoadAsync(databasePath);
+
 
                 if (mainWindow != null)
                 {

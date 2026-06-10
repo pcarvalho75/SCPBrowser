@@ -121,6 +121,12 @@ namespace SCPBrowser.Models
         /// <summary>Cell-sized blobs found in the brightfield frame by image analysis; &gt;1 ⇒ likely doublet (catches ones the instrument missed).</summary>
         public int? BlobCount { get; set; }
 
+        /// <summary>User QC disposition set in the Cell Plate Viewer: null = unreviewed, "flag" = manually flagged for review, "keep", or "discard". Non-destructive — recorded only, does not alter the analysis.</summary>
+        public string? ReviewStatus { get; set; }
+
+        /// <summary>Optional free-text note explaining the review decision.</summary>
+        public string? ReviewNote { get; set; }
+
         public string? Status { get; set; }
         public string? IsolatedAt { get; set; }
 

@@ -19,7 +19,7 @@ namespace SCPBrowser.Services
     /// </summary>
     public class CellenOneImportService : DatabaseServiceBase
     {
-        private const int ThumbMaxDim = 160;
+        private const int ThumbMaxDim = 256;
 
         public CellenOneImportService(string projectDbPath) : base(projectDbPath)
         {
@@ -102,6 +102,14 @@ namespace SCPBrowser.Services
             try
             {
                 await new CellImageAnalysisService(_projectDbPath).AnalyzeRunAsync(newRunId, progress, ct);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { /* non-critical */ }
+
+            // CellProfiler-style phenotype features (best-effort; never fails the import).
+            try
+            {
+                await new CellPhenotypeService(_projectDbPath).AnalyzeRunAsync(newRunId, progress, ct);
             }
             catch (OperationCanceledException) { throw; }
             catch { /* non-critical */ }
@@ -310,7 +318,7 @@ namespace SCPBrowser.Services
             if (cx.HasValue && cy.HasValue && w > 0 && h > 0)
             {
                 double dia = diameter.GetValueOrDefault(12);
-                int side = (int)Math.Clamp(dia * 6.0, 48, Math.Min(w, h));
+                int side = (int)Math.Clamp(dia * 8.0, 80, Math.Min(w, h));
                 int x0 = (int)Math.Clamp(cx.Value - side / 2.0, 0, Math.Max(0, w - side));
                 int y0 = (int)Math.Clamp(cy.Value - side / 2.0, 0, Math.Max(0, h - side));
                 if (side >= 8 && x0 + side <= w && y0 + side <= h)

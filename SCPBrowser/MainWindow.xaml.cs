@@ -67,6 +67,9 @@ namespace SCPBrowser
             // Subscribe to ProjectBrowser reclassify request
             ProjectBrowserDialog.ReclassifyRequested += ProjectBrowserDialog_ReclassifyRequested;
 
+            // Subscribe to marker-only classification so we can unlock + colour the scatter from the saved results.
+            ProjectBrowserDialog.MarkerCellsClassified += ProjectBrowserDialog_MarkerCellsClassified;
+
             // Subscribe to ProjectBrowser cascade-delete completion so we can reload data
             ProjectBrowserDialog.ConditionDeleted += ProjectBrowserDialog_ConditionDeleted;
 
@@ -1655,6 +1658,62 @@ namespace SCPBrowser
                 MessageBox.Show($"Error computing cell type predictions:\n\n{ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        /// <summary>
+        /// After a marker-only classification (no reference profile loaded), the results are already saved to
+        /// raw_file_cell_type_classifications. Load them and push them straight into the scatter: this unlocks the
+        /// main-screen "Cell Type" colour option, caches the predictions (so re-selecting it works without a profile),
+        /// auto-selects Cell Type mode, and colours — fixing the "dropdown stays locked after Classify" issue.
+        /// </summary>
+        private async void ProjectBrowserDialog_MarkerCellsClassified(object sender, EventArgs e)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_projectReferenceDatabasePath) || _parquetService == null) return;
+                if (MainControlTab.GetCurrentData() == null) return;
+
+                int? importId = await _parquetService.GetMostRecentImportIdAsync();
+                if (!importId.HasValue) return;
+
+                var predictions = await new CellTypeClassificationService(_projectReferenceDatabasePath)
+                    .LoadCellTypeClassificationsAsync(importId.Value);
+                if (predictions == null || predictions.Count == 0) return;
+
+                var colorMap = BuildMarkerCellTypeColorMap(predictions);
+                PeptideTicTab.EnableCellTypeClassification(true);
+                PeptideTicTab.SetCellTypePredictions(predictions, colorMap, selectCellTypeMode: true);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MarkerCellsClassified] {ex}");
+            }
+        }
+
+        /// <summary>Assigns a distinct palette colour to each marker class name (grey for "Unassigned").</summary>
+        private static Dictionary<string, System.Windows.Media.Color> BuildMarkerCellTypeColorMap(
+            Dictionary<string, CellTypePredictionResult> predictions)
+        {
+            var palette = new[]
+            {
+                System.Windows.Media.Color.FromRgb(0x1f,0x77,0xb4), System.Windows.Media.Color.FromRgb(0xff,0x7f,0x0e),
+                System.Windows.Media.Color.FromRgb(0x2c,0xa0,0x2c), System.Windows.Media.Color.FromRgb(0xd6,0x27,0x28),
+                System.Windows.Media.Color.FromRgb(0x94,0x67,0xbd), System.Windows.Media.Color.FromRgb(0x8c,0x56,0x4b),
+                System.Windows.Media.Color.FromRgb(0xe3,0x77,0xc2), System.Windows.Media.Color.FromRgb(0x17,0xbe,0xcf),
+                System.Windows.Media.Color.FromRgb(0xbc,0xbd,0x22), System.Windows.Media.Color.FromRgb(0x39,0x9b,0x9b),
+            };
+            var map = new Dictionary<string, System.Windows.Media.Color>(StringComparer.OrdinalIgnoreCase);
+            int i = 0;
+            foreach (var t in predictions.Values.Select(p => p.TopCellType)
+                         .Where(s => !string.IsNullOrEmpty(s))
+                         .Distinct(StringComparer.OrdinalIgnoreCase)
+                         .OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
+            {
+                map[t] = string.Equals(t, "Unassigned", StringComparison.OrdinalIgnoreCase)
+                    ? System.Windows.Media.Color.FromRgb(0xc8, 0xc8, 0xc8)
+                    : palette[i++ % palette.Length];
+            }
+            return map;
         }
 
         private async void PeptideTicTab_ExportDiagnosticsRequested(object sender, EventArgs e)

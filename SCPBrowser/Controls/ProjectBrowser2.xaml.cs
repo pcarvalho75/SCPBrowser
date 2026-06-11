@@ -27,6 +27,9 @@ namespace SCPBrowser
         // Event to bubble post-delete refresh up to MainWindow
         public event EventHandler<ConditionDeletedEventArgs>? ConditionDeleted;
 
+        // Bubbled up from the Marker Classes tab after a marker-only classification, so MainWindow can unlock + colour the scatter.
+        public event EventHandler? MarkerCellsClassified;
+
         public ProjectBrowser2()
         {
             InitializeComponent();
@@ -45,8 +48,9 @@ namespace SCPBrowser
 
             // Subscribe to condition delete so we can refresh sibling controls and bubble up
             ConditionsBrowser.ConditionDeleted += ConditionsBrowser_ConditionDeleted;
-            
 
+            // Bubble the Marker Classes "classified" event up to MainWindow so it can colour the scatter.
+            MarkerClassesBrowser.CellsClassified += (s, e) => MarkerCellsClassified?.Invoke(this, e);
         }
 
         private async void ConditionsBrowser_ConditionDeleted(object? sender, ConditionDeletedEventArgs e)

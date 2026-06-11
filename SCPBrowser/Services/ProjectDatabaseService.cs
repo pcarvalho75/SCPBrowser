@@ -145,11 +145,13 @@ namespace SCPBrowser.Services
             CREATE TABLE IF NOT EXISTS marker_classes (
                 class_name TEXT PRIMARY KEY,
                 color TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS marker_class_genes (
                 class_name TEXT NOT NULL,
                 gene_name TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY (class_name, gene_name)
             ) WITHOUT ROWID;
         ";
@@ -453,6 +455,38 @@ namespace SCPBrowser.Services
                 {
                     command.CommandText = MarkerClassSchemaSql;
                     await command.ExecuteNonQueryAsync();
+                }
+
+                // Migration: per-marker enable/disable flag for databases created before that feature.
+                bool hasEnabled = false;
+                using (var check = connection.CreateCommand())
+                {
+                    check.CommandText = "PRAGMA table_info(marker_class_genes)";
+                    using var reader = await check.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                        if (reader.GetString(1).Equals("enabled", StringComparison.OrdinalIgnoreCase)) { hasEnabled = true; break; }
+                }
+                if (!hasEnabled)
+                {
+                    using var alter = connection.CreateCommand();
+                    alter.CommandText = "ALTER TABLE marker_class_genes ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1";
+                    await alter.ExecuteNonQueryAsync();
+                }
+
+                // Migration: class-level enable/disable flag.
+                bool hasClassEnabled = false;
+                using (var check = connection.CreateCommand())
+                {
+                    check.CommandText = "PRAGMA table_info(marker_classes)";
+                    using var reader = await check.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                        if (reader.GetString(1).Equals("enabled", StringComparison.OrdinalIgnoreCase)) { hasClassEnabled = true; break; }
+                }
+                if (!hasClassEnabled)
+                {
+                    using var alter = connection.CreateCommand();
+                    alter.CommandText = "ALTER TABLE marker_classes ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1";
+                    await alter.ExecuteNonQueryAsync();
                 }
             }
         }

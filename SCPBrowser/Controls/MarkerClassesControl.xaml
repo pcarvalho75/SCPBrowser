@@ -4,58 +4,261 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
-             mc:Ignorable="d" d:DesignHeight="600" d:DesignWidth="900"
+             mc:Ignorable="d" d:DesignHeight="640" d:DesignWidth="980"
              Background="White">
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+        <StackPanel Grid.Row="0" Margin="0,0,0,8">
             <TextBlock Text="Marker Classes" FontSize="16" FontWeight="Bold" Foreground="#0f172a"/>
-            <TextBlock Text="Define cell classes by marker genes (no expression profile needed) and classify cells on markers alone."
-                       FontSize="11" Foreground="#64748b" Margin="0,2,0,0"/>
+            <TextBlock Text="Define cell classes by marker genes (no expression profile needed) and classify cells on markers alone. Untick a class or a marker to exclude it from classification."
+                       FontSize="11" Foreground="#64748b" Margin="0,2,0,0" TextWrapping="Wrap"/>
         </StackPanel>
 
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
+        <TabControl Grid.Row="1" x:Name="InnerTabs" SelectionChanged="InnerTabs_SelectionChanged">
 
-            <DockPanel Grid.Column="0" Margin="0,0,12,0">
-                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,6,0,0">
-                    <Button Content="+ Add" Click="AddClass_Click" Padding="10,4"/>
-                    <Button Content="Delete" Click="DeleteClass_Click" Padding="10,4" Margin="6,0,0,0"/>
-                </StackPanel>
-                <ListBox x:Name="ClassList" SelectionChanged="ClassList_SelectionChanged"
-                         BorderBrush="#e2e8f0" BorderThickness="1"/>
-            </DockPanel>
+            <!-- ===== Classes editor ===== -->
+            <TabItem Header="Classes">
+                <Grid Margin="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Column="1">
-                <TextBlock Text="Class name" FontWeight="SemiBold" Foreground="#334155"/>
-                <TextBox x:Name="NameBox" Padding="6" Margin="0,2,0,10"/>
-                <TextBlock Text="Marker genes (one per line, or comma / space separated)" FontWeight="SemiBold" Foreground="#334155"/>
-                <TextBox x:Name="MarkersBox" AcceptsReturn="True" TextWrapping="Wrap" Height="220"
-                         VerticalScrollBarVisibility="Auto" Padding="6" Margin="0,2,0,10" FontFamily="Consolas"/>
-                <Button Content="Save class" Click="SaveClass_Click" Padding="14,5" HorizontalAlignment="Left"
-                        Background="#2563eb" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Cursor="Hand"/>
-            </StackPanel>
-        </Grid>
+                        <!-- class list with per-class enable checkboxes -->
+                        <DockPanel Grid.Column="0" Margin="0,0,12,0">
+                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,6,0,0">
+                                <Button Content="+ Add" Click="AddClass_Click" Padding="10,4"/>
+                                <Button Content="Delete" Click="DeleteClass_Click" Padding="10,4" Margin="6,0,0,0"/>
+                            </StackPanel>
+                            <ListBox x:Name="ClassList" SelectionChanged="ClassList_SelectionChanged" BorderBrush="#e2e8f0" BorderThickness="1"
+                                     HorizontalContentAlignment="Stretch">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" Click="ClassEnabled_Click"
+                                                      VerticalAlignment="Center" Margin="0,0,6,0"
+                                                      ToolTip="Include this class in classification"/>
+                                            <TextBlock Text="{Binding}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
 
-        <Border Grid.Row="2" Background="#f8fafc" BorderBrush="#e2e8f0" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,10,0,0">
-            <StackPanel>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="Min markers to assign:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,6,0"/>
-                    <xctk:IntegerUpDown x:Name="MinMarkersBox" Minimum="1" Maximum="50" Value="2" Width="70" ValueChanged="MinMarkers_ValueChanged"/>
-                    <Button x:Name="ClassifyButton" Content="Classify cells" Click="Classify_Click" Padding="16,5" Margin="16,0,0,0"
-                            Background="#10b981" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Cursor="Hand"/>
-                    <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="14,0,0,0" Foreground="#64748b"/>
-                </StackPanel>
-                <TextBlock x:Name="SummaryText" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#334155"/>
-            </StackPanel>
-        </Border>
+                        <!-- editor -->
+                        <Grid Grid.Column="1">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="160"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="Class name" FontWeight="SemiBold" Foreground="#334155"/>
+                            <TextBox Grid.Row="1" x:Name="NameBox" Padding="6" Margin="0,2,0,8"/>
+
+                            <TextBlock Grid.Row="2" Text="Marker genes (one per line, or comma / space separated)" FontWeight="SemiBold" Foreground="#334155"/>
+                            <TextBox Grid.Row="3" x:Name="MarkersBox" AcceptsReturn="True" TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto" Padding="6" Margin="0,2,0,8" FontFamily="Consolas"/>
+                            <Button Grid.Row="4" Content="Save class" Click="SaveClass_Click" Padding="14,5" HorizontalAlignment="Left"
+                                    Background="#2563eb" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Cursor="Hand"/>
+
+                            <DockPanel Grid.Row="5" Margin="0,10,0,0">
+                                <TextBlock DockPanel.Dock="Top" Text="Enable / disable individual markers (untick the over-abundant ones, then re-classify)"
+                                           FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,4" TextWrapping="Wrap"/>
+                                <Border BorderBrush="#e2e8f0" BorderThickness="1" CornerRadius="4">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="6">
+                                        <ItemsControl x:Name="MarkerToggles">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel Orientation="Vertical" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox Content="{Binding Gene}" IsChecked="{Binding Enabled, Mode=TwoWay}" Click="MarkerEnabled_Click"
+                                                              Width="150" Margin="0,1,12,1"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Border>
+                            </DockPanel>
+                        </Grid>
+                    </Grid>
+
+                    <Border Grid.Row="1" Background="#f8fafc" BorderBrush="#e2e8f0" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,10,0,0">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Min markers to assign:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,6,0"/>
+                                <xctk:IntegerUpDown x:Name="MinMarkersBox" Minimum="1" Maximum="50" Value="2" Width="70" ValueChanged="MinMarkers_ValueChanged"/>
+                                <TextBlock Text="High-expression: top" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#334155" Margin="18,0,4,0"
+                                           ToolTip="A marker only counts for a cell if the cell is in this top % of cells expressing it (by intensity). Lower = stricter, more Unassigned."/>
+                                <xctk:IntegerUpDown x:Name="ExprTopPctBox" Minimum="1" Maximum="100" Value="50" Width="62" ValueChanged="ExprTopPct_ValueChanged"/>
+                                <TextBlock Text="% of expressers — for markers in &gt;" VerticalAlignment="Center" Foreground="#64748b" Margin="4,0,0,0"/>
+                                <xctk:IntegerUpDown x:Name="ExprGatePctBox" Minimum="0" Maximum="100" Value="50" Width="56" ValueChanged="ExprGatePct_ValueChanged"
+                                                    ToolTip="Only markers detected in more than this % of cells get the intensity cut; sparser / specific markers are trusted on detection alone (this protects low-abundance markers)."/>
+                                <TextBlock Text="% of cells" VerticalAlignment="Center" Foreground="#64748b" Margin="4,0,0,0"/>
+                                <Button x:Name="ClassifyButton" Content="Classify cells" Click="Classify_Click" Padding="16,5" Margin="16,0,0,0"
+                                        Background="#10b981" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Cursor="Hand"/>
+                                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="14,0,0,0" Foreground="#64748b"/>
+                            </StackPanel>
+                            <TextBlock x:Name="SummaryText" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#334155"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ===== Diagnostics ===== -->
+            <TabItem Header="Diagnostics" x:Name="DiagnosticsTab">
+                <Grid Margin="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="230"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <DockPanel Grid.Row="0" Margin="0,0,0,8" LastChildFill="False">
+                        <Button x:Name="RefreshDiagButton" Content="↻ Refresh" Click="RefreshDiag_Click" Padding="10,4"/>
+                        <Button x:Name="ReclassifyButton" Content="Re-classify" Click="Reclassify_Click" Padding="12,4" Margin="8,0,0,0"
+                                Background="#10b981" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Cursor="Hand"
+                                ToolTip="Re-score every cell with the currently enabled classes/markers and recolour the main scatter"/>
+                        <TextBlock x:Name="DiagStatusText" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="#64748b" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" BorderBrush="#e2e8f0" BorderThickness="1" CornerRadius="6" Margin="0,0,3,0" Padding="8">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="Cells per class" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl x:Name="ClassBars">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,1">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="120"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="86"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding ClassName}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="11"/>
+                                                    <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Pct, Mode=OneWay}" Height="13"
+                                                                 Foreground="#2563eb" Background="#eef2f7" BorderThickness="0" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding CountLabel}" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="11" Foreground="#334155"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Grid.Column="1" BorderBrush="#e2e8f0" BorderThickness="1" CornerRadius="6" Margin="3,0,3,0" Padding="8">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="Top markers by prevalence (red = likely too abundant)" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6" TextWrapping="Wrap"/>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl x:Name="PrevalenceBars">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,1">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="130"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="48"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding Label}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="11"/>
+                                                    <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding DetectionPct, Mode=OneWay}" Height="13"
+                                                                 Background="#eef2f7" BorderThickness="0" VerticalAlignment="Center">
+                                                        <ProgressBar.Style>
+                                                            <Style TargetType="ProgressBar">
+                                                                <Setter Property="Foreground" Value="#0ea5e9"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsHighPrevalence}" Value="True">
+                                                                        <Setter Property="Foreground" Value="#dc2626"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ProgressBar.Style>
+                                                    </ProgressBar>
+                                                    <TextBlock Grid.Column="2" Text="{Binding DetectionPercent}" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="11" Foreground="#334155"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Grid.Column="2" BorderBrush="#e2e8f0" BorderThickness="1" CornerRadius="6" Margin="3,0,0,0" Padding="8">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="Top markers by contribution (cells they actually drove)" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6" TextWrapping="Wrap"/>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl x:Name="ContributionBars">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,1">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="130"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="58"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding Label}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="11"/>
+                                                    <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding AssignedPct, Mode=OneWay}" Height="13"
+                                                                 Foreground="#16a34a" Background="#eef2f7" BorderThickness="0" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding AssignedLabel}" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="11" Foreground="#334155"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+
+                    <DataGrid Grid.Row="2" x:Name="MarkerGrid" Margin="0,8,0,0" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True"
+                              HeadersVisibility="Column" GridLinesVisibility="Horizontal" RowHeaderWidth="0"
+                              BorderBrush="#e2e8f0" BorderThickness="1" CanUserSortColumns="True" FontSize="12">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsHighPrevalence}" Value="True">
+                                        <Setter Property="Background" Value="#fff1f2"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Enabled}" Value="False">
+                                        <Setter Property="Foreground" Value="#94a3b8"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Class" Binding="{Binding ClassName}" Width="*"/>
+                            <DataGridTextColumn Header="Marker" Binding="{Binding Gene}" Width="*"/>
+                            <DataGridTextColumn Header="On" Binding="{Binding Enabled}" Width="42"/>
+                            <DataGridTextColumn Header="Detected" Binding="{Binding DetectionFraction, StringFormat=P1}" Width="80"/>
+                            <DataGridTextColumn Header="High %" Binding="{Binding HighFraction, StringFormat=P1}" Width="70"/>
+                            <DataGridTextColumn Header="Weight" Binding="{Binding Weight, StringFormat=N2}" Width="70"/>
+                            <DataGridTextColumn Header="Contribution" Binding="{Binding ContributionFraction, StringFormat=P1}" Width="105"/>
+                            <DataGridTextColumn Header="Cells driven" Binding="{Binding AssignedHits}" Width="90"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+        </TabControl>
     </Grid>
 </UserControl>

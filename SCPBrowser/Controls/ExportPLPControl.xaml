@@ -91,6 +91,7 @@ Location: SCPBrowser/Controls/ExportPLPControl.xaml
                     <ComboBoxItem Content="Biological Condition" Tag="BioCondition" IsSelected="True"/>
                     <ComboBoxItem Content="Cell Type" Tag="CellType"/>
                     <ComboBoxItem Content="Plate" Tag="Plate"/>
+                    <ComboBoxItem Content="K-means cluster" Tag="KMeans"/>
                 </ComboBox>
 
                 <!-- Secondary Label -->
@@ -100,6 +101,7 @@ Location: SCPBrowser/Controls/ExportPLPControl.xaml
                     <ComboBoxItem Content="Cell Type" Tag="CellType" IsSelected="True"/>
                     <ComboBoxItem Content="Biological Condition" Tag="BioCondition"/>
                     <ComboBoxItem Content="Plate" Tag="Plate"/>
+                    <ComboBoxItem Content="K-means cluster" Tag="KMeans"/>
                 </ComboBox>
 
                 <!-- Merge Cell Types -->

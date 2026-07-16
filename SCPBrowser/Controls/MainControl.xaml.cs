@@ -297,15 +297,52 @@ namespace SCPBrowser
 
 
 
+        /// <summary>Builds ProteomicsData from one or more Excel gene-matrix files (unioning genes/runs if several).</summary>
+        private static ProteomicsData LoadXlsxMatrices(List<string> paths)
+        {
+            if (paths.Count == 1)
+                return XlsxGeneMatrixParser.Parse(paths[0]);
+
+            var merged = new ProteomicsData { IsGeneMatrix = true };
+            foreach (var p in paths)
+            {
+                var d = XlsxGeneMatrixParser.Parse(p);
+                foreach (var run in d.RawFileNames)
+                    if (!merged.RawFileNames.Contains(run)) merged.RawFileNames.Add(run);
+                foreach (var kv in d.ProteinCountPerFile) merged.ProteinCountPerFile[kv.Key] = kv.Value;
+                foreach (var kv in d.PeptideCountPerFile) merged.PeptideCountPerFile[kv.Key] = kv.Value;
+                foreach (var kv in d.TotalIonCurrentPerFile) merged.TotalIonCurrentPerFile[kv.Key] = kv.Value;
+                foreach (var kv in d.BiologicalConditionPerFile) merged.BiologicalConditionPerFile[kv.Key] = kv.Value;
+                foreach (var kv in d.ProteinToGeneMap) merged.ProteinToGeneMap[kv.Key] = kv.Value;
+                foreach (var kv in d.ProteinQuantMatrix)
+                {
+                    if (!merged.ProteinQuantMatrix.TryGetValue(kv.Key, out var inner))
+                    { inner = new Dictionary<string, double>(); merged.ProteinQuantMatrix[kv.Key] = inner; }
+                    foreach (var rv in kv.Value) inner[rv.Key] = rv.Value;
+                }
+            }
+            merged.RawFileNames.Sort(StringComparer.Ordinal);
+            merged.TotalRawFiles = merged.RawFileNames.Count;
+            merged.TotalProteinGroups = merged.ProteinQuantMatrix.Count;
+            merged.TotalPeptides = merged.TotalProteinGroups;
+            return merged;
+        }
+
         private async System.Threading.Tasks.Task LoadDataAsync()
         {
             try
             {
                 // Get reference to the loading overlay from MainWindow
                 var mainWindow = Window.GetWindow(this) as MainWindow;
+
+                bool loadingXlsx = ((_allParquetFilePaths != null && _allParquetFilePaths.Count > 0)
+                        ? _allParquetFilePaths
+                        : new List<string> { _currentFilePath })
+                    .Any(p => p != null && p.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase));
+
                 if (mainWindow != null)
                 {
-                    mainWindow.LoadingOverlay.SetMessage("Loading Parquet Files...");
+                    mainWindow.LoadingOverlay.SetMessage(loadingXlsx ? "Loading Excel Gene Matrix..." : "Loading Parquet Files...");
                     mainWindow.LoadingOverlay.SetProgress("Reading data structure...");
                     mainWindow.LoadingOverlay.Show();
                 }
@@ -326,8 +363,21 @@ namespace SCPBrowser
                     mainWindow.LoadingOverlay.SetProgress("Parsing proteomics data...");
                 }
 
-                // Load from multiple files if available, otherwise single file
-                if (_allParquetFilePaths != null && _allParquetFilePaths.Count > 1)
+                // Route by source format. Excel gene-matrix imports (.xlsx) build ProteomicsData directly via
+                // XlsxGeneMatrixParser; DIA-NN parquet imports go through the existing reader (this branch unchanged).
+                var loadPaths = (_allParquetFilePaths != null && _allParquetFilePaths.Count > 0)
+                    ? _allParquetFilePaths
+                    : new List<string> { _currentFilePath };
+                bool isXlsx = loadPaths.Any(p => p != null && p.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase));
+
+                if (isXlsx)
+                {
+                    if (mainWindow != null)
+                        mainWindow.LoadingOverlay.SetProgress("Reading Excel gene matrix...");
+                    var xlsxPaths = loadPaths.Where(p => p != null && p.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)).ToList();
+                    _currentData = await System.Threading.Tasks.Task.Run(() => LoadXlsxMatrices(xlsxPaths));
+                }
+                else if (_allParquetFilePaths != null && _allParquetFilePaths.Count > 1)
                 {
                     if (mainWindow != null)
                     {
@@ -350,6 +400,9 @@ namespace SCPBrowser
                 TotalRunsText.Text = _currentData.TotalRawFiles.ToString();
                 TotalProteinsText.Text = _currentData.TotalProteinGroups.ToString();
                 TotalPeptidesText.Text = _currentData.TotalPeptides.ToString();
+                // A gene matrix has no peptide dimension — the "Peptides" card shows the detected-gene count, so
+                // relabel it honestly (see XlsxGeneMatrixParser: PeptideCountPerFile is substituted with gene counts).
+                PeptidesCaptionText.Text = _currentData.IsGeneMatrix ? "Genes" : "Peptides";
 
                 // Set plate count
                 if (!string.IsNullOrEmpty(_projectDatabasePath))
@@ -366,6 +419,9 @@ namespace SCPBrowser
                 TotalRunsText.Text = _currentData.TotalRawFiles.ToString();
                 TotalProteinsText.Text = _currentData.TotalProteinGroups.ToString();
                 TotalPeptidesText.Text = _currentData.TotalPeptides.ToString();
+                // A gene matrix has no peptide dimension — the "Peptides" card shows the detected-gene count, so
+                // relabel it honestly (see XlsxGeneMatrixParser: PeptideCountPerFile is substituted with gene counts).
+                PeptidesCaptionText.Text = _currentData.IsGeneMatrix ? "Genes" : "Peptides";
 
                 UpdateChart(_currentData);
 

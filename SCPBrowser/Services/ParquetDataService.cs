@@ -85,6 +85,12 @@ namespace SCPBrowser.Services
         /// while still allowing contaminant ratio calculations.
         /// </summary>
         public HashSet<string> ContaminantIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// True when this data came from an Excel gene-matrix import (keyed by gene symbol, no peptide dimension —
+        /// PeptideCount is substituted with the detected-gene count). Drives honest axis labels in the Explorer.
+        /// </summary>
+        public bool IsGeneMatrix { get; set; }
     }
 
 
@@ -776,6 +782,41 @@ namespace SCPBrowser.Services
             await BulkInsertProteinQuantAsync(proteinStats);
 
             progress?.Report("Protein quantification complete!");
+        }
+
+        /// <summary>
+        /// Stores protein_quant_summary rows straight from an already-parsed ProteomicsData (no re-parse). Used by the
+        /// Excel gene-matrix importer, where the matrix is keyed by gene symbol. Mirrors ExtractAndStoreProteinQuantAsync.
+        /// </summary>
+        public async Task StoreProteinQuantMatrixAsync(
+            ProteomicsData data,
+            List<RawFileInfo> rawFiles,
+            IProgress<string> progress = null)
+        {
+            var rawFileIdMap = rawFiles.ToDictionary(rf => rf.RawFileName, rf => rf.RawFileId);
+            var proteinStats = new List<ProteinQuantSummary>();
+
+            foreach (var protein in data.ProteinQuantMatrix.Keys)
+            {
+                foreach (var kv in data.ProteinQuantMatrix[protein])
+                {
+                    if (!rawFileIdMap.TryGetValue(kv.Key, out int rawFileId)) continue;
+                    if (kv.Value > 0)
+                    {
+                        proteinStats.Add(new ProteinQuantSummary
+                        {
+                            ProteinId = protein,
+                            RawFileId = rawFileId,
+                            MedianIntensity = kv.Value,
+                            MeanIntensity = kv.Value,
+                            DetectionCount = 1
+                        });
+                    }
+                }
+            }
+
+            progress?.Report($"Storing {proteinStats.Count} protein quantification records...");
+            await BulkInsertProteinQuantAsync(proteinStats);
         }
 
         /// <summary>

@@ -1114,5 +1114,131 @@ namespace SCPBrowser.Services
 
             return result;
         }
+
+        // ---- k-means cluster assignments (persisted so they survive reopen and can label the PLP export) ----
+
+        public async Task EnsureKMeansClustersTableExistsAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+                CREATE TABLE IF NOT EXISTS kmeans_clusters (
+                    run_name TEXT PRIMARY KEY,
+                    cluster_id INTEGER NOT NULL,
+                    cluster_label TEXT,
+                    k INTEGER,
+                    basis TEXT,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+            ";
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Replaces the stored k-means assignment with the latest result. <paramref name="basis"/> records what the
+        /// clustering was computed on (e.g. "UMAP, k=5") for transparency in the UI / export.
+        /// </summary>
+        public async Task SaveKMeansAssignmentsAsync(Dictionary<string, int> runToCluster, int k, string basis)
+        {
+            await EnsureKMeansClustersTableExistsAsync();
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        using (var clearCmd = connection.CreateCommand())
+                        {
+                            clearCmd.CommandText = "DELETE FROM kmeans_clusters";
+                            await clearCmd.ExecuteNonQueryAsync();
+                        }
+
+                        if (runToCluster != null && runToCluster.Count > 0)
+                        {
+                            using (var insertCmd = connection.CreateCommand())
+                            {
+                                insertCmd.CommandText = @"INSERT OR REPLACE INTO kmeans_clusters
+                                    (run_name, cluster_id, cluster_label, k, basis)
+                                    VALUES (@run, @cid, @label, @k, @basis)";
+                                var pRun = insertCmd.Parameters.Add("@run", SqliteType.Text);
+                                var pCid = insertCmd.Parameters.Add("@cid", SqliteType.Integer);
+                                var pLabel = insertCmd.Parameters.Add("@label", SqliteType.Text);
+                                var pK = insertCmd.Parameters.Add("@k", SqliteType.Integer);
+                                var pBasis = insertCmd.Parameters.Add("@basis", SqliteType.Text);
+                                pK.Value = k;
+                                pBasis.Value = (object)basis ?? DBNull.Value;
+
+                                foreach (var kvp in runToCluster)
+                                {
+                                    if (kvp.Value < 0) continue; // unassigned (non-finite coords) → don't persist
+                                    pRun.Value = kvp.Key;
+                                    pCid.Value = kvp.Value;
+                                    pLabel.Value = "Cluster " + (kvp.Value + 1);
+                                    await insertCmd.ExecuteNonQueryAsync();
+                                }
+                            }
+                        }
+
+                        await transaction.CommitAsync();
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync();
+                        throw;
+                    }
+                }
+            }
+        }
+
+        /// <summary>Loads the persisted per-run k-means cluster labels (run name → "Cluster N"), for the PLP export.</summary>
+        public async Task<Dictionary<string, string>> LoadKMeansLabelsAsync()
+        {
+            var result = new Dictionary<string, string>();
+            var connectionString = $"Data Source={_projectDbPath}";
+
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+
+                // Tolerate a project that has never run k-means (table absent).
+                using (var ensure = connection.CreateCommand())
+                {
+                    ensure.CommandText = @"
+                CREATE TABLE IF NOT EXISTS kmeans_clusters (
+                    run_name TEXT PRIMARY KEY,
+                    cluster_id INTEGER NOT NULL,
+                    cluster_label TEXT,
+                    k INTEGER,
+                    basis TEXT,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );";
+                    await ensure.ExecuteNonQueryAsync();
+                }
+
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = "SELECT run_name, cluster_label FROM kmeans_clusters";
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            if (!reader.IsDBNull(0))
+                                result[reader.GetString(0)] = reader.IsDBNull(1) ? null : reader.GetString(1);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
     }
 }

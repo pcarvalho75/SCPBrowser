@@ -302,7 +302,7 @@ namespace SCPBrowser
             }
             else
             {
-                PlotGroupBoxHeader.Text = "Peptides vs TIC";
+                PlotGroupBoxHeader.Text = XyAxisLabel();
             }
 
             if (_currentData != null)
@@ -370,6 +370,11 @@ namespace SCPBrowser
                         finally { _suppressSettingsSave = false; }
                         ConfidenceThresholdLabel.Text = $"{conf:P0}";
                     }
+
+                    // Load any persisted k-means classification so the Selected Points "Cluster" column is populated
+                    // on reopen, before the user re-runs k-means.
+                    try { _persistedClusterLabels = await db.LoadKMeansLabelsAsync(); }
+                    catch { _persistedClusterLabels = null; }
                 }
             }
             catch (Exception ex)
@@ -585,6 +590,9 @@ namespace SCPBrowser
 
             _currentData = data;
 
+            // A gene matrix has no peptide dimension — hide the redundant "Peptides" column in the selected-points grid.
+            SelectedPointsGridPanel.SetGeneMatrixMode(data?.IsGeneMatrix == true);
+
             // Keep coverage panel in sync with current data
             ProteinCoveragePanel.UpdateProteomicsData(data);
 
@@ -766,6 +774,9 @@ namespace SCPBrowser
 
             string mode = selectedItem.Tag?.ToString() ?? "TargetRatio";
 
+            // The k selector is only shown in k-means mode.
+            KMeansPanel.Visibility = mode == "KMeans" ? Visibility.Visible : Visibility.Collapsed;
+
             if (mode == "CellType")
             {
                 if (_cellTypePredictions == null || _cellTypePredictions.Count == 0)
@@ -803,6 +814,16 @@ namespace SCPBrowser
                 ConfidenceThresholdPanel.Visibility = Visibility.Collapsed;
                 PopulatePlateCheckboxes();
                 UpdatePieChart("Plate");
+                BioConditionPanel.Visibility = Visibility.Visible;
+            }
+            else if (mode == "KMeans")
+            {
+                // RefreshChart (below) renders, clusters on the displayed axes, and fills the pie legend.
+                LegendPanelTitle.Text = "K-means Clusters";
+                CheckboxScrollViewer.Visibility = Visibility.Collapsed;
+                ContaminantRatioLegendPanel.Visibility = Visibility.Collapsed;
+                DistributionPieChart.Visibility = Visibility.Visible;
+                ConfidenceThresholdPanel.Visibility = Visibility.Collapsed;
                 BioConditionPanel.Visibility = Visibility.Visible;
             }
             else
@@ -914,50 +935,249 @@ namespace SCPBrowser
             }
         }
 
+        // ----- k-means clustering (Color-by = "K-means") -----------------------------------------------------------
+        // Clusters are computed on the DISPLAYED axes as a post-render recolor, recomputed on k / view changes but NOT
+        // on checkbox / lasso toggles, so labels stay stable for persistence + export. Fit on non-contaminant cells;
+        // every cell is then assigned to its nearest centroid so all cells carry a label.
+        private int _lastK = 5;
+        private Dictionary<int, Color> _clusterColorsById = new Dictionary<int, Color>();
+        private Dictionary<string, Color> _clusterColorMap = new Dictionary<string, Color>(); // "Cluster N" → colour, for the pie
+        private Dictionary<string, string> _persistedClusterLabels; // run → "Cluster N" loaded from DB (fallback for the grid on reopen)
+
+        private bool _kmeansRunning;
+        private bool _kmeansRerunRequested;
+
+        private async System.Threading.Tasks.Task ApplyKMeansAsync()
+        {
+            if (ScatterPlot.DataPoints == null || ScatterPlot.DataPoints.Count == 0) return;
+
+            // Re-entrancy guard: if a clustering is already running (e.g. a debounced k-change lands mid-compute), just
+            // request a re-run so the latest k/view wins, instead of overlapping two passes over the same points.
+            if (_kmeansRunning) { _kmeansRerunRequested = true; return; }
+            _kmeansRunning = true;
+
+            // The fit runs off the UI thread (no GUI lock) — show a brief wait overlay while it computes + recolors.
+            // Everything is inside the try so the finally always clears _kmeansRunning + hides the overlay.
+            var mainWindow = Window.GetWindow(this) as MainWindow;
+            try
+            {
+                mainWindow?.LoadingOverlay.SetMessage("Clustering cells");
+                mainWindow?.LoadingOverlay.Show();
+                do
+                {
+                    _kmeansRerunRequested = false;
+                    await RunKMeansCoreAsync(mainWindow);
+                } while (_kmeansRerunRequested);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[KMeans] {ex}");
+            }
+            finally
+            {
+                _kmeansRunning = false;
+                mainWindow?.LoadingOverlay.Hide();
+            }
+        }
+
+        private async System.Threading.Tasks.Task RunKMeansCoreAsync(MainWindow mainWindow)
+        {
+            var pts = ScatterPlot.DataPoints;
+            if (pts == null || pts.Count == 0) return;
+
+            int k = (KValueBox?.Value is int v && v >= 1) ? v : _lastK;
+            _lastK = k;
+
+            // Cluster on the DISPLAYED coordinates: PCA/UMAP store the embedding in XData/YData, but the default
+            // Peptide/TIC view leaves those at 0 — so there we cluster on the actual axis values (peptide count, TIC).
+            // KMeansClusteringService z-scores per dimension, so the wildly different peptide-vs-TIC scales are handled.
+            var viewItem = ViewModeComboBox.SelectedItem as ComboBoxItem;
+            string viewMode = viewItem?.Tag?.ToString() ?? "PeptideTic";
+            bool dimReduced = viewMode == "PCA" || viewMode == "UMAP";
+
+            int n = pts.Count;
+            var coords = new double[n][];
+            var fitMask = new bool[n];
+            for (int i = 0; i < n; i++)
+            {
+                coords[i] = dimReduced
+                    ? new[] { pts[i].XData, pts[i].YData }
+                    : new[] { (double)pts[i].PeptideCount, pts[i].TicValue };
+                fitMask[i] = (pts[i].ExclusionReasons & ExclusionReason.ContaminantRatio) == 0;
+            }
+
+            mainWindow?.LoadingOverlay.SetProgress($"Running k-means (k={k}) on {n:N0} cells…");
+
+            var result = await System.Threading.Tasks.Task.Run(
+                () => KMeansClusteringService.Fit(coords, fitMask, k, seed: 42));
+
+            var runToCluster = new Dictionary<string, int>();
+            for (int i = 0; i < n; i++)
+                if (!string.IsNullOrEmpty(pts[i].RunName))
+                    runToCluster[pts[i].RunName] = result.Assignments[i];
+
+            _clusterColorsById = GenerateClusterColorMap(result.K);
+            _clusterColorMap = _clusterColorsById.ToDictionary(kv => "Cluster " + (kv.Key + 1), kv => kv.Value);
+
+            ScatterPlot.ApplyClusterColors(runToCluster, _clusterColorsById);
+
+            // Refresh the cached classification + the Selected Points "Cluster" column to reflect this run.
+            _persistedClusterLabels = runToCluster.Where(kv => kv.Value >= 0)
+                .ToDictionary(kv => kv.Key, kv => "Cluster " + (kv.Value + 1));
+            if (_currentSelectedPoints != null && _currentSelectedPoints.Count > 0)
+                SelectedPointsGridPanel.UpdateGrid(BuildSelectedPointsGrid(_currentSelectedPoints));
+
+            string basis = $"{CurrentViewBasis()}, k={result.K}";
+            if (KMeansStatusLabel != null) KMeansStatusLabel.Text = basis;
+
+            UpdatePieChart("KMeans");
+
+            // Persist so the labels survive reopen and can drive the PLP export.
+            if (_databaseService != null)
+            {
+                try { await _databaseService.SaveKMeansAssignmentsAsync(runToCluster, result.K, basis); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[KMeans persist] {ex}"); }
+            }
+        }
+
+        private static Dictionary<int, Color> GenerateClusterColorMap(int k)
+        {
+            var map = new Dictionary<int, Color>();
+            for (int i = 0; i < Math.Max(1, k); i++)
+                map[i] = _colorPalette[i % _colorPalette.Length];
+            return map;
+        }
+
+        /// <summary>Brush for a cluster label, matching its scatter colour. Falls back to the palette colour derived
+        /// from the cluster number so persisted-only labels (before a re-run) still colour correctly.</summary>
+        private Brush GetClusterBrush(string label)
+        {
+            if (string.IsNullOrEmpty(label)) return Brushes.Black;
+            if (_clusterColorMap != null && _clusterColorMap.TryGetValue(label, out var c))
+                return new SolidColorBrush(c);
+            if (label.StartsWith("Cluster ", StringComparison.OrdinalIgnoreCase) &&
+                int.TryParse(label.Substring(8), out int n) && n >= 1)
+                return new SolidColorBrush(_colorPalette[(n - 1) % _colorPalette.Length]);
+            return Brushes.Black;
+        }
+
+        /// <summary>Builds the Selected Points grid rows for the given points, including the live-or-persisted cluster.</summary>
+        private List<SelectedPointData> BuildSelectedPointsGrid(IEnumerable<DataPoint> pts)
+        {
+            return pts.Select(p =>
+            {
+                // Prefer this session's live cluster; fall back to the persisted classification (so the column is
+                // populated on reopen, before the user re-runs k-means).
+                string clusterLabel = p.ClusterLabel;
+                if (string.IsNullOrEmpty(clusterLabel) && _persistedClusterLabels != null)
+                    _persistedClusterLabels.TryGetValue(p.RunName, out clusterLabel);
+
+                return new SelectedPointData
+                {
+                    RawFileId = _runNameToRawFileId.TryGetValue(p.RunName, out var id) ? id : 0,
+                    RunName = p.RunName,
+                    PeptideCount = p.PeptideCount,
+                    TicValue = p.TicValue,
+                    ProteinCount = p.ProteinCount,
+                    ContaminantRatioPercent = $"{p.ContaminantRatio * 100:F2}%",
+                    CellType = p.PredictedCellType ?? "",
+                    CellTypeBrush = GetCellTypeBrush(p.PredictedCellType),
+                    BiologicalCondition = p.BiologicalCondition ?? "",
+                    CompositeScore = p.PredictionScore != null ? $"{p.PredictionScore.CompositeScore:F3}" : "",
+                    IsIncluded = !_excludedRunNames.Contains(p.RunName),
+                    ClusterLabel = clusterLabel ?? "",
+                    ClusterId = ParseClusterId(clusterLabel),
+                    ClusterBrush = GetClusterBrush(clusterLabel)
+                };
+            }).ToList();
+        }
+
+        /// <summary>"Cluster N" → N-1 (the 0-based sort key); -1 for unassigned/blank.</summary>
+        private static int ParseClusterId(string label) =>
+            !string.IsNullOrEmpty(label) && label.StartsWith("Cluster ", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(label.Substring(8), out int n) && n >= 1 ? n - 1 : -1;
+
+        /// <summary>Short label for the axes k-means clustered on, e.g. "UMAP axes" — for the legend + persisted basis.</summary>
+        private string CurrentViewBasis()
+        {
+            var item = ViewModeComboBox.SelectedItem as ComboBoxItem;
+            string viewMode = item?.Tag?.ToString() ?? "PeptideTic";
+            return viewMode switch
+            {
+                "PCA" => "PCA axes",
+                "UMAP" => "UMAP axes",
+                _ => "Peptide/TIC axes"
+            };
+        }
+
+        private System.Windows.Threading.DispatcherTimer _kmeansDebounce;
+
+        private void KValueBox_ValueChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        {
+            if (!_isInitialized || _currentData == null) return;
+            if (CurrentColoringMode() != "KMeans") return;
+
+            // Debounce: coalesce rapid spinner changes into one re-cluster so dialing k doesn't fire a storm of
+            // computes / wait overlays.
+            if (_kmeansDebounce == null)
+            {
+                _kmeansDebounce = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(250)
+                };
+                _kmeansDebounce.Tick += async (s, ev) =>
+                {
+                    _kmeansDebounce.Stop();
+                    await ApplyKMeansAsync();
+                };
+            }
+            _kmeansDebounce.Stop();
+            _kmeansDebounce.Start();
+        }
+
         private Dictionary<string, int> GetCategoryCounts(string coloringMode)
         {
+            // Single source of truth: count the cells CURRENTLY in the selection — the same set the Selected Points
+            // tab, the analyses, and the PLP export use (filters + lasso via _currentSelectedPoints, minus manual
+            // exclusions). Previously this recomputed from the full _currentData and ignored the selection, so the
+            // pie didn't track unchecking a condition / lassoing.
             var counts = new Dictionary<string, int>();
-
-            if (_currentData == null)
-                return counts;
-
-            if (coloringMode == "CellType" && _cellTypePredictions != null)
+            foreach (var p in GetIncludedSelectedPoints())
             {
-                var filteredRunNames = new HashSet<string>(_currentData.RawFileNames);
-                foreach (var kvp in _cellTypePredictions)
+                string key = coloringMode switch
                 {
-                    if (!filteredRunNames.Contains(kvp.Key))
-                        continue;
-                    string cellType = kvp.Value.TopCellType ?? "Unknown";
-                    if (!counts.ContainsKey(cellType))
-                        counts[cellType] = 0;
-                    counts[cellType]++;
-                }
+                    "CellType" => string.IsNullOrEmpty(p.PredictedCellType) ? "Unknown" : p.PredictedCellType,
+                    "BioCondition" => string.IsNullOrEmpty(p.BiologicalCondition) ? "Unknown" : p.BiologicalCondition,
+                    "Plate" => string.IsNullOrEmpty(p.PlateName) ? "Unknown" : p.PlateName,
+                    "KMeans" => string.IsNullOrEmpty(p.ClusterLabel) ? "Unassigned" : p.ClusterLabel,
+                    _ => null
+                };
+                if (key == null) continue;
+                counts[key] = counts.GetValueOrDefault(key) + 1;
             }
-            else if (coloringMode == "BioCondition" && _currentData.BiologicalConditionPerFile != null)
-            {
-                foreach (var kvp in _currentData.BiologicalConditionPerFile)
-                {
-                    string condition = string.IsNullOrEmpty(kvp.Value) ? "Unknown" : kvp.Value;
-                    if (!counts.ContainsKey(condition))
-                        counts[condition] = 0;
-                    counts[condition]++;
-                }
-            }
-            else if (coloringMode == "Plate" && _plateMappingPerFile != null)
-            {
-                var platePerFile = GeneratePlatePerFile();
-                foreach (var kvp in platePerFile)
-                {
-                    string plate = string.IsNullOrEmpty(kvp.Value) ? "Unknown" : kvp.Value;
-                    if (!counts.ContainsKey(plate))
-                        counts[plate] = 0;
-                    counts[plate]++;
-                }
-            }
-
             return counts;
         }
+
+        /// <summary>The cells currently in the selection AND not manually excluded — the single set the pie, the
+        /// Selected Points tab, the analyses and the PLP export all share.</summary>
+        private List<DataPoint> GetIncludedSelectedPoints()
+        {
+            if (_currentSelectedPoints == null) return new List<DataPoint>();
+            return _currentSelectedPoints
+                .Where(p => _excludedRunNames == null || !_excludedRunNames.Contains(p.RunName))
+                .ToList();
+        }
+
+        /// <summary>The active scatter colour mode ("CellType" | "BioCondition" | "Plate" | "TargetRatio").</summary>
+        private string CurrentColoringMode()
+        {
+            var item = ColorModeComboBox.SelectedItem as ComboBoxItem;
+            return item?.Tag?.ToString() ?? "TargetRatio";
+        }
+
+        /// <summary>Honest base-scatter label: gene-matrix (.xlsx) imports have no peptide dimension, so the axis shows
+        /// proteins/genes and summed intensity rather than peptides/TIC.</summary>
+        private string XyAxisLabel() => (_currentData?.IsGeneMatrix == true) ? "Proteins vs Total Intensity" : "Peptides vs TIC";
 
         private void UpdatePieChart(string coloringMode)
         {
@@ -976,6 +1196,8 @@ namespace SCPBrowser
                 colorMap = GenerateBioConditionColorMap();
             else if (coloringMode == "Plate")
                 colorMap = GeneratePlateColorMap();
+            else if (coloringMode == "KMeans")
+                colorMap = _clusterColorMap;
 
             if (counts.Count > 0 && colorMap != null)
             {
@@ -1303,6 +1525,9 @@ namespace SCPBrowser
                     _checkedCellTypes.Add(cellType);
             }
 
+            // The k selector is only relevant in k-means mode.
+            KMeansPanel.Visibility = colorMode == "KMeans" ? Visibility.Visible : Visibility.Collapsed;
+
             // Ensure legend and pie chart are populated for the current color mode
             if (colorMode == "BioCondition")
             {
@@ -1335,6 +1560,15 @@ namespace SCPBrowser
                 if (BioConditionCheckboxes.Children.Count == 0)
                     PopulatePlateCheckboxes();
                 UpdatePieChart("Plate");
+                BioConditionPanel.Visibility = Visibility.Visible;
+            }
+            else if (colorMode == "KMeans")
+            {
+                // The cluster distribution pie is the legend; it's refreshed by ApplyKMeansAsync after clustering.
+                LegendPanelTitle.Text = "K-means Clusters";
+                CheckboxScrollViewer.Visibility = Visibility.Collapsed;
+                ContaminantRatioLegendPanel.Visibility = Visibility.Collapsed;
+                DistributionPieChart.Visibility = Visibility.Visible;
                 BioConditionPanel.Visibility = Visibility.Visible;
             }
             else
@@ -1425,10 +1659,35 @@ namespace SCPBrowser
             // ExclusionReasons are already set by the synchronous UpdateSelectionWithFilters
             // call inside UpdatePlot, so we can safely read them here.
             UpdateExcludedRunsGrid();
+
+            // Surface any batch-correction warning (skipped / fell back to plate-only / failed) in the plot header.
+            UpdateBatchCorrectionWarning();
+
+            // K-means colours points by cluster computed on the displayed coordinates, so it must run AFTER UpdatePlot
+            // (XData/YData and the per-point selection state now exist).
+            if (colorMode == "KMeans")
+                await ApplyKMeansAsync();
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[RefreshChart] {ex}");
+            }
+        }
+
+        /// <summary>Shows/hides the batch-correction warning in the plot header based on the scatter's last run.</summary>
+        private void UpdateBatchCorrectionWarning()
+        {
+            string msg = ScatterPlot?.BatchCorrectionWarning;
+            if (string.IsNullOrEmpty(msg))
+            {
+                BatchCorrectionWarningText.Visibility = Visibility.Collapsed;
+                BatchCorrectionWarningText.ToolTip = null;
+            }
+            else
+            {
+                BatchCorrectionWarningText.Text = "⚠ " + msg;
+                BatchCorrectionWarningText.ToolTip = msg; // full text on hover (header may trim)
+                BatchCorrectionWarningText.Visibility = Visibility.Visible;
             }
         }
 
@@ -1520,21 +1779,21 @@ namespace SCPBrowser
             else if (options.UseCellTypeColoring && _cellTypePredictions != null)
             {
                 int predictedCount = _cellTypePredictions.Count(p => p.Value.TopCellType != null);
-                baseHeader = $"Peptides vs TIC ({fileCount} files, {predictedCount} with cell type predictions)";
+                baseHeader = $"{XyAxisLabel()} ({fileCount} files, {predictedCount} with cell type predictions)";
             }
             else if (options.UseBioConditionColoring && _currentData.BiologicalConditionPerFile.Count > 0)
             {
                 int conditionCount = _currentData.BiologicalConditionPerFile.Values.Where(c => !string.IsNullOrEmpty(c)).Distinct().Count();
-                baseHeader = $"Peptides vs TIC ({fileCount} files, {conditionCount} biological conditions)";
+                baseHeader = $"{XyAxisLabel()} ({fileCount} files, {conditionCount} biological conditions)";
             }
             else if (options.UsePlateColoring && options.PlateColorMap != null && options.PlateColorMap.Count > 0)
             {
                 int plateCount = options.PlateColorMap.Count;
-                baseHeader = $"Peptides vs TIC ({fileCount} files, {plateCount} plates)";
+                baseHeader = $"{XyAxisLabel()} ({fileCount} files, {plateCount} plates)";
             }
             else
             {
-                baseHeader = $"Peptides vs TIC ({fileCount} files)";
+                baseHeader = $"{XyAxisLabel()} ({fileCount} files)";
             }
 
             PlotGroupBoxHeader.Text = baseHeader;
@@ -1749,6 +2008,11 @@ namespace SCPBrowser
 
             _currentSelectedPoints = e.SelectedPoints;
 
+            // Keep the distribution pie chart in sync with the current selection (filters + lasso, minus manual
+            // exclusions). Fires on every selection change — unchecking a condition, lassoing, clearing — so the pie
+            // always matches the Selected Points tab and the PLP export.
+            UpdatePieChart(CurrentColoringMode());
+
             // Detect if this is a lasso selection (polygon-based) or checkbox selection
             bool wasLassoActive = _isLassoActive;
             _isLassoActive = ScatterPlot.HasPolygonSelection();
@@ -1773,22 +2037,7 @@ namespace SCPBrowser
 
             if (e.SelectedPoints.Count > 0)
             {
-                var gridData = e.SelectedPoints.Select(p => new SelectedPointData
-                {
-                    RawFileId = _runNameToRawFileId.TryGetValue(p.RunName, out var id) ? id : 0,
-                    RunName = p.RunName,
-                    PeptideCount = p.PeptideCount,
-                    TicValue = p.TicValue,
-                    ProteinCount = p.ProteinCount,
-                    ContaminantRatioPercent = $"{p.ContaminantRatio * 100:F2}%",
-                    CellType = p.PredictedCellType ?? "",
-                    CellTypeBrush = GetCellTypeBrush(p.PredictedCellType),
-                    BiologicalCondition = p.BiologicalCondition ?? "",
-                    CompositeScore = p.PredictionScore != null ? $"{p.PredictionScore.CompositeScore:F3}" : "",
-                    IsIncluded = !_excludedRunNames.Contains(p.RunName)
-                }).ToList();
-
-                SelectedPointsGridPanel.UpdateGrid(gridData);
+                SelectedPointsGridPanel.UpdateGrid(BuildSelectedPointsGrid(e.SelectedPoints));
                 UpdateSelectionRuleText();
                 ClearSelectionButton.IsEnabled = true;
             }

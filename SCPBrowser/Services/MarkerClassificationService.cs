@@ -238,6 +238,12 @@ namespace SCPBrowser.Services
                 while (await r.ReadAsync()) protGene[r.GetString(0)] = r.GetString(1);
             });
 
+            // Honor user-flagged contaminants (the same protein_contaminants table the PCA/UMAP/profile analyses and
+            // the PLP export use) so a flagged protein group is excluded from marker classification too.
+            var pdb = new ProjectDatabaseService(_projectDbPath);
+            await pdb.EnsureProteinContaminantsTableExistsAsync();
+            var contaminants = new HashSet<string>(await pdb.LoadContaminantsAsync(), StringComparer.OrdinalIgnoreCase);
+
             progress?.Report("Reading protein intensities per cell...");
             var levels = new Dictionary<string, Dictionary<string, double>>(StringComparer.OrdinalIgnoreCase);
             await WithConnectionAsync(async conn =>
@@ -251,6 +257,7 @@ namespace SCPBrowser.Services
                 while (await r.ReadAsync())
                 {
                     string cell = r.GetString(0), group = r.GetString(1);
+                    if (contaminants.Count > 0 && contaminants.Contains(group)) continue; // excluded: user-flagged contaminant
                     double v = r.GetDouble(2);
                     if (!levels.TryGetValue(cell, out var gl)) { gl = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase); levels[cell] = gl; }
                     foreach (var g in GenesForGroup(group, protGene))

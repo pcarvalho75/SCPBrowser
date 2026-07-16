@@ -391,7 +391,8 @@ namespace SCPBrowser.Services
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
                 ProteinToGeneMap = new Dictionary<string, string>(source.ProteinToGeneMap),
                 ProteinQuantMatrix = new Dictionary<string, Dictionary<string, double>>(),
-                ContaminantIds = new HashSet<string>(source.ContaminantIds, StringComparer.OrdinalIgnoreCase)
+                ContaminantIds = new HashSet<string>(source.ContaminantIds, StringComparer.OrdinalIgnoreCase),
+                IsGeneMatrix = source.IsGeneMatrix // preserve the gene-matrix flag through filtering (drives the axis relabel)
             };
 
             // Filter protein quant matrix

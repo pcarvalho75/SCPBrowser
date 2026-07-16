@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Windows;
@@ -10,6 +11,7 @@ namespace SCPBrowser
     public partial class SelectedPointsGridControl : UserControl
     {
         private List<SelectedPointData> _currentGridData;
+        private bool _isGeneMatrix;
 
         public event EventHandler<SelectedPointData> GridSelectionChanged;
         public event EventHandler<RunInclusionChangedEventArgs> RunInclusionChanged;
@@ -20,10 +22,34 @@ namespace SCPBrowser
             InitializeComponent();
         }
 
+        /// <summary>
+        /// A gene matrix has no peptide dimension: the "Peptides" column would just duplicate the detected-gene
+        /// count already shown under "Proteins", so it is hidden (and omitted from the clipboard export) in that mode.
+        /// </summary>
+        public void SetGeneMatrixMode(bool isGeneMatrix)
+        {
+            _isGeneMatrix = isGeneMatrix;
+            PeptidesColumn.Visibility = isGeneMatrix ? Visibility.Collapsed : Visibility.Visible;
+        }
+
         public void UpdateGrid(List<SelectedPointData> gridData)
         {
+            // Preserve the user's active column sort across selection refreshes — reassigning ItemsSource otherwise
+            // clears the sort (and the header arrow) every time the scatter selection changes.
+            var priorSorts = SelectedPointsGrid.Items.SortDescriptions.ToList();
+            var priorDirs = SelectedPointsGrid.Columns.Select(c => c.SortDirection).ToList();
+
             _currentGridData = gridData;
             SelectedPointsGrid.ItemsSource = gridData;
+
+            if (priorSorts.Count > 0)
+            {
+                foreach (var sd in priorSorts)
+                    SelectedPointsGrid.Items.SortDescriptions.Add(sd);
+                for (int i = 0; i < priorDirs.Count && i < SelectedPointsGrid.Columns.Count; i++)
+                    SelectedPointsGrid.Columns[i].SortDirection = priorDirs[i];
+                SelectedPointsGrid.Items.Refresh();
+            }
 
             if (gridData.Count > 0)
             {
@@ -139,11 +165,23 @@ namespace SCPBrowser
                 return;
 
             var sb = new StringBuilder();
-            sb.AppendLine("Run Name\tCondition\tPeptides\tTIC\tProteins\tContaminant Ratio\tCell Type\tClassification Score");
 
-            foreach (var row in _currentGridData)
+            // Match the visible columns: drop the redundant "Peptides" column for a gene matrix.
+            if (_isGeneMatrix)
             {
-                sb.AppendLine($"{row.RunName}\t{row.BiologicalCondition}\t{row.PeptideCount}\t{row.TicValue:E2}\t{row.ProteinCount}\t{row.ContaminantRatioPercent}\t{row.CellType}\t{row.CompositeScore}");
+                sb.AppendLine("Run Name\tCondition\tTIC\tProteins\tContaminant Ratio\tCell Type\tCluster\tClassification Score");
+                foreach (var row in _currentGridData)
+                {
+                    sb.AppendLine($"{row.RunName}\t{row.BiologicalCondition}\t{row.TicValue:E2}\t{row.ProteinCount}\t{row.ContaminantRatioPercent}\t{row.CellType}\t{row.ClusterLabel}\t{row.CompositeScore}");
+                }
+            }
+            else
+            {
+                sb.AppendLine("Run Name\tCondition\tPeptides\tTIC\tProteins\tContaminant Ratio\tCell Type\tCluster\tClassification Score");
+                foreach (var row in _currentGridData)
+                {
+                    sb.AppendLine($"{row.RunName}\t{row.BiologicalCondition}\t{row.PeptideCount}\t{row.TicValue:E2}\t{row.ProteinCount}\t{row.ContaminantRatioPercent}\t{row.CellType}\t{row.ClusterLabel}\t{row.CompositeScore}");
+                }
             }
 
             Clipboard.SetText(sb.ToString());

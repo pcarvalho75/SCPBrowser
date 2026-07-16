@@ -101,6 +101,13 @@ namespace SCPBrowser.Services
             // Step 1: Build design matrix
             var design = BuildDesignMatrix(nSamples, batchLabels.ToArray(), uniqueBatches, biologicalCovariates?.ToArray());
 
+            // Guard: a covariate confounded with batch (or any collinear design) makes (X'X) singular, so the OLS
+            // solve below would silently emit NaN. Detect it up front and fail cleanly so the caller can fall back.
+            int designRank = design.Rank();
+            if (designRank < design.ColumnCount)
+                return Fail($"Batch-correction design is rank-deficient (rank {designRank} of {design.ColumnCount} columns) — " +
+                            "the biological covariate is confounded with batch and cannot be separated from it.");
+
             // Step 2: Standardize data
             var (sData, varPooled, standMean) = StandardizeData(
                 dataT, design, nBatches, nPerBatch, nSamples, nFeatures);

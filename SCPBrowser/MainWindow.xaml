@@ -58,7 +58,12 @@
                   x:Name="ImportParquetMenuItem"
                   Click="ImportParquet_Click"
                   IsEnabled="False"/>
-                <MenuItem Header="_Search Database (FASTA)..." 
+                <MenuItem Header="Excel _Gene Matrix..."
+                  x:Name="ImportGeneMatrixMenuItem"
+                  Click="ImportGeneMatrix_Click"
+                  IsEnabled="False"
+                  ToolTip="Import a DIA-NN gene/pg matrix from Excel (.xlsx). Cell type is auto-detected from each sample's folder path."/>
+                <MenuItem Header="_Search Database (FASTA)..."
                   x:Name="ImportFastaMenuItem"
                   Click="ImportFasta_Click"
                   IsEnabled="False"/>

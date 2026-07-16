@@ -14,7 +14,8 @@ namespace SCPBrowser.Services
     {
         BioCondition,
         CellType,
-        Plate
+        Plate,
+        KMeans
     }
 
     /// <summary>
@@ -63,7 +64,8 @@ namespace SCPBrowser.Services
             Dictionary<string, CellTypePredictionResult> cellTypePredictions,
             Dictionary<string, int> rawFileToPlateId,
             Dictionary<int, string> plateIdToName,
-            Dictionary<string, string> cellTypeMergeMap = null)
+            Dictionary<string, string> cellTypeMergeMap = null,
+            Dictionary<string, string> kmeansLabels = null)
         {
             switch (mode)
             {
@@ -95,6 +97,13 @@ namespace SCPBrowser.Services
                         return plateName;
                     return null;
 
+                case PLPLabelMode.KMeans:
+                    if (kmeansLabels != null &&
+                        kmeansLabels.TryGetValue(runName, out var cluster) &&
+                        !string.IsNullOrEmpty(cluster))
+                        return cluster;
+                    return null;
+
                 default:
                     return null;
             }
@@ -109,7 +118,8 @@ namespace SCPBrowser.Services
             PLPExportOptions options,
             Dictionary<string, CellTypePredictionResult> cellTypePredictions,
             Dictionary<string, int> rawFileToPlateId,
-            Dictionary<int, string> plateIdToName)
+            Dictionary<int, string> plateIdToName,
+            Dictionary<string, string> kmeansLabels = null)
         {
             var summary = new PLPExportSummary();
             var classBreakdown = new Dictionary<string, int>();
@@ -117,8 +127,8 @@ namespace SCPBrowser.Services
 
             foreach (var run in selectedRuns)
             {
-                string primary = GetRunLabel(run, options.PrimaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap);
-                string secondary = GetRunLabel(run, options.SecondaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap);
+                string primary = GetRunLabel(run, options.PrimaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap, kmeansLabels);
+                string secondary = GetRunLabel(run, options.SecondaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap, kmeansLabels);
 
                 if (primary == null || secondary == null)
                 {
@@ -176,9 +186,10 @@ namespace SCPBrowser.Services
             Dictionary<string, int> rawFileToPlateId,
             Dictionary<int, string> plateIdToName,
             Dictionary<string, FastaParserService.ProteinAnnotation> fastaAnnotations,
-            string outputPath)
+            string outputPath,
+            Dictionary<string, string> kmeansLabels = null)
         {
-            var plp = Build(selectedRuns, data, options, cellTypePredictions, rawFileToPlateId, plateIdToName, fastaAnnotations);
+            var plp = Build(selectedRuns, data, options, cellTypePredictions, rawFileToPlateId, plateIdToName, fastaAnnotations, kmeansLabels);
             plp.Save(outputPath);
             return plp;
         }
@@ -193,7 +204,8 @@ namespace SCPBrowser.Services
             Dictionary<string, CellTypePredictionResult> cellTypePredictions,
             Dictionary<string, int> rawFileToPlateId,
             Dictionary<int, string> plateIdToName,
-            Dictionary<string, FastaParserService.ProteinAnnotation> fastaAnnotations)
+            Dictionary<string, FastaParserService.ProteinAnnotation> fastaAnnotations,
+            Dictionary<string, string> kmeansLabels = null)
         {
             if (data?.ProteinQuantMatrix == null || selectedRuns == null || selectedRuns.Count == 0)
                 throw new ArgumentException("No data or selected runs to export.");
@@ -237,8 +249,8 @@ namespace SCPBrowser.Services
             var runLabels = new Dictionary<string, string>();
             foreach (var run in selectedRuns)
             {
-                string primary = GetRunLabel(run, options.PrimaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap);
-                string secondary = GetRunLabel(run, options.SecondaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap);
+                string primary = GetRunLabel(run, options.PrimaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap, kmeansLabels);
+                string secondary = GetRunLabel(run, options.SecondaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap, kmeansLabels);
 
                 if (primary != null && secondary != null)
                     runLabels[run] = primary + "_" + secondary;

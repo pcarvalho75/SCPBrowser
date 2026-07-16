@@ -4,7 +4,8 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:SCPBrowser" xmlns:controls="clr-namespace:SCPBrowser.Controls"
-             mc:Ignorable="d" 
+             xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
+             mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900" Background="WhiteSmoke">
     <Grid Margin="10">
         <Grid.RowDefinitions>
@@ -232,6 +233,8 @@
                                ToolTipService.ShowOnDisabled="True"
                                ToolTip="Import a transcriptomic or proteomic reference via the Reference menu to enable cell type classification."
                                Background="#FFECEC"/>
+                  <ComboBoxItem x:Name="ColorByKMeansItem" Content="K-means" Tag="KMeans"
+                               ToolTip="Cluster cells with k-means (k-means++ seeding) on the currently displayed axes."/>
             </ComboBox>
 
             <StackPanel x:Name="ConfidenceThresholdPanel" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,15,0">
@@ -242,8 +245,18 @@
                         TickFrequency="0.05" IsSnapToTickEnabled="True"
                         ValueChanged="ConfidenceThresholdSlider_ValueChanged"
                         ToolTip="Runs below this confidence are marked Undetermined"/>
-                <TextBlock x:Name="ConfidenceThresholdLabel" Text="50%" 
+                <TextBlock x:Name="ConfidenceThresholdLabel" Text="50%"
                            VerticalAlignment="Center" Margin="5,0,0,0" FontWeight="SemiBold"/>
+            </StackPanel>
+
+            <StackPanel x:Name="KMeansPanel" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,15,0">
+                <TextBlock Text="k:" VerticalAlignment="Center" Margin="0,0,5,0" FontWeight="SemiBold"/>
+                <xctk:IntegerUpDown x:Name="KValueBox" Minimum="1" Maximum="50" Value="5"
+                                    Width="60" VerticalAlignment="Center"
+                                    ValueChanged="KValueBox_ValueChanged"
+                                    ToolTip="Number of k-means clusters (k ≥ 1)"/>
+                <TextBlock x:Name="KMeansStatusLabel" Text="" VerticalAlignment="Center"
+                           Margin="8,0,0,0" Foreground="#555"/>
             </StackPanel>
 
             <Button x:Name="ClearSelectionButton"
@@ -273,9 +286,19 @@
 
             <GroupBox Grid.Column="0">
                 <GroupBox.Header>
-                    <TextBlock x:Name="PlotGroupBoxHeader" 
-                       Text="Peptides vs TIC"
-                       FontWeight="SemiBold"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="PlotGroupBoxHeader"
+                           Text="Peptides vs TIC"
+                           FontWeight="SemiBold"/>
+                        <TextBlock x:Name="BatchCorrectionWarningText"
+                           Margin="12,0,0,0"
+                           Foreground="#B45309"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="640"
+                           VerticalAlignment="Center"
+                           Visibility="Collapsed"/>
+                    </StackPanel>
                 </GroupBox.Header>
                 <local:ScatterPlotControl x:Name="ScatterPlot"/>
             </GroupBox>

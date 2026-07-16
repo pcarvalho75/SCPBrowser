@@ -1,0 +1,135 @@
+<Window x:Class="SCPBrowser.ImportGeneMatrixDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Import Excel Gene Matrix"
+        Height="680" Width="900"
+        WindowStartupLocation="CenterOwner"
+        Background="#f8fafc">
+
+    <Window.Resources>
+        <Style x:Key="LabelText" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#334155"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="#2563eb"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="20,8"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#1d4ed8"/></Trigger>
+                <Trigger Property="IsEnabled" Value="False"><Setter Property="Background" Value="#cbd5e1"/><Setter Property="Cursor" Value="Arrow"/></Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Background" Value="#e2e8f0"/>
+            <Setter Property="Foreground" Value="#475569"/>
+            <Setter Property="Padding" Value="20,8"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#cbd5e1"/></Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="Import Excel Gene Matrix" FontSize="18" FontWeight="Bold" Foreground="#0f172a"/>
+            <TextBlock Text="A gene × sample matrix (.xlsx). Cell type is auto-detected from each sample's folder path; peptide count is substituted with detected-gene count."
+                       FontSize="11" Foreground="#64748b" Margin="0,3,0,0" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <Border Grid.Row="1" BorderBrush="#e2e8f0" BorderThickness="1" CornerRadius="6" Padding="12" Background="White" Margin="0,0,0,12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="70"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="📁 File:" Style="{StaticResource LabelText}"/>
+                <Border Grid.Row="0" Grid.Column="1" Height="28" Background="#f8fafc" BorderBrush="#cbd5e1" BorderThickness="1" CornerRadius="6" Padding="6,4" Margin="0,0,8,0">
+                    <TextBlock x:Name="FilePathTextBox" VerticalAlignment="Center" Text="" TextTrimming="CharacterEllipsis" Foreground="#334155"/>
+                </Border>
+                <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Click="BrowseFile_Click" Padding="12,6" Height="28"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="🧪 Plate:" Style="{StaticResource LabelText}" Margin="0,8,0,0"/>
+                <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" x:Name="PlateComboBox"
+                          DisplayMemberPath="PlateName" Height="28" Padding="6,4" VerticalContentAlignment="Center" Margin="0,8,0,0"
+                          ToolTip="Choose a plate for these samples. If none is selected, a plate named after the file is created."/>
+
+                <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" x:Name="SummaryText"
+                           FontSize="11" Foreground="#64748b" Margin="0,8,0,0" TextWrapping="Wrap"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2" BorderBrush="#e2e8f0" BorderThickness="1" CornerRadius="6" Padding="12" Background="White">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="🏷️ Samples &amp; conditions (double-click a condition to edit — e.g. relabel a control)"
+                           FontSize="13" FontWeight="Bold" Foreground="#0f172a" Margin="0,0,0,8"/>
+                <DataGrid Grid.Row="1" x:Name="RawFilesDataGrid" AutoGenerateColumns="False"
+                          CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal" BorderBrush="#e2e8f0" BorderThickness="1" RowHeight="30"
+                          VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Sample (run)" Binding="{Binding RawFileName}" Width="*" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Condition (cell type)" Binding="{Binding BiologicalCondition, UpdateSourceTrigger=PropertyChanged}" Width="200"/>
+                        <DataGridTextColumn Header="Detected genes" Binding="{Binding ProteinCount, StringFormat=N0}" Width="110" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Summed intensity" Binding="{Binding TotalIonCurrent, StringFormat=E2}" Width="130" IsReadOnly="True"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+                <TextBlock Grid.Row="2" Margin="0,8,0,0" FontSize="10" Foreground="#64748b" FontStyle="Italic"
+                           Text="Note: gene-matrix intensities are not comparable to a parquet import's TIC — keep xlsx and parquet projects separate."/>
+            </Grid>
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Import" x:Name="ImportButton" Click="Import_Click" IsDefault="True"
+                    Style="{StaticResource PrimaryButton}" IsEnabled="False" Margin="0,0,10,0"/>
+            <Button Content="Cancel" Click="Cancel_Click" IsCancel="True" Style="{StaticResource SecondaryButton}"/>
+        </StackPanel>
+    </Grid>
+</Window>

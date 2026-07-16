@@ -37,6 +37,14 @@ namespace SCPBrowser
         private HashSet<string> _checkedCellTypes;
         private HashSet<string> _checkedPlates;
 
+        // Single source of truth from the Explorer scatter: the runs currently in the selection (filters + lasso,
+        // minus manual exclusions). When non-null this supersedes the checkbox/exclusion re-derivation in
+        // GetSelectedRuns so the lasso constrains the export. Null only if the Explorer hasn't rendered a selection.
+        private List<string> _selectedRunNames;
+
+        // Persisted k-means cluster labels (run name → "Cluster N"); enables the "K-means cluster" export label mode.
+        private Dictionary<string, string> _kmeansLabels;
+
         private bool _isInitialized = false;
 
         // Merge map: source cell type → target cell type
@@ -59,7 +67,9 @@ namespace SCPBrowser
             Dictionary<string, FastaParserService.ProteinAnnotation> fastaAnnotations,
             HashSet<string> checkedBioConditions = null,
             HashSet<string> checkedCellTypes = null,
-            HashSet<string> checkedPlates = null)
+            HashSet<string> checkedPlates = null,
+            List<string> selectedRunNames = null,
+            Dictionary<string, string> kmeansLabels = null)
         {
             _data = data;
             _excludedRunNames = excludedRunNames ?? new HashSet<string>();
@@ -70,6 +80,8 @@ namespace SCPBrowser
             _checkedBioConditions = checkedBioConditions;
             _checkedCellTypes = checkedCellTypes;
             _checkedPlates = checkedPlates;
+            _selectedRunNames = selectedRunNames;
+            _kmeansLabels = kmeansLabels;
 
             _isInitialized = true;
 
@@ -117,6 +129,7 @@ namespace SCPBrowser
             {
                 "CellType" => PLPLabelMode.CellType,
                 "Plate" => PLPLabelMode.Plate,
+                "KMeans" => PLPLabelMode.KMeans,
                 _ => PLPLabelMode.BioCondition,
             };
         }
@@ -126,6 +139,16 @@ namespace SCPBrowser
             if (_data == null || _data.RawFileNames == null)
                 return new List<string>();
 
+            // Prefer the Explorer's actual selection as the single source of truth — it already bakes in the
+            // checkboxes, the contaminant-ratio cutoff, manual exclusions AND the lasso. Intersect with the runs that
+            // actually carry quant data so a stale selection can't introduce phantom runs.
+            if (_selectedRunNames != null)
+            {
+                var inData = new HashSet<string>(_data.RawFileNames);
+                return _selectedRunNames.Where(r => inData.Contains(r)).ToList();
+            }
+
+            // Fallback (Explorer hasn't rendered a selection yet): re-derive from checkboxes + manual exclusions.
             return _data.RawFileNames
                 .Where(r => !_excludedRunNames.Contains(r))
                 .Where(r => IsRunChecked(r))
@@ -196,7 +219,7 @@ namespace SCPBrowser
 
             var summary = PLPExportService.GetExportSummary(
                 selectedRuns, _data, options,
-                _cellTypePredictions, _rawFileToPlateId, _plateIdToName);
+                _cellTypePredictions, _rawFileToPlateId, _plateIdToName, _kmeansLabels);
 
             TotalRunsText.Text = summary.TotalRuns.ToString();
             TotalProteinsText.Text = summary.TotalProteins.ToString();
@@ -378,11 +401,11 @@ namespace SCPBrowser
                 PLPExportService.Export(
                     selectedRuns, _data, options,
                     _cellTypePredictions, _rawFileToPlateId, _plateIdToName,
-                    _fastaAnnotations, saveDialog.FileName);
+                    _fastaAnnotations, saveDialog.FileName, _kmeansLabels);
 
                 var summary = PLPExportService.GetExportSummary(
                     selectedRuns, _data, options,
-                    _cellTypePredictions, _rawFileToPlateId, _plateIdToName);
+                    _cellTypePredictions, _rawFileToPlateId, _plateIdToName, _kmeansLabels);
 
                 StatusText.Text = $"✅ Exported {summary.TotalRuns} runs, {summary.TotalProteins} proteins to {System.IO.Path.GetFileName(saveDialog.FileName)}";
                 ExportButton.IsEnabled = true;

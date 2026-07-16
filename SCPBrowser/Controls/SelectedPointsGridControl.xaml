@@ -101,14 +101,22 @@
                                         IsReadOnly="False"/>
                 <DataGridTextColumn Header="Run Name" Binding="{Binding RunName}" Width="*" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Condition" Binding="{Binding BiologicalCondition}" Width="120" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Peptides" Binding="{Binding PeptideCount, StringFormat=N0}" Width="80" IsReadOnly="True"/>
+                <DataGridTextColumn x:Name="PeptidesColumn" Header="Peptides" Binding="{Binding PeptideCount, StringFormat=N0}" Width="80" IsReadOnly="True"/>
                 <DataGridTextColumn Header="TIC" Binding="{Binding TicValue, StringFormat=E2}" Width="100" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Proteins" Binding="{Binding ProteinCount, StringFormat=N0}" Width="80" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Contaminant Ratio" Binding="{Binding ContaminantRatioPercent}" Width="90" IsReadOnly="True"/>
-                <DataGridTemplateColumn Header="Cell Type" Width="120" IsReadOnly="True">
+                <DataGridTemplateColumn Header="Cell Type" Width="120" IsReadOnly="True" SortMemberPath="CellType">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding CellType}" Foreground="{Binding CellTypeBrush}" 
+                            <TextBlock Text="{Binding CellType}" Foreground="{Binding CellTypeBrush}"
+                                    FontWeight="SemiBold" VerticalAlignment="Center" Padding="2,0"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Cluster" Width="90" IsReadOnly="True" SortMemberPath="ClusterId">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding ClusterLabel}" Foreground="{Binding ClusterBrush}"
                                     FontWeight="SemiBold" VerticalAlignment="Center" Padding="2,0"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>

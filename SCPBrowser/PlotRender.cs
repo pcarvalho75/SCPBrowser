@@ -30,6 +30,12 @@ namespace SCPBrowser
         private double _minX, _maxX, _minY, _maxY;
         private bool _useLogLog;
 
+        /// <summary>
+        /// When true the underlying data is a gene × sample matrix (no peptide/precursor dimension), so the axis
+        /// titles read "Proteins" / "Total Intensity" instead of "Peptides" / "Total Ion Current".
+        /// </summary>
+        public bool IsGeneMatrix { get; set; }
+
         public double MinX => _minX;
         public double MaxX => _maxX;
         public double MinY => _minY;
@@ -218,9 +224,10 @@ namespace SCPBrowser
             }
 
             // Draw axis labels
+            string xBase = IsGeneMatrix ? "Number of Proteins" : "Number of Peptides";
             var xLabel = new TextBlock
             {
-                Text = _useLogLog ? "Number of Peptides [Log Scale]" : "Number of Peptides",
+                Text = _useLogLog ? $"{xBase} [Log Scale]" : xBase,
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = axisBrush
@@ -230,9 +237,10 @@ namespace SCPBrowser
             Canvas.SetTop(xLabel, canvasHeight - 20);
             canvas.Children.Add(xLabel);
 
+            string yBase = IsGeneMatrix ? "Total Intensity" : "Total Ion Current (MS1 Area)";
             var yLabel = new TextBlock
             {
-                Text = _useLogLog ? "Total Ion Current (MS1 Area) [Log Scale]" : "Total Ion Current (MS1 Area)",
+                Text = _useLogLog ? $"{yBase} [Log Scale]" : yBase,
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = axisBrush,

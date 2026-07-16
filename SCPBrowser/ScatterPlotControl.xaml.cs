@@ -189,6 +189,39 @@ namespace SCPBrowser
         }
 
         /// <summary>
+        /// Recolors the already-rendered points by k-means cluster. Because clustering is computed on the *displayed*
+        /// coordinates, this runs AFTER UpdatePlot (when XData/YData and the per-point selection state already exist):
+        /// it stamps each point's ClusterId/ClusterLabel and BaseColor, then re-applies the existing selection styling
+        /// so excluded/greyed points stay grey while included points show their cluster colour.
+        /// </summary>
+        public void ApplyClusterColors(
+            IReadOnlyDictionary<string, int> runToCluster,
+            IReadOnlyDictionary<int, Color> clusterColors)
+        {
+            if (_dataPoints == null) return;
+
+            foreach (var point in _dataPoints)
+            {
+                if (point.RunName != null && runToCluster != null &&
+                    runToCluster.TryGetValue(point.RunName, out int cid) && cid >= 0)
+                {
+                    point.ClusterId = cid;
+                    point.ClusterLabel = "Cluster " + (cid + 1);
+                    if (clusterColors != null && clusterColors.TryGetValue(cid, out var color))
+                        point.BaseColor = color;
+                }
+                else
+                {
+                    point.ClusterId = -1;
+                    point.ClusterLabel = null;
+                }
+
+                // Repaint with the new base colour, preserving the current include/grey state.
+                ApplySelectionStyling(point, point.IsSelected);
+            }
+        }
+
+        /// <summary>
         /// Centralized gate for firing the SelectionChanged event.
         /// All code paths that need to notify listeners about selection changes MUST
         /// go through this method instead of invoking SelectionChanged directly.
@@ -456,6 +489,34 @@ namespace SCPBrowser
                 return (_pcaProteinNames, _pcaResult.Loadings, _pcaResult.VarianceExplained);
             }
 
+            private string _batchCorrectionWarning;
+            /// <summary>Non-null after the last preprocessing when batch correction was skipped, fell back to
+            /// plate-only, or failed — surfaced to the user by the host control. Null = clean correction (or none).</summary>
+            public string BatchCorrectionWarning => _batchCorrectionWarning;
+
+            /// <summary>Maps each run's biological condition to an integer covariate for ComBat to preserve, or null if
+            /// conditions are unavailable, incomplete, or single-valued (nothing to protect → fall back to plate-only).</summary>
+            private List<int> BuildConditionCovariate(List<string> rawFiles)
+            {
+                var perFile = _currentOptions?.BioConditionPerFile;
+                if (perFile == null) return null;
+
+                var conds = new List<string>(rawFiles.Count);
+                foreach (var rf in rawFiles)
+                {
+                    if (!perFile.TryGetValue(rf, out var c) || string.IsNullOrEmpty(c))
+                        return null; // incomplete labels → don't risk a partial covariate
+                    conds.Add(c);
+                }
+
+                var distinct = conds.Distinct().ToList();
+                if (distinct.Count < 2) return null; // only one condition → nothing to protect
+
+                var idx = new Dictionary<string, int>();
+                for (int i = 0; i < distinct.Count; i++) idx[distinct[i]] = i;
+                return conds.Select(c => idx[c]).ToList();
+            }
+
             /// <summary>
             /// Builds the preprocessed matrix for dimensionality reduction.
             /// Pipeline: select proteins (HVP or all) → log2 transform → ComBat → z-score scaling → clip.
@@ -466,6 +527,7 @@ namespace SCPBrowser
                 out List<string> proteins,
                 out List<string> rawFiles)
             {
+                    _batchCorrectionWarning = null; // cleared each run; set below if correction is skipped/falls back/fails
                     rawFiles = data.RawFileNames.ToList();
 
                     // Exclude contaminant-ratio-cutoff runs from dimensionality reduction
@@ -508,28 +570,47 @@ namespace SCPBrowser
                     }
                 }
 
-                // Apply batch correction if enabled
+                // Apply batch correction if enabled. ComBat removes plate (batch) effects; we pass the biological
+                // condition as a covariate so real condition differences are preserved, and fall back to plate-only
+                // (with a warning) when condition can't be separated from plate.
                 if (_currentOptions?.ApplyBatchCorrection == true && _currentOptions.BatchLabelPerFile != null)
                 {
                     var batchLabels = rawFiles
                         .Select(rf => _currentOptions.BatchLabelPerFile.TryGetValue(rf, out int plateId) ? plateId : 0)
                         .ToList();
 
-                    var uniqueBatches = batchLabels.Distinct().Count();
-                    if (uniqueBatches >= 2)
+                    if (batchLabels.Distinct().Count() >= 2)
                     {
+                        var combat = new ComBatService();
+                        var covariate = BuildConditionCovariate(rawFiles); // biological condition, or null if unusable
 
-                        var combatService = new ComBatService();
-                        var result = combatService.Apply(matrix, batchLabels);
+                        var result = covariate != null
+                            ? combat.Apply(matrix, batchLabels, covariate)
+                            : combat.Apply(matrix, batchLabels);
 
                         if (result.Success)
                         {
                             matrix = result.CorrectedData;
-
+                            if (covariate == null)
+                                _batchCorrectionWarning = "Batch correction: no biological condition set — corrected for plate only (biology not protected).";
+                        }
+                        else if (covariate != null)
+                        {
+                            // Condition is confounded with plate (singular design) → still remove plate effects, but warn.
+                            var batchOnly = combat.Apply(matrix, batchLabels);
+                            if (batchOnly.Success)
+                            {
+                                matrix = batchOnly.CorrectedData;
+                                _batchCorrectionWarning = "Batch correction: biological condition is confounded with plate — corrected for plate only; condition differences that align with plates may be removed.";
+                            }
+                            else
+                            {
+                                _batchCorrectionWarning = "Batch correction failed (" + batchOnly.ErrorMessage + ") — showing uncorrected data.";
+                            }
                         }
                         else
                         {
-
+                            _batchCorrectionWarning = "Batch correction failed (" + result.ErrorMessage + ") — showing uncorrected data.";
                         }
                     }
                 }
@@ -1247,6 +1328,7 @@ namespace SCPBrowser
             var contaminantRatios = rawFiles.Select(rf => data.TargetProteinRatioPerFile.ContainsKey(rf) ?
                 data.TargetProteinRatioPerFile[rf] : 0).ToList();
 
+            _plotRenderer.IsGeneMatrix = data.IsGeneMatrix;
             _plotRenderer.CalculateAxisRanges(peptideCounts, ticValues, options.UseLogLog);
             _plotRenderer.DrawAxesAndGrid(PlotCanvas, canvasWidth, canvasHeight);
 
@@ -1881,11 +1963,18 @@ namespace SCPBrowser
             Canvas.SetLeft(point.Visual, point.XScreen - 5.2);
             Canvas.SetTop(point.Visual, point.YScreen - 5.2);
 
-            string tooltipText = $"{point.RunName}\n" +
-                                $"Peptides: {point.PeptideCount:N0}\n" +
-                                $"TIC: {point.TicValue:E2}\n" +
-                                $"Protein Groups: {point.ProteinCount:N0}\n" +
-                                $"Contaminant Ratio: {point.ContaminantRatio * 100:F2}%";
+            // A gene matrix has no peptide/precursor dimension: PeptideCount is a substitute for the detected-gene
+            // count and TIC is a summed-intensity proxy, so label them honestly (and drop the redundant duplicate).
+            string tooltipText = (_currentData?.IsGeneMatrix == true)
+                ? $"{point.RunName}\n" +
+                  $"Proteins: {point.ProteinCount:N0}\n" +
+                  $"Total Intensity: {point.TicValue:E2}\n" +
+                  $"Contaminant Ratio: {point.ContaminantRatio * 100:F2}%"
+                : $"{point.RunName}\n" +
+                  $"Peptides: {point.PeptideCount:N0}\n" +
+                  $"TIC: {point.TicValue:E2}\n" +
+                  $"Protein Groups: {point.ProteinCount:N0}\n" +
+                  $"Contaminant Ratio: {point.ContaminantRatio * 100:F2}%";
 
             if (!string.IsNullOrEmpty(point.BiologicalCondition))
             {

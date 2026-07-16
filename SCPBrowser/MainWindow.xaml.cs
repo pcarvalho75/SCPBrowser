@@ -209,6 +209,7 @@ namespace SCPBrowser
                 MainTabControl.Visibility = Visibility.Visible;
                 ImportPlateMetadataMenuItem.IsEnabled = true;
                 ImportParquetMenuItem.IsEnabled = true;
+                ImportGeneMatrixMenuItem.IsEnabled = true;
                 ImportFastaMenuItem.IsEnabled = true;
                 ImportOmicProfileMenuItem.IsEnabled = true;
                 CloseProjectMenuItem.IsEnabled = true;
@@ -731,6 +732,7 @@ namespace SCPBrowser
             MainTabControl.Visibility = Visibility.Collapsed;
             ImportPlateMetadataMenuItem.IsEnabled = false;
             ImportParquetMenuItem.IsEnabled = false;
+            ImportGeneMatrixMenuItem.IsEnabled = false;
             ImportOmicProfileMenuItem.IsEnabled = false;
             CloseProjectMenuItem.IsEnabled = false;
             ClearCellTypeClassificationsMenuItem.IsEnabled = false;
@@ -834,6 +836,18 @@ namespace SCPBrowser
                 return;
             }
 
+            // Keep formats separate: a project mixing parquet + xlsx would load only one of them. Block the mix.
+            var existingXlsxCheck = await _parquetService.GetAllImportedParquetFilesAsync();
+            if (existingXlsxCheck != null && existingXlsxCheck.Any(f => f.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)))
+            {
+                MessageBox.Show(
+                    "This project already contains an Excel gene-matrix import, which can't be combined with DIA-NN parquet data.\n\nPlease create a new project for parquet imports.",
+                    "Cannot mix import formats",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
             string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
 
             var dialog = new ImportParquetDialog(
@@ -876,6 +890,82 @@ namespace SCPBrowser
                         {
                             LoadingOverlay.SetProgress($"Loading {parquetPaths.Count} parquet file(s)...");
                             await MainControlTab.LoadDataFromProject(parquetPaths, _projectReferenceDatabasePath);
+                        }
+                    }
+
+                    LoadingOverlay.Hide();
+                }
+                catch (Exception ex)
+                {
+                    LoadingOverlay.Hide();
+                    MessageBox.Show(
+                        $"Data imported but error refreshing display:\n\n{ex.Message}\n\nTry closing and reopening the project.",
+                        "Refresh Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+            }
+        }
+
+        private async void ImportGeneMatrix_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_hasOpenProject || _parquetService == null)
+            {
+                MessageBox.Show(
+                    "Please open or create a project first.",
+                    "No Project Open",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            // Keep formats separate: a project mixing parquet + xlsx would load only one of them. Block the mix.
+            var existingImports = await _parquetService.GetAllImportedParquetFilesAsync();
+            if (existingImports != null && existingImports.Any(f => !f.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)))
+            {
+                MessageBox.Show(
+                    "This project already contains DIA-NN parquet imports. Excel gene-matrix intensities aren't comparable to parquet data, so the two can't be combined in one project.\n\nPlease create a new project for the Excel gene matrix.",
+                    "Cannot mix import formats",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
+
+            var dialog = new ImportGeneMatrixDialog(_parquetService, _plateService, projectDirectory)
+            {
+                Owner = this
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                // Reuse the exact parquet post-import refresh path (the reload glob is format-agnostic).
+                try
+                {
+                    LoadingOverlay.SetMessage("Refreshing Data");
+                    LoadingOverlay.SetProgress("Reloading plates...");
+                    LoadingOverlay.Show();
+
+                    await PlateFilterControl.LoadPlatesAsync(_currentProjectPath);
+                    PeptideTicTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMap());
+                    MainControlTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMapById());
+
+                    var allImportedFiles = await _parquetService.GetAllImportedParquetFilesAsync();
+                    if (allImportedFiles != null && allImportedFiles.Count > 0)
+                    {
+                        var importPaths = new List<string>();
+                        foreach (var fileName in allImportedFiles)
+                        {
+                            string path = Path.Combine(projectDirectory, "imports", fileName);
+                            if (File.Exists(path))
+                                importPaths.Add(path);
+                        }
+
+                        if (importPaths.Count > 0)
+                        {
+                            LoadingOverlay.SetProgress($"Loading {importPaths.Count} import(s)...");
+                            await MainControlTab.LoadDataFromProject(importPaths, _projectReferenceDatabasePath);
                         }
                     }
 
@@ -1003,6 +1093,11 @@ namespace SCPBrowser
                 var checkedCellTypes = PeptideTicTab.CheckedCellTypes;
                 var checkedPlates = PeptideTicTab.CheckedPlates;
 
+                // Single source of truth: the runs currently in the Explorer selection (filters + lasso, minus manual
+                // exclusions). Supersedes the checkbox sets above so the lasso constrains the export. Null = Explorer
+                // not rendered yet → the export falls back to re-deriving from the checkboxes.
+                var selectedRunNames = PeptideTicTab.GetSelectedRunNames()?.ToList();
+
                 // Load FASTA annotations
                 Dictionary<string, FastaParserService.ProteinAnnotation> fastaAnnotations = null;
                 try
@@ -1015,9 +1110,15 @@ namespace SCPBrowser
                     fastaAnnotations = new Dictionary<string, FastaParserService.ProteinAnnotation>();
                 }
 
+                // Persisted k-means cluster labels (run → "Cluster N") so "K-means cluster" can be chosen as an
+                // export label. Empty/absent if the user has never run k-means.
+                Dictionary<string, string> kmeansLabels = null;
+                try { kmeansLabels = _projectDatabaseService != null ? await _projectDatabaseService.LoadKMeansLabelsAsync() : null; }
+                catch { kmeansLabels = null; }
+
                 ExportPLPControl.Initialize(data, excludedRuns, cellTypePredictions,
                     rawFileToPlateId, plateIdToName, fastaAnnotations,
-                    checkedBioConditions, checkedCellTypes, checkedPlates);
+                    checkedBioConditions, checkedCellTypes, checkedPlates, selectedRunNames, kmeansLabels);
                 ExportPLPControl.Show();
             }
             catch (Exception ex)

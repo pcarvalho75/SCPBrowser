@@ -949,6 +949,9 @@ namespace SCPBrowser
             try
             {
                 System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.Wait;
+                LoadingOverlay.SetMessage("Building confidence map…");
+                LoadingOverlay.SetProgress("Scoring cells and running held-out validation…");
+                LoadingOverlay.Show();
 
                 // Resolve the method exactly as the classifier manager does: explicit setting → stored method →
                 // Quantitative, so the figure matches what the app actually classifies with.
@@ -971,13 +974,15 @@ namespace SCPBrowser
                 var result = await System.Threading.Tasks.Task.Run(() =>
                     Services.ConfidenceMapBuilder.Compute(data, method, null, keyMarkers, excludedCellTypes, priorWeights));
 
+                LoadingOverlay.Hide();
+                System.Windows.Input.Mouse.OverrideCursor = null;
+
                 var dlg = new Microsoft.Win32.SaveFileDialog
                 {
                     Filter = "HTML figure (*.html)|*.html",
                     FileName = "classification_confidence.html",
                     Title = "Save classification confidence figure"
                 };
-                System.Windows.Input.Mouse.OverrideCursor = null;
                 if (dlg.ShowDialog() != true) return;
 
                 string html = Services.ConfidenceMapBuilder.BuildHtml(result,
@@ -996,7 +1001,7 @@ namespace SCPBrowser
                 MessageBox.Show("Could not build the confidence map:" + Environment.NewLine + Environment.NewLine + ex.Message,
                     "Classification Confidence Map", MessageBoxButton.OK, MessageBoxImage.Error);
             }
-            finally { System.Windows.Input.Mouse.OverrideCursor = null; }
+            finally { LoadingOverlay.Hide(); System.Windows.Input.Mouse.OverrideCursor = null; }
         }
 
         private async void ImportGeneMatrix_Click(object sender, RoutedEventArgs e)

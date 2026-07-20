@@ -105,7 +105,12 @@ namespace SCPBrowser
             Mouse.OverrideCursor = Cursors.Wait;
             ResultsBox.Text = "Running...";
 
-            var progress = new Progress<string>(msg => StatusText.Text = msg);
+            // Reuse SCPBrowser's shared wait screen (with rotating tips) over the dialog while the benchmark runs.
+            Overlay.SetMessage("Evaluating classifier…");
+            Overlay.SetProgress("Preparing cross-validation…");
+            Overlay.Show();
+
+            var progress = new Progress<string>(msg => { StatusText.Text = msg; Overlay.SetProgress(msg); });
             try
             {
                 bool wantChannels = ChannelCheck.IsChecked == true;
@@ -142,6 +147,7 @@ namespace SCPBrowser
             }
             finally
             {
+                Overlay.Hide();
                 RunButton.IsEnabled = true;
                 Mouse.OverrideCursor = null;
             }

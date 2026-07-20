@@ -57,25 +57,12 @@ namespace SCPBrowser.Services
 <meta name=""viewport"" content=""width=device-width, initial-scale=1"">
 <title>Classifier cross-validation — {Esc(dataset ?? "SCPBrowser")}</title>
 <style>
+  /* Fixed white-background light theme — exported for white-page manuscripts (no dark variant). */
   :root {{
     color-scheme: light;
-    --surface-1: #fcfcfb; --plane: #f9f9f7;
-    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #86857f;
-    --grid: #e6e5e1; --rule: #d9d8d3;
-  }}
-  @media (prefers-color-scheme: dark) {{
-    :root:where(:not([data-theme=""light""])) {{
-      color-scheme: dark;
-      --surface-1: #1a1a19; --plane: #0d0d0d;
-      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
-      --grid: #2e2e2c; --rule: #3a3a37;
-    }}
-  }}
-  :root[data-theme=""dark""] {{
-    color-scheme: dark;
-    --surface-1: #1a1a19; --plane: #0d0d0d;
-    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
-    --grid: #2e2e2c; --rule: #3a3a37;
+    --surface-1: #ffffff; --plane: #ffffff;
+    --text-primary: #111111; --text-secondary: #444444; --text-muted: #6b6b6b;
+    --grid: #e6e5e1; --rule: #dcdcdc;
   }}
   * {{ box-sizing: border-box; }}
   body {{ margin:0; background: var(--plane); color: var(--text-primary);

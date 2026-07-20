@@ -214,9 +214,8 @@ namespace SCPBrowser.Services
 <meta name=""viewport"" content=""width=device-width, initial-scale=1"">
 <title>Classification confidence — {Esc(datasetName ?? "SCPBrowser")}</title>
 <style>
- :root {{ color-scheme: light; --surface:#fcfcfb; --plane:#f9f9f7; --ink:#0b0b0b; --ink2:#52514e; --muted:#86857f; --rule:#d9d8d3; }}
- @media (prefers-color-scheme: dark) {{ :root:where(:not([data-theme=light])) {{ color-scheme:dark; --surface:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink2:#c3c2b7; --muted:#8f8e86; --rule:#3a3a37; }} }}
- :root[data-theme=dark] {{ color-scheme:dark; --surface:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink2:#c3c2b7; --muted:#8f8e86; --rule:#3a3a37; }}
+ /* Fixed white-background light theme — these figures are exported for white-page manuscripts. */
+ :root {{ color-scheme: light; --surface:#ffffff; --plane:#ffffff; --ink:#111111; --ink2:#444444; --muted:#6b6b6b; --rule:#dcdcdc; }}
  body {{ margin:0; background:var(--plane); color:var(--ink); font:14px/1.55 -apple-system,'Segoe UI',Roboto,Arial,sans-serif; }}
  .wrap {{ max-width:1000px; margin:0 auto; padding:28px 22px 60px; }}
  h1 {{ font-size:21px; margin:0 0 4px; letter-spacing:-.01em; }}
@@ -224,7 +223,7 @@ namespace SCPBrowser.Services
  .fig {{ background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:16px 16px 12px; margin:0 0 18px; }}
  .cap {{ color:var(--ink2); font-size:12.5px; margin:8px 0 0; }}
  .scroll {{ overflow-x:auto; }}
- .note {{ background:var(--surface); border:1px solid var(--rule); border-left:3px solid #eda100; border-radius:6px; padding:12px 14px; color:var(--ink2); font-size:12.5px; }}
+ .note {{ background:#fbfbf9; border:1px solid var(--rule); border-left:3px solid #d9820a; border-radius:6px; padding:12px 14px; color:var(--ink2); font-size:12.5px; }}
  text {{ font-family:inherit; }}
 </style></head><body><div class=""wrap"">
 <h1>Classification confidence</h1>
@@ -257,21 +256,23 @@ Because each cell contributes to its own class's reference, confidence reads cle
             // the scorer label, and the caveat + a legend as <text>/<rect> above and below the heatmap.
             int extraTop = 46, extraBottom = 30;
             string title =
-                $@"<text x=""14"" y=""20"" font-size=""14"" font-weight=""700"" fill=""#0b0b0b"">Classification confidence — {Esc(r.ScorerLabel)}</text>" +
-                $@"<text x=""14"" y=""37"" font-size=""11"" fill=""#52514e"">Colour = assignment score on the full-dataset reference (a display, NOT held-out accuracy). Red ticks = cells misclassified out-of-sample (held-out cross-validation).</text>";
+                $@"<text x=""14"" y=""20"" font-size=""14"" font-weight=""700"" fill=""#111111"">Classification confidence — {Esc(r.ScorerLabel)}</text>" +
+                $@"<text x=""14"" y=""37"" font-size=""11"" fill=""#444444"">Colour = assignment score on the full-dataset reference (a display, NOT held-out accuracy). Red ticks = cells misclassified out-of-sample (held-out cross-validation).</text>";
             string legend =
                 $@"<rect x=""14"" y=""{h + extraTop + 6}"" width=""9"" height=""9"" fill=""#d03b3b""/>" +
-                $@"<text x=""28"" y=""{h + extraTop + 14}"" font-size=""11"" fill=""#52514e"">misclassified out-of-sample (held-out cross-validation)</text>";
+                $@"<text x=""28"" y=""{h + extraTop + 14}"" font-size=""11"" fill=""#444444"">misclassified out-of-sample (held-out cross-validation)</text>";
 
-            // Shift the heatmap group down to make room for the title band.
+            // White figure surface + matching inks (manuscript pages are white), then shift down for the title band.
             inner = inner
-                .Replace("var(--ink)", "#0b0b0b").Replace("var(--ink2)", "#52514e")
-                .Replace("var(--muted)", "#86857f").Replace("var(--surface)", "#fcfcfb").Replace("var(--rule)", "#d9d8d3");
+                .Replace("var(--ink)", "#111111").Replace("var(--ink2)", "#444444")
+                .Replace("var(--muted)", "#6b6b6b").Replace("var(--surface)", "#ffffff").Replace("var(--rule)", "#dcdcdc");
+            // Give the whole vector an explicit white background rect so it isn't transparent when placed on a slide.
             // Replace the opening <svg ...> so the viewBox/height include the extra bands, then wrap the body in a <g>.
             inner = System.Text.RegularExpressions.Regex.Replace(inner, @"^<svg viewBox=""0 0 (\d+) (\d+)"" width=""\d+"" height=""\d+""",
                 m => $@"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 {m.Groups[1].Value} {int.Parse(m.Groups[2].Value) + extraTop + extraBottom}"" width=""{m.Groups[1].Value}"" height=""{int.Parse(m.Groups[2].Value) + extraTop + extraBottom}""");
             int tagEnd = inner.IndexOf('>');   // end of the opening <svg ...> tag
-            inner = inner.Substring(0, tagEnd + 1) + title + $@"<g transform=""translate(0,{extraTop})"">" + inner.Substring(tagEnd + 1);
+            string bg = @"<rect x=""0"" y=""0"" width=""100%"" height=""100%"" fill=""#ffffff""/>";
+            inner = inner.Substring(0, tagEnd + 1) + bg + title + $@"<g transform=""translate(0,{extraTop})"">" + inner.Substring(tagEnd + 1);
             inner = inner.Replace("</svg>", "</g>" + legend + "</svg>");
 
             return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + inner;
@@ -357,12 +358,29 @@ Because each cell contributes to its own class's reference, confidence reads cle
         private static string MarginSvg(Result r)
         {
             var byClass = r.Rows.GroupBy(x => x.TrueLabel).OrderBy(g => g.Key, StringComparer.Ordinal).ToList();
-            const int padL = 96, padT = 12, colGap = 8, plotH = 190, padB = 40;
+            bool anyWrong = r.Rows.Any(x => x.HeldOutEvaluated && !x.HeldOutCorrect);
+            bool anyUneval = r.Rows.Any(x => !x.HeldOutEvaluated);
+
+            const int padL = 96, legendH = 24, colGap = 8, plotH = 190, padB = 40;
+            int padT = legendH + 10;           // the plot starts below the legend band, so nothing overlaps the data
             int colW = 120;
             int w = padL + byClass.Count * (colW + colGap) + 20, h = padT + plotH + padB;
 
             var sb = new StringBuilder();
             sb.Append($@"<svg viewBox=""0 0 {w} {h}"" width=""{w}"" height=""{h}"" role=""img"">");
+
+            // Legend — a dedicated band above the plot (left-aligned), so it never sits on top of the points.
+            int ly = 15, lgx = padL;
+            void LegendItem(string colour, string label)
+            {
+                sb.Append($@"<circle cx=""{lgx + 4}"" cy=""{ly - 3}"" r=""4"" fill=""{colour}""/>");
+                sb.Append($@"<text x=""{lgx + 13}"" y=""{ly}"" font-size=""11"" fill=""var(--ink2)"">{label}</text>");
+                lgx += 20 + (int)(label.Length * 6.2) + 18;
+            }
+            LegendItem("#2a78d6", "correct (held-out)");
+            if (anyWrong) LegendItem("#d03b3b", "misclassified (held-out)");
+            if (anyUneval) LegendItem("#9ca3af", "not evaluated");
+
             for (int t = 0; t <= 4; t++)
             {
                 int yy = padT + plotH - (int)(plotH * t / 4.0);
@@ -387,10 +405,6 @@ Because each cell contributes to its own class's reference, confidence reads cle
                 sb.Append($@"<text x=""{cx}"" y=""{padT + plotH + 16}"" text-anchor=""middle"" font-size=""11"" fill=""var(--ink2)"">{Esc(g.Key)}</text>");
             }
             sb.Append($@"<text transform=""translate(16,{padT + plotH / 2}) rotate(-90)"" text-anchor=""middle"" font-size=""11"" fill=""var(--ink2)"">margin (top − runner-up)</text>");
-            // Legend
-            int lx = w - 200, ly = padT + 4;
-            sb.Append($@"<circle cx=""{lx}"" cy=""{ly}"" r=""4"" fill=""#2a78d6""/><text x=""{lx + 9}"" y=""{ly + 4}"" font-size=""11"" fill=""var(--ink2)"">correct (held-out)</text>");
-            sb.Append($@"<circle cx=""{lx}"" cy=""{ly + 17}"" r=""4"" fill=""#d03b3b""/><text x=""{lx + 9}"" y=""{ly + 21}"" font-size=""11"" fill=""var(--ink2)"">misclassified (held-out)</text>");
             sb.Append("</svg>");
             return sb.ToString();
         }

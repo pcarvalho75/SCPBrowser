@@ -88,6 +88,17 @@
                           Click="ReconcileCells_Click"
                           ToolTip="Match isolated cells to DIA-NN raw files"/>
                 <Separator/>
+                <MenuItem Header="_Evaluate Classifier..."
+                          x:Name="EvaluateClassifierMenuItem"
+                          Click="EvaluateClassifier_Click"
+                          IsEnabled="False"
+                          ToolTip="Cross-validated benchmark of cell-type classification against the ground-truth biological conditions (nothing is saved to the project)"/>
+                <MenuItem Header="Classification _Confidence Map..."
+                          x:Name="ConfidenceMapMenuItem"
+                          Click="ConfidenceMap_Click"
+                          IsEnabled="False"
+                          ToolTip="Publication figure: per-cell confidence across candidate classes, scored against per-class references built from the loaded dataset (a display, not a held-out estimate)"/>
+                <Separator/>
                 <MenuItem Header="_Project Browser" 
       x:Name="ProjectBrowserMenuItem"
       Click="ProjectBrowser_Click"

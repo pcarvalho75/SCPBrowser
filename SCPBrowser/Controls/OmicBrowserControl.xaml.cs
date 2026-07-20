@@ -546,6 +546,28 @@ namespace SCPBrowser
             };
             mainStack.Children.Add(_applyKeyMarkersCheckbox);
 
+            // Classification-method selector. Quantitative = the redesigned scorer (margin specificity + rank
+            // enrichment + detection likelihood); Standard = the shipped four-metric scorer. Key markers / priors /
+            // exclusions work under both. The chosen method is applied on the next Reclassify.
+            var methodLabel = new TextBlock
+            {
+                Text = "Classification method",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)),
+                Margin = new Thickness(0, 8, 0, 2)
+            };
+            mainStack.Children.Add(methodLabel);
+
+            _methodSelector = new ComboBox { FontSize = 11, Margin = new Thickness(0, 0, 0, 4) };
+            _methodSelector.Items.Add(new ComboBoxItem { Content = "QScore classifier", Tag = "Quantitative" });
+            _methodSelector.Items.Add(new ComboBoxItem { Content = "Standard (4-metric)", Tag = "Standard" });
+            _methodSelector.SelectedIndex = 0;
+            _methodSelector.ToolTip = "QScore: a quantitative classifier — margin-based specificity, rank enrichment (AUROC) and detection likelihood, fused as a product of experts.\n" +
+                                      "Standard: Spearman + specificity + marker enrichment + coverage, averaged (what SCPBrowser has always shipped).\n" +
+                                      "Key markers, priors and exclusions apply to both. Click Reclassify to apply a change.";
+            mainStack.Children.Add(_methodSelector);
+
             // Reclassify button (always visible, prominent green)
             var reclassifyButton = new Border
             {
@@ -585,6 +607,7 @@ namespace SCPBrowser
         }
 
         private CheckBox _applyKeyMarkersCheckbox;
+        private ComboBox _methodSelector;
 
         private TextBlock _reclassifyStatusText;
 
@@ -918,8 +941,22 @@ namespace SCPBrowser
             ReclassifyRequested?.Invoke(this, new ReclassifyRequestedEventArgs
             {
                 ApplyKeyMarkers = applyMarkers,
-                PriorWeights = GetPriorWeights()
+                PriorWeights = GetPriorWeights(),
+                ClassificationMethod = SelectedClassificationMethod
             });
+        }
+
+        /// <summary>The classifier method currently selected ("Quantitative" or "Standard").</summary>
+        public string SelectedClassificationMethod =>
+            (_methodSelector?.SelectedItem as ComboBoxItem)?.Tag as string ?? "Quantitative";
+
+        /// <summary>Reflects the project's saved method in the selector (called when the panel is populated).</summary>
+        public void SetSelectedClassificationMethod(string method)
+        {
+            if (_methodSelector == null) return;
+            string target = string.Equals(method, "Standard", StringComparison.OrdinalIgnoreCase) ? "Standard" : "Quantitative";
+            foreach (var item in _methodSelector.Items)
+                if (item is ComboBoxItem ci && (ci.Tag as string) == target) { _methodSelector.SelectedItem = ci; return; }
         }
 
         private void RefreshMarkersCountText()
@@ -1272,6 +1309,8 @@ namespace SCPBrowser
     {
         public bool ApplyKeyMarkers { get; set; }
         public Dictionary<string, double> PriorWeights { get; set; }
+        /// <summary>Selected classifier method to persist and apply ("Quantitative" / "Standard").</summary>
+        public string ClassificationMethod { get; set; } = "Quantitative";
     }
 
     public class CellTypeExclusionsChangedEventArgs : EventArgs

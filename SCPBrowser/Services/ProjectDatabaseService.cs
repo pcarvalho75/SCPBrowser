@@ -381,6 +381,7 @@ namespace SCPBrowser.Services
                 specificity_score REAL NOT NULL,
                 hypergeometric_pvalue REAL NOT NULL,
                 confidence REAL NOT NULL DEFAULT 0.0,
+                scorer_method TEXT NOT NULL DEFAULT 'Standard',
                 classified_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
             );
@@ -675,6 +676,7 @@ namespace SCPBrowser.Services
                     specificity_score REAL NOT NULL,
                     hypergeometric_pvalue REAL NOT NULL,
                     confidence REAL NOT NULL DEFAULT 0.0,
+                    scorer_method TEXT NOT NULL DEFAULT 'Standard',
                     classified_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
                 );
@@ -688,6 +690,17 @@ namespace SCPBrowser.Services
                     using (var alterCmd = connection.CreateCommand())
                     {
                         alterCmd.CommandText = "ALTER TABLE raw_file_cell_type_classifications ADD COLUMN confidence REAL NOT NULL DEFAULT 0.0";
+                        await alterCmd.ExecuteNonQueryAsync();
+                    }
+                }
+                catch (Exception) { /* Column already exists */ }
+
+                // Migration: tag which classifier produced each row (legacy rows are the shipped Standard classifier).
+                try
+                {
+                    using (var alterCmd = connection.CreateCommand())
+                    {
+                        alterCmd.CommandText = "ALTER TABLE raw_file_cell_type_classifications ADD COLUMN scorer_method TEXT NOT NULL DEFAULT 'Standard'";
                         await alterCmd.ExecuteNonQueryAsync();
                     }
                 }

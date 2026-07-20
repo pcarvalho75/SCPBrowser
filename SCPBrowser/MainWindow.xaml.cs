@@ -210,6 +210,8 @@ namespace SCPBrowser
                 ImportPlateMetadataMenuItem.IsEnabled = true;
                 ImportParquetMenuItem.IsEnabled = true;
                 ImportGeneMatrixMenuItem.IsEnabled = true;
+                EvaluateClassifierMenuItem.IsEnabled = true;
+                ConfidenceMapMenuItem.IsEnabled = true;
                 ImportFastaMenuItem.IsEnabled = true;
                 ImportOmicProfileMenuItem.IsEnabled = true;
                 CloseProjectMenuItem.IsEnabled = true;
@@ -733,6 +735,8 @@ namespace SCPBrowser
             ImportPlateMetadataMenuItem.IsEnabled = false;
             ImportParquetMenuItem.IsEnabled = false;
             ImportGeneMatrixMenuItem.IsEnabled = false;
+            EvaluateClassifierMenuItem.IsEnabled = false;
+            ConfidenceMapMenuItem.IsEnabled = false;
             ImportOmicProfileMenuItem.IsEnabled = false;
             CloseProjectMenuItem.IsEnabled = false;
             ClearCellTypeClassificationsMenuItem.IsEnabled = false;
@@ -905,6 +909,94 @@ namespace SCPBrowser
                         MessageBoxImage.Warning);
                 }
             }
+        }
+
+        /// <summary>
+        /// Cross-validated benchmark of the classifier against the ground-truth biological conditions.
+        /// Read-only with respect to the project: the dialog builds every fold's reference in memory and never
+        /// writes the reference DB or the classifications table.
+        /// </summary>
+        private void EvaluateClassifier_Click(object sender, RoutedEventArgs e)
+        {
+            var data = MainControlTab?.GetCurrentData();
+            if (data == null || data.RawFileNames == null || data.RawFileNames.Count == 0)
+            {
+                MessageBox.Show(
+                    "Load a project with imported data first — the benchmark runs on the data currently loaded.",
+                    "Evaluate Classifier", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dialog = new ClassifierEvaluationDialog(data) { Owner = this };
+            dialog.ShowDialog();
+        }
+
+        /// <summary>
+        /// Generates the Classification Confidence figure (Mode B) for the loaded dataset using the project's
+        /// selected classifier, writes a self-contained HTML report + a standalone SVG, and opens the report.
+        /// Read-only: builds references in memory, persists nothing.
+        /// </summary>
+        private async void ConfidenceMap_Click(object sender, RoutedEventArgs e)
+        {
+            var data = MainControlTab?.GetCurrentData();
+            if (data == null || data.RawFileNames == null || data.RawFileNames.Count == 0)
+            {
+                MessageBox.Show("Load a project with imported data first.", "Classification Confidence Map",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.Wait;
+
+                // Resolve the method exactly as the classifier manager does: explicit setting → stored method →
+                // Quantitative, so the figure matches what the app actually classifies with.
+                string method = "Quantitative";
+                if (!string.IsNullOrEmpty(_projectReferenceDatabasePath))
+                {
+                    method = await new ProjectDatabaseService(_projectReferenceDatabasePath)
+                        .GetSettingAsync("classification_method", null);
+                    if (string.IsNullOrEmpty(method))
+                        method = await new CellTypeClassificationService(_projectReferenceDatabasePath)
+                            .GetStoredScorerMethodAsync() ?? "Quantitative";
+                }
+
+                // Score with the same key markers / excluded types / priors the live classifier uses, so the map's
+                // predicted labels and held-out ticks agree with the app rather than showing an unaided classifier.
+                var keyMarkers = ProjectBrowserDialog?.GetKeyMarkers();
+                var excludedCellTypes = ProjectBrowserDialog?.GetExcludedCellTypes();
+                var priorWeights = ProjectBrowserDialog?.GetPriorWeights();
+
+                var result = await System.Threading.Tasks.Task.Run(() =>
+                    Services.ConfidenceMapBuilder.Compute(data, method, null, keyMarkers, excludedCellTypes, priorWeights));
+
+                var dlg = new Microsoft.Win32.SaveFileDialog
+                {
+                    Filter = "HTML figure (*.html)|*.html",
+                    FileName = "classification_confidence.html",
+                    Title = "Save classification confidence figure"
+                };
+                System.Windows.Input.Mouse.OverrideCursor = null;
+                if (dlg.ShowDialog() != true) return;
+
+                string html = Services.ConfidenceMapBuilder.BuildHtml(result,
+                    System.IO.Path.GetFileNameWithoutExtension(_currentProjectPath));
+                System.IO.File.WriteAllText(dlg.FileName, html, System.Text.Encoding.UTF8);
+
+                // Sibling standalone SVG of the heatmap for vector editing / PNG conversion.
+                string svgPath = System.IO.Path.ChangeExtension(dlg.FileName, ".svg");
+                System.IO.File.WriteAllText(svgPath, Services.ConfidenceMapBuilder.HeatmapStandaloneSvg(result), System.Text.Encoding.UTF8);
+
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dlg.FileName) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                System.Windows.Input.Mouse.OverrideCursor = null;
+                MessageBox.Show("Could not build the confidence map:" + Environment.NewLine + Environment.NewLine + ex.Message,
+                    "Classification Confidence Map", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally { System.Windows.Input.Mouse.OverrideCursor = null; }
         }
 
         private async void ImportGeneMatrix_Click(object sender, RoutedEventArgs e)
@@ -2055,11 +2147,17 @@ namespace SCPBrowser
                 // Create progress reporter
                 var progressReporter = new LoadingOverlayProgressReporter(LoadingOverlay);
 
+                // Persist the selected classifier method to the SAME database the manager reads it from, so its
+                // recompute below uses the chosen method.
+                if (!string.IsNullOrEmpty(_projectReferenceDatabasePath))
+                    await new ProjectDatabaseService(_projectReferenceDatabasePath)
+                        .SetSettingAsync("classification_method", e.ClassificationMethod ?? "Quantitative");
+
                 // Get key markers only if applying them, and get excluded cell types
                 var keyMarkers = applyMarkers ? ProjectBrowserDialog.GetKeyMarkers() : null;
                 var excludedCellTypes = ProjectBrowserDialog.GetExcludedCellTypes();
                 var priorWeights = e.PriorWeights;
-                
+
                 var predictions = await MainControlTab.GetCellTypePredictionsAsync(
                     proteomicsData,
                     _projectReferenceDatabasePath,

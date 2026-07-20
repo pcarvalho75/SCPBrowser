@@ -16,17 +16,65 @@ namespace SCPBrowser
     {
         private readonly ReferenceDataService _referenceService;
         private TranscriptomicDatabase _database;
-        private CellTypePredictor _predictor;
+        private IClassifier _classifier;
         private Dictionary<string, CellTypePredictionResult> _cachedPredictions;
+        // The in-memory cache is only valid for the (import, method) it was computed for. This manager is a
+        // session-lifetime singleton reused across project opens, so without these keys a cache built for project A
+        // (or a different method) would be served for project B — showing the wrong cell-type calls.
+        private int _cachedImportId = -1;
+        private string _cachedMethod;
 
         public bool IsLoaded => _database != null;
         public TranscriptomicDatabase Database => _database;
         public bool HasPredictions => _cachedPredictions != null && _cachedPredictions.Count > 0;
-        public bool IsReady => IsLoaded && _predictor != null;
+        public bool IsReady => IsLoaded && _classifier != null;
+
+        /// <summary>"Standard" (shipped CellTypePredictor) or "Quantitative" (redesign). Set from the project setting
+        /// before classifying; changing it rebuilds the active classifier over the loaded reference.</summary>
+        public string ClassificationMethod { get; private set; } = "Standard";
 
         public CellTypeClassificationManager()
         {
             _referenceService = new ReferenceDataService();
+        }
+
+        /// <summary>Selects the classifier method and rebuilds it over the loaded reference (no-op if unchanged).</summary>
+        public void SetClassificationMethod(string method)
+        {
+            method = string.Equals(method, "Quantitative", StringComparison.OrdinalIgnoreCase) ? "Quantitative" : "Standard";
+            if (method == ClassificationMethod && _classifier != null) return;
+
+            if (_database != null)
+            {
+                // Build into a local first so a failed build can never leave ClassificationMethod and _classifier
+                // out of sync (label "Quantitative" while a Standard classifier is actually running). Reflect the
+                // ACTUAL method built — a <2-class reference falls the redesign back to Standard.
+                var built = BuildClassifier(method);
+                if (built == null) return;               // keep the current, working classifier on failure
+                _classifier = built;
+                ClassificationMethod = built.MethodName;
+            }
+            else
+            {
+                ClassificationMethod = method;            // no reference yet — build when it loads
+            }
+            _cachedPredictions = null;                    // cached calls were produced by the previous method
+        }
+
+        private IClassifier BuildClassifier(string method)
+        {
+            try
+            {
+                // The quantitative scorer requires at least two reference classes; a degenerate single-class
+                // reference transparently falls back to Standard (which tolerates it) rather than throwing.
+                if (method == "Quantitative" && (_database?.CellTypeProfiles?.Count ?? 0) >= 2)
+                    return new QuantitativeClassifier(_database);
+                return new StandardClassifier(_database);
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -42,12 +90,12 @@ namespace SCPBrowser
             // Null means the database exists but has no reference profiles imported yet — normal initial state
             if (_database == null)
             {
-                _predictor = null;
+                _classifier = null;
 
                 return;
             }
 
-            _predictor = new CellTypePredictor(_database);
+            _classifier = BuildClassifier(ClassificationMethod);
 
 
         }
@@ -70,8 +118,31 @@ namespace SCPBrowser
             if (proteomicsData == null)
                 throw new ArgumentNullException(nameof(proteomicsData));
 
-            // 1. Check if already in memory cache (skip if forcing recompute)
-            if (!forceRecompute && _cachedPredictions != null && _cachedPredictions.Count > 0)
+            // 0. Resolve the active classification method from the project. An explicit setting always wins; with no
+            //    setting, a project that ALREADY has classifications keeps the method that produced them (opening it
+            //    never silently re-runs the classifier) while a project with none defaults to the new Quantitative
+            //    method. Each read is guarded independently so a transient failure of one doesn't lose the other, and
+            //    a confirmed-empty project still gets the intended Quantitative default rather than falling to Standard.
+            string setting = null;
+            try { setting = await new Services.ProjectDatabaseService(projectDatabasePath).GetSettingAsync("classification_method", null); }
+            catch { /* setting unreadable — try the stored method below */ }
+
+            if (!string.IsNullOrEmpty(setting))
+            {
+                SetClassificationMethod(setting);
+            }
+            else
+            {
+                string stored = null; bool storedKnown = false;
+                try { stored = await new CellTypeClassificationService(projectDatabasePath).GetStoredScorerMethodAsync(); storedKnown = true; }
+                catch { /* stored method unreadable — leave the current method unchanged (conservative) */ }
+                if (storedKnown) SetClassificationMethod(stored ?? "Quantitative");
+            }
+
+            // 1. Check if already in memory cache — but ONLY if it was computed for THIS import and the active method.
+            if (!forceRecompute && _cachedPredictions != null && _cachedPredictions.Count > 0
+                && _cachedImportId == importId
+                && string.Equals(_cachedMethod, ClassificationMethod, StringComparison.OrdinalIgnoreCase))
             {
 
                 return _cachedPredictions;
@@ -91,10 +162,17 @@ namespace SCPBrowser
                 var cellTypeService = new CellTypeClassificationService(projectDatabasePath);
                 var existingPredictions = await cellTypeService.LoadCellTypeClassificationsAsync(importId);
 
-                if (existingPredictions.Count > 0 && existingPredictions.Count == proteomicsData.TotalRawFiles)
+                // Only serve stored rows if they were produced by the ACTIVE method — otherwise a method switch would
+                // silently display the other classifier's results. On a method mismatch, fall through and recompute.
+                string storedMethod = await cellTypeService.GetStoredScorerMethodAsync() ?? "Standard";
+                bool methodMatches = string.Equals(storedMethod, ClassificationMethod, StringComparison.OrdinalIgnoreCase);
+
+                if (methodMatches && existingPredictions.Count > 0 && existingPredictions.Count == proteomicsData.TotalRawFiles)
                 {
 
                     _cachedPredictions = existingPredictions;
+                    _cachedImportId = importId;
+                    _cachedMethod = ClassificationMethod;
                     return _cachedPredictions;
                 }
             }
@@ -113,16 +191,17 @@ namespace SCPBrowser
             progressReporter?.ReportMessage("Saving classifications to database...");
 
             var saveCellTypeService = new CellTypeClassificationService(projectDatabasePath);
-            if (forceRecompute)
-            {
-                await saveCellTypeService.DeleteAllCellTypeClassificationsAsync(importId);
-            }
-            await saveCellTypeService.SaveCellTypeClassificationsAsync(importId, predictions);
+            // Always clear before saving: a method switch replaces the other classifier's rows wholesale so the
+            // table never mixes methods (the table is single-method-at-a-time by design).
+            await saveCellTypeService.DeleteAllCellTypeClassificationsAsync(importId);
+            await saveCellTypeService.SaveCellTypeClassificationsAsync(importId, predictions, ClassificationMethod);
 
 
 
-            // 6. Store in cache and return
+            // 6. Store in cache (keyed to this import + method) and return
             _cachedPredictions = predictions;
+            _cachedImportId = importId;
+            _cachedMethod = ClassificationMethod;
             return _cachedPredictions;
         }
 
@@ -171,7 +250,7 @@ namespace SCPBrowser
             HashSet<string> excludedCellTypes = null,
             Dictionary<string, double> priorWeights = null)
         {
-            if (!IsLoaded || _predictor == null)
+            if (!IsLoaded || _classifier == null)
                 return new CellTypePredictionResult();
 
             if (proteomicsData == null || string.IsNullOrEmpty(runName))
@@ -179,7 +258,7 @@ namespace SCPBrowser
 
             var proteinAbundances = ExtractProteinAbundances(proteomicsData, runName);
 
-            return _predictor.PredictCellType(proteinAbundances, keyMarkers, excludedCellTypes, priorWeights);
+            return _classifier.PredictCellType(proteinAbundances, keyMarkers, excludedCellTypes, priorWeights);
         }
 
         /// <summary>
@@ -214,7 +293,12 @@ namespace SCPBrowser
         }
 
 
-        private Dictionary<string, double> ExtractProteinAbundances(ProteomicsData proteomicsData, string runName)
+        /// <summary>
+        /// Builds the per-cell gene → abundance dictionary fed to the predictor.
+        /// Visibility widened (logic unchanged) so <see cref="Services.ClassifierEvaluationService"/> can score cells
+        /// through the exact same extraction the app uses, rather than a copy that could silently drift from it.
+        /// </summary>
+        public static Dictionary<string, double> ExtractProteinAbundances(ProteomicsData proteomicsData, string runName)
         {
             var abundances = new Dictionary<string, double>();
 
@@ -460,10 +544,11 @@ namespace SCPBrowser
 
             foreach (var cellType in _database.CellTypeProfiles.Keys)
             {
-                // FIX: Access CellTypeMarkers via the _predictor object
-                if (_predictor.CellTypeMarkers != null && _predictor.CellTypeMarkers.ContainsKey(cellType))
+                // Marker/signature sets of the active classifier (null for methods that don't expose them).
+                var markerSets = _classifier?.MarkerSets;
+                if (markerSets != null && markerSets.ContainsKey(cellType))
                 {
-                    var markers = _predictor.CellTypeMarkers[cellType];
+                    var markers = markerSets[cellType];
                     int overlap = matchedGenes.Count(g => markers.Contains(g));
 
                 }
@@ -487,16 +572,16 @@ namespace SCPBrowser
                 throw new InvalidOperationException("No predictions available to export");
             }
 
-            if (!IsLoaded || _predictor == null)
+            if (!IsLoaded || _classifier == null)
             {
                 throw new InvalidOperationException("Reference database not loaded");
             }
 
             progress?.ReportMessage("Preparing classification diagnostics export...");
 
-            // Collect all unique markers across all cell types
+            // Collect all unique markers/signatures across all cell types (empty if the method exposes none).
             var allMarkers = new HashSet<string>();
-            foreach (var markers in _predictor.CellTypeMarkers.Values)
+            foreach (var markers in (_classifier.MarkerSets?.Values ?? Enumerable.Empty<HashSet<string>>()))
             {
                 foreach (var marker in markers)
                 {
@@ -556,6 +641,11 @@ namespace SCPBrowser
                 // Extract protein abundances for this run to check marker presence
                 var proteinAbundances = ExtractProteinAbundances(proteomicsData, runName);
 
+                // Specificity / hypergeometric p / coverage exist only in the Standard scorer. For the Quantitative
+                // method they are left blank (N/A) rather than written as their neutral defaults, so the diagnostics
+                // TSV never records fake 0.00 / 1.0 values as if they were measured.
+                bool quant = string.Equals(result.ScorerMethod, "Quantitative", StringComparison.OrdinalIgnoreCase);
+
                 var rowParts = new List<string>
                 {
                     runName,
@@ -563,9 +653,9 @@ namespace SCPBrowser
                     result.Confidence.ToString("F4"),
                     result.TopScore?.CompositeScore.ToString("F4") ?? "",
                     result.TopScore?.SpearmanCorrelation.ToString("F4") ?? "",
-                    result.TopScore?.SpecificityScore.ToString("F4") ?? "",
-                    result.TopScore?.HypergeometricPValue.ToString("E3") ?? "",
-                    result.TopScore?.MarkerCoverage.ToString("F4") ?? "",
+                    quant ? "" : (result.TopScore?.SpecificityScore.ToString("F4") ?? ""),
+                    quant ? "" : (result.TopScore?.HypergeometricPValue.ToString("E3") ?? ""),
+                    quant ? "" : (result.TopScore?.MarkerCoverage.ToString("F4") ?? ""),
                     result.TopScore?.KeyMarkerAdjustment.ToString("F3") ?? "",
                     result.TopScore?.PriorAdjustment.ToString("F3") ?? "",
                     proteinAbundances.Count.ToString(),

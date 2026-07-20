@@ -15,6 +15,7 @@ namespace SCPBrowser
         private readonly TranscriptomicDatabase _database;
         private readonly Dictionary<string, double> _geneSpecificity;
         private readonly Dictionary<string, HashSet<string>> _cellTypeMarkers;
+        private readonly double _minPercentExpressing;
 
         public Dictionary<string, HashSet<string>> CellTypeMarkers => _cellTypeMarkers;
 
@@ -22,10 +23,17 @@ namespace SCPBrowser
         /// Creates a new CellTypePredictor using aggregated cell type profiles
         /// </summary>
         /// <param name="database">Database containing cell type profiles (not individual cells)</param>
-        /// <param name="markerSpecificityThreshold">Minimum specificity score for a gene to be considered a marker. 
+        /// <param name="markerSpecificityThreshold">Minimum specificity score for a gene to be considered a marker.
         /// If negative, auto-calculated as log(N/2) where N = number of cell types (recommended). Default: -1 (auto)</param>
-        public CellTypePredictor(TranscriptomicDatabase database, double markerSpecificityThreshold = -1)
+        /// <param name="minPercentExpressing">Minimum fraction of a class's cells that must express a gene for it to
+        /// qualify as a marker. NOTE the units are whatever the profile producer stored: the TSV parser writes a 0-1
+        /// fraction, while the proteomic builders write a 0-100 percentage — so the historical default of 0.2 is a
+        /// no-op against percentage-scale profiles (it means "0.2%"). Kept at 0.2 so existing behaviour is unchanged;
+        /// pass 20.0 to actually require 20% expression on percentage-scale profiles.</param>
+        public CellTypePredictor(TranscriptomicDatabase database, double markerSpecificityThreshold = -1,
+            double minPercentExpressing = 0.2)
         {
+            _minPercentExpressing = minPercentExpressing;
             _database = database ?? throw new ArgumentNullException(nameof(database));
 
             if (_database.CellTypeProfiles == null || _database.CellTypeProfiles.Count == 0)
@@ -124,7 +132,7 @@ namespace SCPBrowser
                         // Optional: Also check that gene is expressed in a good fraction of cells
                         // This makes markers more robust
                         if (profile.PercentExpressing.TryGetValue(gene, out double percentExpressing) &&
-                            percentExpressing >= 0.2) 
+                            percentExpressing >= _minPercentExpressing)
                         {
                             passedPercent++;
                             markers[cellType].Add(gene);
@@ -551,6 +559,10 @@ namespace SCPBrowser
         public Dictionary<string, CellTypeScore> Scores { get; set; } = new Dictionary<string, CellTypeScore>();
         public string TopCellType { get; set; }
         public CellTypeScore TopScore { get; set; }
+
+        /// <summary>Which classifier produced this result ("Standard" / "Quantitative"). Gates method-specific display
+        /// so the redesign — which has no specificity/hypergeometric/coverage — never renders those as fake zeros.</summary>
+        public string ScorerMethod { get; set; } = "Standard";
 
         /// <summary>
         /// Softmax probability of the top cell type (0–1). 

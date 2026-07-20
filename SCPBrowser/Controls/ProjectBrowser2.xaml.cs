@@ -175,6 +175,18 @@ namespace SCPBrowser
                 }
                 await OmicBrowser.LoadDataAsync(databasePath);
 
+                // Reflect the project's active classification method in the selector, mirroring the manager's
+                // resolution: an explicit setting wins; otherwise a project WITH existing classifications keeps the
+                // method that produced them, and one with none defaults to Quantitative.
+                try
+                {
+                    string method = await _projectDbService.GetSettingAsync("classification_method", null);
+                    if (string.IsNullOrEmpty(method))
+                        method = await new CellTypeClassificationService(databasePath).GetStoredScorerMethodAsync() ?? "Quantitative";
+                    OmicBrowser.SetSelectedClassificationMethod(method);
+                }
+                catch { /* leave the selector at its default */ }
+
 
                 if (mainWindow != null)
                 {

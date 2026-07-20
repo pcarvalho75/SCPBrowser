@@ -85,6 +85,38 @@
                 <Ellipse x:Name="Dot2" Width="8" Height="8" Fill="#2563eb" Margin="0,0,8,0"/>
                 <Ellipse x:Name="Dot3" Width="8" Height="8" Fill="#2563eb"/>
             </StackPanel>
+
+            <!-- Rotating hint / tip while processing -->
+            <Border x:Name="HintPanel"
+                    Background="#1A2563EB"
+                    BorderBrush="#332563EB"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="16,12"
+                    Margin="0,36,0,0"
+                    MaxWidth="560"
+                    HorizontalAlignment="Center"
+                    Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="💡"
+                               FontSize="16"
+                               VerticalAlignment="Top"
+                               Margin="0,1,12,0"/>
+                    <StackPanel>
+                        <TextBlock Text="TIP"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Foreground="#7DA9F0"
+                                   Margin="0,0,0,3"/>
+                        <TextBlock x:Name="HintText"
+                                   Text=""
+                                   FontSize="13"
+                                   Foreground="#D7E2F5"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="500"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </Grid>
 </UserControl>

@@ -2005,9 +2005,14 @@ namespace SCPBrowser
                             ? $" (prior: {score.PriorAdjustment:+0.0;-0.0})"
                             : "";
                         tooltipText += $"\n{indicator} {kvp.Key}: {score.CompositeScore:F2}{markerAdj}{priorAdj}";
-                        
-                        // Show individual score components
-                        tooltipText += $"\n   Spearman: {score.SpearmanCorrelation:F3}, Spec: {score.SpecificityScore:F2}, -log(p): {-Math.Log10(Math.Max(score.HypergeometricPValue, 1e-300)):F1}, Cov: {score.MarkerCoverage:F3}";
+
+                        // Per-metric components are specific to the Standard 4-metric scorer. The Quantitative
+                        // redesign has no specificity/hypergeometric/coverage analogue, so show only its Spearman
+                        // rather than fake 0.00 / -0.0 for the others.
+                        if (point.FullPrediction.ScorerMethod == "Quantitative")
+                            tooltipText += $"\n   Spearman: {score.SpearmanCorrelation:F3}";
+                        else
+                            tooltipText += $"\n   Spearman: {score.SpearmanCorrelation:F3}, Spec: {score.SpecificityScore:F2}, -log(p): {-Math.Log10(Math.Max(score.HypergeometricPValue, 1e-300)):F1}, Cov: {score.MarkerCoverage:F3}";
                         
                         // Show markers if defined for this cell type
                         if (score.MarkersFound.Count > 0 || score.MarkersMissing.Count > 0)

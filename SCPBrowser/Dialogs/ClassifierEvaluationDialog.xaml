@@ -1,0 +1,84 @@
+<Window x:Class="SCPBrowser.ClassifierEvaluationDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Evaluate Classifier (cross-validation)"
+        Height="720" Width="980"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#f0f9ff" BorderBrush="#bae6fd" BorderThickness="1"
+                CornerRadius="4" Padding="10,8" Margin="0,0,0,10">
+            <TextBlock TextWrapping="Wrap" FontSize="12">
+                Benchmarks cell-type classification against the ground-truth biological conditions, using
+                stratified cross-validation. Each fold rebuilds the reference profiles from its TRAINING cells only,
+                so held-out cells are never scored against a reference they helped define.
+                <LineBreak/>
+                <Run FontWeight="SemiBold">Nothing is saved to the project</Run> — the reference database and stored
+                classifications are left untouched. Results leave only via the CSV you export.
+            </TextBlock>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <GroupBox Grid.Column="0" Header="Conditions to benchmark" Padding="6">
+                <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="ConditionsList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Display}" IsChecked="{Binding IsIncluded}" Margin="2"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </GroupBox>
+
+            <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Top">
+                <StackPanel Orientation="Horizontal" Margin="0,2">
+                    <TextBlock Text="Folds:" Width="60" VerticalAlignment="Center"/>
+                    <TextBox x:Name="FoldsBox" Text="5" Width="50"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,2">
+                    <TextBlock Text="Repeats:" Width="60" VerticalAlignment="Center"/>
+                    <TextBox x:Name="RepeatsBox" Text="10" Width="50"/>
+                </StackPanel>
+                <CheckBox x:Name="LoocvCheck" Content="Leave-one-out" IsChecked="True" Margin="0,4"/>
+                <CheckBox x:Name="StabilityCheck" Content="Protein-subset stability" IsChecked="True" Margin="0,2"/>
+                <CheckBox x:Name="ChannelCheck" Content="Per-channel diagnostic" IsChecked="True" Margin="0,2"/>
+                <Separator Margin="0,6"/>
+                <CheckBox x:Name="QuantScorerCheck" Content="QScore classifier" IsChecked="True" Margin="0,2"
+                          ToolTip="Checked: QScore — a quantitative classifier: margin-based specificity, rank enrichment (AUROC), detection likelihood, fused as a product of experts.&#x0a;Unchecked: the Standard classifier SCPBrowser has shipped — Spearman + specificity + marker enrichment + coverage, averaged."/>
+                <TextBlock Text="unchecked = Standard classifier" FontSize="10" Foreground="#94a3b8" Margin="20,0,0,0"/>
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="2" BorderBrush="#cbd5e1" BorderThickness="1" CornerRadius="3">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                <TextBox x:Name="ResultsBox" IsReadOnly="True" BorderThickness="0"
+                         FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"
+                         Text="Select the conditions to benchmark, then press Run." Padding="8"/>
+            </ScrollViewer>
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="0,0,12,0"
+                       Foreground="#64748b" FontStyle="Italic"/>
+            <Button x:Name="RunButton" Content="Run" Width="90" Height="28" Click="Run_Click" Margin="0,0,8,0"/>
+            <Button x:Name="SaveReportButton" Content="Export report (HTML)..." Width="160" Height="28"
+                    Click="SaveReport_Click" IsEnabled="False" Margin="0,0,8,0"
+                    ToolTip="Publication-quality figures: confusion matrix, per-class metrics, channel contribution, learning curve, uncertainty"/>
+            <Button x:Name="SaveCsvButton" Content="Export per-cell CSV..." Width="150" Height="28"
+                    Click="SaveCsv_Click" IsEnabled="False" Margin="0,0,8,0"/>
+            <Button Content="Close" Width="80" Height="28" Click="Close_Click" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

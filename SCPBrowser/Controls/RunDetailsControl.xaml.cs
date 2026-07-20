@@ -164,12 +164,18 @@ namespace SCPBrowser
 
                 if (dataPoint.PredictionScore != null)
                 {
+                    bool quant = dataPoint.FullPrediction?.ScorerMethod == "Quantitative";
                     detailsText += $"\n\nPrediction Details:";
                     detailsText += $"\n  Composite Score: {dataPoint.PredictionScore.CompositeScore:F3}";
                     detailsText += $"\n  Spearman Corr: {dataPoint.PredictionScore.SpearmanCorrelation:F3}";
-                    detailsText += $"\n  Specificity Score: {dataPoint.PredictionScore.SpecificityScore:F3}";
-                    detailsText += $"\n  P-value: {dataPoint.PredictionScore.HypergeometricPValue:E2}";
-                    detailsText += $"\n  Marker Coverage: {dataPoint.PredictionScore.MarkerCoverage:F3}";
+                    // The specificity / p-value / coverage metrics exist only in the Standard scorer; omit them for
+                    // the Quantitative redesign rather than printing meaningless defaults.
+                    if (!quant)
+                    {
+                        detailsText += $"\n  Specificity Score: {dataPoint.PredictionScore.SpecificityScore:F3}";
+                        detailsText += $"\n  P-value: {dataPoint.PredictionScore.HypergeometricPValue:E2}";
+                        detailsText += $"\n  Marker Coverage: {dataPoint.PredictionScore.MarkerCoverage:F3}";
+                    }
                 }
             }
 

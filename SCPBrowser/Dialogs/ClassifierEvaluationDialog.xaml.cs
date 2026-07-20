@@ -169,7 +169,18 @@ namespace SCPBrowser
             {
                 string html = EvaluationReportBuilder.Build(_report, _datasetName);
                 System.IO.File.WriteAllText(dlg.FileName, html, System.Text.Encoding.UTF8);
-                StatusText.Text = "Report exported.";
+
+                // Sibling plain-text numbers report — the full numeric summary + channel diagnostics, for the record.
+                var numbers = new StringBuilder();
+                numbers.AppendLine(ClassifierEvaluationService.FormatSummary(_report));
+                numbers.AppendLine();
+                numbers.AppendLine(ClassifierEvaluationService.AnalyzeChannels(_report));
+                numbers.AppendLine();
+                numbers.AppendLine(ClassifierEvaluationService.AnalyzeChannelCombinations(_report));
+                string txtPath = System.IO.Path.ChangeExtension(dlg.FileName, ".txt");
+                System.IO.File.WriteAllText(txtPath, numbers.ToString(), System.Text.Encoding.UTF8);
+
+                StatusText.Text = "Report exported (HTML + numbers .txt).";
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dlg.FileName) { UseShellExecute = true });
             }
             catch (Exception ex)

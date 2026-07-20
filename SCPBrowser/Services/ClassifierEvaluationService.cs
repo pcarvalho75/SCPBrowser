@@ -869,6 +869,60 @@ namespace SCPBrowser.Services
             return sb.ToString();
         }
 
+        public sealed class ComboStat
+        {
+            public string Channels { get; set; }
+            public int ChannelCount { get; set; }
+            public double Accuracy { get; set; }
+            public int Correct { get; set; }
+            public int Total { get; set; }
+            public bool IsFullSet { get; set; }
+        }
+
+        /// <summary>Structured channel-combination sweep — the data behind the ablation figure. Diagnostic only:
+        /// the best subset is chosen post-hoc, so it is not a validated accuracy for that subset.</summary>
+        public static List<ComboStat> ChannelCombinations(Report report)
+        {
+            var result = new List<ComboStat>();
+            var preds = report.PerCell.Where(p => p.RawMetrics.Count > 0).ToList();
+            if (preds.Count == 0) return result;
+
+            string[] names = report.ChannelNames;
+            var cache = preds.Select(p =>
+            {
+                var classes = p.RawMetrics.Keys.ToArray();
+                return (classes, probs: ChannelProbabilities(p, classes, report.IsQuantitativeScorer), p.TrueLabel);
+            }).ToList();
+
+            for (int mask = 1; mask < 16; mask++)
+            {
+                int correct = 0;
+                foreach (var (classes, probs, trueLabel) in cache)
+                {
+                    var agg = new double[classes.Length];
+                    for (int m = 0; m < 4; m++)
+                    {
+                        if ((mask & (1 << m)) == 0) continue;
+                        for (int i = 0; i < classes.Length; i++) agg[i] += probs[m][i];
+                    }
+                    int argmax = 0;
+                    for (int i = 1; i < agg.Length; i++) if (agg[i] > agg[argmax]) argmax = i;
+                    if (string.Equals(classes[argmax], trueLabel, StringComparison.OrdinalIgnoreCase)) correct++;
+                }
+                int bits = Enumerable.Range(0, 4).Count(m => (mask & (1 << m)) != 0);
+                result.Add(new ComboStat
+                {
+                    Channels = string.Join(" + ", Enumerable.Range(0, 4).Where(m => (mask & (1 << m)) != 0).Select(m => names[m])),
+                    ChannelCount = bits,
+                    Accuracy = (double)correct / cache.Count,
+                    Correct = correct,
+                    Total = cache.Count,
+                    IsFullSet = mask == 15
+                });
+            }
+            return result;
+        }
+
         // ---- Nested cross-validation ------------------------------------------------------------------------------
         // Picking the best channel subset after seeing the test set is a selection effect — the classic way to
         // report an optimistic number. Nested CV removes it: the subset is chosen by an INNER CV on the outer

@@ -38,9 +38,11 @@ namespace SCPBrowser.Services
             var sb = new StringBuilder();
             sb.Append(Head(r, datasetName));
             sb.Append(HeroStats(r));
+            sb.Append(Summary(r));
             sb.Append(ConfusionFigure(r));
             sb.Append(PerClassFigure(r));
             sb.Append(ChannelFigure(r));
+            sb.Append(ChannelCombinationFigure(r));
             if (r.LearningCurve != null && r.LearningCurve.Count >= 2) sb.Append(LearningCurveFigure(r));
             if (r.SubsetStability != null && r.SubsetStability.Count > 0) sb.Append(StabilityFigure(r));
             sb.Append(MethodsNote(r));
@@ -84,6 +86,11 @@ namespace SCPBrowser.Services
   .tile .n {{ font-size:12px; color: var(--text-muted); margin-top:4px; }}
   .note {{ background: var(--surface-1); border:1px solid var(--rule); border-left:3px solid {S1};
            border-radius:6px; padding:12px 14px; color: var(--text-secondary); font-size:12.5px; }}
+  .explain {{ background: #f3f7fd; border:1px solid #d7e3f5; border-left:3px solid {S1};
+              border-radius:6px; padding:14px 16px; font-size:13.5px; line-height:1.6; color:#2b3a4d; }}
+  .reads {{ color: var(--text-muted); font-size:12px; margin:8px 0 0; }}
+  .fig h2 {{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }}
+  .fig h2 .why {{ font-size:11.5px; font-weight:500; color: var(--text-muted); font-style:italic; letter-spacing:0; }}
   .legend {{ display:flex; gap:16px; flex-wrap:wrap; margin: 2px 0 10px; font-size:12.5px;
              color: var(--text-secondary); }}
   .legend i {{ width:10px; height:10px; border-radius:2px; display:inline-block; margin-right:6px; }}
@@ -112,6 +119,41 @@ scorer: {Esc(r.ScorerName)}</p>";
         private static string Tile(string k, string v, string n) =>
             $@"<div class=""tile""><div class=""k"">{Esc(k)}</div><div class=""v"">{Esc(v)}</div><div class=""n"">{Esc(n)}</div></div>";
 
+        // ---- Plain-language summary of the headline result ------------------------------------------------------
+
+        private static string Summary(ClassifierEvaluationService.Report r)
+        {
+            // Where do the errors concentrate? Name the dominant off-diagonal confusion, if any.
+            string errStory = "no cells were misclassified";
+            if (r.Confusion != null)
+            {
+                (int i, int j, int v) worst = (-1, -1, 0);
+                int totalErr = 0;
+                for (int i = 0; i < r.Labels.Count; i++)
+                    for (int j = 0; j < r.Labels.Count; j++)
+                        if (i != j && r.Confusion[i, j] > 0)
+                        {
+                            totalErr += r.Confusion[i, j];
+                            if (r.Confusion[i, j] > worst.v) worst = (i, j, r.Confusion[i, j]);
+                        }
+                if (totalErr > 0)
+                    errStory = $"the errors are dominated by <strong>{Esc(r.Labels[worst.i])} → {Esc(r.Labels[worst.j])}</strong> " +
+                               $"({worst.v} of {totalErr} misclassifications)";
+            }
+
+            string headline = r.LoocvAccuracy.HasValue
+                ? $"{Pct(r.LoocvAccuracy.Value, 1)} leave-one-out accuracy ({r.LoocvCorrect}/{r.LoocvTotal})"
+                : $"{Pct(r.SinglePassAccuracy, 1)} single-pass accuracy ({r.SinglePassCorrect}/{r.SinglePassTotal})";
+
+            return $@"<div class=""explain"">
+<strong>In brief.</strong> Across {r.Labels.Count} conditions and {r.TotalCells} cells, the classifier reaches {headline},
+with a balanced accuracy of {Pct(r.BalancedAccuracy, 1)}. Every cell is scored against reference profiles built only from
+<em>other</em> cells, so these are held-out results, not a fit to the same data. When it does err, {errStory}.
+Read on for the per-class breakdown, how much each scoring channel contributes, how much reference data the method needs,
+and how stable each call is to the proteins measured.</div>
+<div style=""height:16px""></div>";
+        }
+
         // ---- Confusion matrix: one sequential hue, row-normalised; number = raw count ----------------------------
 
         private static string ConfusionFigure(ClassifierEvaluationService.Report r)
@@ -121,8 +163,8 @@ scorer: {Esc(r.ScorerName)}</p>";
             int w = padL + n * cell + 24, h = padT + n * cell + 46;
 
             var sb = new StringBuilder();
-            sb.Append(@"<div class=""fig""><h2>Confusion matrix</h2>");
-            sb.Append(@"<p class=""cap"" style=""margin:0 0 10px"">Rows = true condition, columns = predicted. Colour encodes the share of each row (recall); the number is the raw prediction count.</p>");
+            sb.Append(@"<div class=""fig""><h2>Confusion matrix <span class=""why"">— which conditions get mistaken for which</span></h2>");
+            sb.Append(@"<p class=""cap"" style=""margin:0 0 10px"">Each row is one true condition's cells; each column is the classifier's call. Colour shows the fraction of that row landing in each column (light→dark = low→high, i.e. recall), and the number is the raw prediction count. A clean diagonal means every condition is recovered; off-diagonal colour marks conditions the classifier confuses.</p>");
             sb.Append($@"<div class=""scroll""><svg viewBox=""0 0 {w} {h}"" width=""{w}"" height=""{h}"" role=""img"">");
 
             sb.Append($@"<text x=""{padL + n * cell / 2}"" y=""22"" text-anchor=""middle"" font-size=""12"" font-weight=""600"" fill=""var(--text-secondary)"">predicted</text>");
@@ -175,7 +217,8 @@ scorer: {Esc(r.ScorerName)}</p>";
             int w = padL + barMax + 70;
 
             var sb = new StringBuilder();
-            sb.Append(@"<div class=""fig""><h2>Per-class performance</h2>");
+            sb.Append(@"<div class=""fig""><h2>Per-class performance <span class=""why"">— is any single condition weaker than the headline?</span></h2>");
+            sb.Append(@"<p class=""cap"" style=""margin:0 0 4px"">Precision = of the cells called this condition, how many truly were it. Recall = of this condition's true cells, how many were found. F1 = their harmonic mean (a single balance of the two).</p>");
             sb.Append($@"<div class=""legend"">
 <span><i style=""background:{S1}""></i>Precision</span>
 <span><i style=""background:{S2}""></i>Recall</span>
@@ -228,7 +271,7 @@ scorer: {Esc(r.ScorerName)}</p>";
             double uniform = 1.0 / Math.Max(2, r.Labels.Count);
 
             var sb = new StringBuilder();
-            sb.Append(@"<div class=""fig""><h2>Scoring-channel contribution</h2>");
+            sb.Append(@"<div class=""fig""><h2>Scoring-channel contribution <span class=""why"">— does every metric earn its place?</span></h2>");
             string fusionNote = r.IsQuantitativeScorer
                 ? "the channels are combined by reliability-weighted log-pooling, so a low-spread channel is down-weighted rather than diluting the decision"
                 : "the channels are combined by an unweighted mean, so a low-spread channel still takes a full share of the combined score and dilutes the decision";
@@ -262,6 +305,50 @@ scorer: {Esc(r.ScorerName)}</p>";
             var deadOnes = stats.Where(s => s.MeanSpread < 0.01).ToList();
             if (deadOnes.Count > 0)
                 sb.Append($@"<p class=""cap"" style=""color:{Critical}"">{Esc(string.Join(", ", deadOnes.Select(d => d.Name)))} is uniform in {deadOnes[0].FlatCells}/{deadOnes[0].TotalCells} cells — it contributes a constant to every class and cannot affect which class wins.</p>");
+            sb.Append(@"<p class=""reads"">How to read: a tall standalone-accuracy bar means the metric classifies well on its own; a near-zero spread means it emits the same value for every class, so it carries no information regardless of its accuracy.</p>");
+            sb.Append("</div>");
+            return sb.ToString();
+        }
+
+        // ---- Channel-combination ablation: which subset of metrics carries the decision -------------------------
+
+        private static string ChannelCombinationFigure(ClassifierEvaluationService.Report r)
+        {
+            var combos = ClassifierEvaluationService.ChannelCombinations(r);
+            if (combos.Count == 0) return "";
+            var rows = combos.OrderByDescending(c => c.Accuracy).ToList();
+
+            const int rowH = 22, padL = 300, padT = 8, barMax = 460;
+            int h = padT + rows.Count * rowH + 34;
+            int w = padL + barMax + 80;
+            double minAcc = Math.Max(0, rows.Min(c => c.Accuracy) - 0.05);
+
+            var sb = new StringBuilder();
+            sb.Append(@"<div class=""fig""><h2>Channel-combination ablation <span class=""why"">— which metrics actually carry the decision</span></h2>");
+            sb.Append(@"<p class=""cap"" style=""margin:0 0 10px"">Accuracy of every subset of the four scoring channels, over all predictions. The full set (the shipped scorer) is highlighted. This is diagnostic: the best subset is picked after seeing the answers, so its accuracy is optimistic — but it shows whether any channel is dead weight or actively harmful.</p>");
+            sb.Append($@"<div class=""scroll""><svg viewBox=""0 0 {w} {h}"" width=""{w}"" height=""{h}"" role=""img"">");
+
+            for (int t = 0; t <= 4; t++)
+            {
+                double a = minAcc + (1.0 - minAcc) * t / 4.0;
+                int x = padL + (int)(barMax * (a - minAcc) / (1.0 - minAcc));
+                sb.Append($@"<line x1=""{x}"" y1=""{padT}"" x2=""{x}"" y2=""{h - 26}"" stroke=""var(--grid)"" stroke-width=""1""/>");
+                sb.Append($@"<text x=""{x}"" y=""{h - 10}"" text-anchor=""middle"" font-size=""10.5"" fill=""var(--text-muted)"">{Pct(a, 0)}</text>");
+            }
+
+            int y = padT;
+            foreach (var c in rows)
+            {
+                int bw = Math.Max(2, (int)Math.Round(barMax * (c.Accuracy - minAcc) / (1.0 - minAcc)));
+                string fill = c.IsFullSet ? S3 : (c.ChannelCount == 1 ? "#9ec5f4" : S1);
+                string label = c.IsFullSet ? c.Channels + "  (full set)" : c.Channels;
+                sb.Append($@"<text x=""{padL - 10}"" y=""{y + rowH / 2 + 4}"" text-anchor=""end"" font-size=""11"" fill=""var(--text-secondary)"" font-weight=""{(c.IsFullSet ? "700" : "400")}"">{Esc(label)}</text>");
+                sb.Append($@"<rect x=""{padL}"" y=""{y + 3}"" width=""{bw}"" height=""{rowH - 6}"" rx=""3"" fill=""{fill}""/>");
+                sb.Append($@"<text x=""{padL + bw + 7}"" y=""{y + rowH / 2 + 4}"" font-size=""10.5"" fill=""var(--text-secondary)"">{Pct(c.Accuracy, 1)}</text>");
+                y += rowH;
+            }
+            sb.Append("</svg></div>");
+            sb.Append($@"<p class=""reads"">Bars above the full-set (gold) bar are subsets that do at least as well as the whole scorer — evidence that a channel is diluting rather than helping. Bars far below show which metrics can't stand alone.</p>");
             sb.Append("</div>");
             return sb.ToString();
         }
@@ -280,7 +367,7 @@ scorer: {Esc(r.ScorerName)}</p>";
             Func<double, double> Y = a => padT + plotH * (1 - (a - minY) / (maxY - minY));
 
             var sb = new StringBuilder();
-            sb.Append(@"<div class=""fig""><h2>Learning curve</h2>");
+            sb.Append(@"<div class=""fig""><h2>Learning curve <span class=""why"">— how much labelled reference data does it need?</span></h2>");
             sb.Append(@"<p class=""cap"" style=""margin:0 0 10px"">Accuracy as a function of how many reference cells per class the model is built from — i.e. how much labelled data the classifier actually needs.</p>");
             sb.Append($@"<div class=""scroll""><svg viewBox=""0 0 {w} {h}"" width=""{w}"" height=""{h}"" role=""img"">");
 
@@ -319,7 +406,7 @@ scorer: {Esc(r.ScorerName)}</p>";
             int maxC = Math.Max(1, counts.Max());
 
             var sb = new StringBuilder();
-            sb.Append(@"<div class=""fig""><h2>Uncertainty — agreement across random protein subsets</h2>");
+            sb.Append(@"<div class=""fig""><h2>Uncertainty <span class=""why"">— how stable is each call to the proteins measured?</span></h2>");
             sb.Append($@"<p class=""cap"" style=""margin:0 0 10px"">Each cell was re-classified many times using random halves of its measured proteins. The bar shows how many cells fell in each agreement band — a cell at 100% received the same call from every subset. Mean agreement {Pct(vals.Average(), 1)}; {vals.Count(v => v >= 0.999)} of {vals.Count} cells fully stable.</p>");
             sb.Append($@"<div class=""scroll""><svg viewBox=""0 0 {w} {h}"" width=""{w}"" height=""{h}"" role=""img"">");
 

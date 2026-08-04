@@ -208,6 +208,7 @@ namespace SCPBrowser
                 WelcomeScreen.Visibility = Visibility.Collapsed;
                 MainTabControl.Visibility = Visibility.Visible;
                 ImportPlateMetadataMenuItem.IsEnabled = true;
+                ImportCellenOneRunMenuItem.IsEnabled = true;
                 ImportParquetMenuItem.IsEnabled = true;
                 ImportGeneMatrixMenuItem.IsEnabled = true;
                 EvaluateClassifierMenuItem.IsEnabled = true;
@@ -733,6 +734,7 @@ namespace SCPBrowser
             WelcomeScreen.Visibility = Visibility.Visible;
             MainTabControl.Visibility = Visibility.Collapsed;
             ImportPlateMetadataMenuItem.IsEnabled = false;
+            ImportCellenOneRunMenuItem.IsEnabled = false;
             ImportParquetMenuItem.IsEnabled = false;
             ImportGeneMatrixMenuItem.IsEnabled = false;
             EvaluateClassifierMenuItem.IsEnabled = false;
@@ -781,6 +783,13 @@ namespace SCPBrowser
                 return;
             }
 
+            if (_cellenOneImportRunning)
+            {
+                MessageBox.Show("A cellenONE import is already running. Please wait for it to finish.",
+                    "Import in progress", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
             var dialog = new NewPlateDialog { Owner = this };
             if (dialog.ShowDialog() != true)
                 return;
@@ -791,23 +800,9 @@ namespace SCPBrowser
                 int plateId = await _plateService.CreatePlateAsync(dialog.PlateInfo);
 
                 // Optionally import the attached cellenONE isolation run (cells + images) against this plate.
+                // A fresh plate can never have a pre-existing run, so the returned id is always a new import.
                 if (!string.IsNullOrEmpty(dialog.CellenOneRunDir))
-                {
-                    LoadingOverlay.SetMessage("Importing cellenONE data");
-                    LoadingOverlay.SetProgress("Reading run...");
-                    LoadingOverlay.Show();
-                    // Let the overlay paint before the heavy work starts.
-                    await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);
-
-                    var importer = new CellenOneImportService(_currentProjectPath);
-                    var progress = new Progress<string>(msg => LoadingOverlay.SetProgress(msg));
-                    // Run the import (file parse + 800 image decodes/thumbnails + ~65 MB write) on a background
-                    // thread so the UI thread stays free to render and animate the overlay. The import's WPF
-                    // imaging works on frozen bitmaps, which is safe off the UI thread.
-                    await Task.Run(() => importer.ImportRunAsync(dialog.CellenOneRunDir, plateId, progress));
-
-                    LoadingOverlay.Hide();
-                }
+                    await RunCellenOneImportAsync(dialog.CellenOneRunDir, plateId, _currentProjectPath);
 
                 // Refresh the plate filter so the new plate is available immediately.
                 await PlateFilterControl.LoadPlatesAsync(_currentProjectPath);
@@ -825,6 +820,155 @@ namespace SCPBrowser
                     "Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>True while a cellenONE import is writing; blocks a second one from starting.</summary>
+        private bool _cellenOneImportRunning;
+
+        /// <summary>
+        /// Imports a cellenONE isolation run against an existing plate id, behind the shared wait screen, and
+        /// returns the cellenone_run_id. Both entry points (new-plate attach and the "import into existing plate"
+        /// route) funnel through here so the import behaves identically either way.
+        ///
+        /// The returned id is an EXISTING id when the importer deduplicated the run instead of writing it, so
+        /// callers that report an outcome must compare it against the ids known before the import.
+        ///
+        /// The wait screen sits inside the content grid and does NOT cover the menu bar, and the import runs on a
+        /// background thread, so the Import menu items are disabled explicitly for the duration - otherwise a
+        /// second import can start mid-write and the two race on the same SQLite file (and the first to finish
+        /// hides the overlay out from under the other).
+        /// </summary>
+        private async Task<int> RunCellenOneImportAsync(string runDir, int plateId, string projectPath)
+        {
+            LoadingOverlay.SetMessage("Importing cellenONE data");
+            LoadingOverlay.SetProgress("Reading run...");
+            LoadingOverlay.Show();
+            // Let the overlay paint before the heavy work starts.
+            await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);
+
+            _cellenOneImportRunning = true;
+            ImportPlateMetadataMenuItem.IsEnabled = false;
+            ImportCellenOneRunMenuItem.IsEnabled = false;
+            try
+            {
+                var importer = new CellenOneImportService(projectPath);
+                var progress = new Progress<string>(msg => LoadingOverlay.SetProgress(msg));
+                // Run the import (file parse + 800 image decodes/thumbnails + ~65 MB write) on a background
+                // thread so the UI thread stays free to render and animate the overlay. The import's WPF
+                // imaging works on frozen bitmaps, which is safe off the UI thread.
+                return await Task.Run(() => importer.ImportRunAsync(runDir, plateId, progress));
+            }
+            finally
+            {
+                _cellenOneImportRunning = false;
+                ImportPlateMetadataMenuItem.IsEnabled = _hasOpenProject;
+                ImportCellenOneRunMenuItem.IsEnabled = _hasOpenProject;
+                LoadingOverlay.Hide();
+            }
+        }
+
+        /// <summary>
+        /// Attaches a cellenONE isolation run to a plate that already exists — the route for when the isolation
+        /// data arrives after the plate was registered (NewPlateDialog can only attach a run at creation time).
+        /// </summary>
+        private async void ImportCellenOneRun_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_hasOpenProject || _currentProjectPath == null)
+            {
+                MessageBox.Show("Please open or create a project first.", "No Project Open",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (_cellenOneImportRunning)
+            {
+                MessageBox.Show("A cellenONE import is already running. Please wait for it to finish.",
+                    "Import in progress", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dialog = new ImportCellenOneRunDialog { Owner = this };
+
+            bool hasPlates;
+            try
+            {
+                hasPlates = await dialog.InitializeAsync(_currentProjectPath);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not load the project's plates:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            if (!hasPlates)
+            {
+                MessageBox.Show(
+                    "This project has no plates yet, so there is nothing to attach a run to.\n\n" +
+                    "Use Import ▸ Import Plate Metadata... to register a plate first — that dialog can also " +
+                    "attach the cellenONE run at the same time.",
+                    "No plates",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (dialog.ShowDialog() != true || string.IsNullOrEmpty(dialog.RunDir))
+                return;
+
+            // Pin the project this import belongs to: the user can close or switch projects while it runs, and the
+            // follow-up UI must not be applied to a different project than the one written to.
+            string projectPath = _currentProjectPath;
+            var knownRunIds = dialog.KnownRunIds;
+
+            try
+            {
+                int runId = await RunCellenOneImportAsync(dialog.RunDir, dialog.SelectedPlateId, projectPath);
+
+                // The importer returns an EXISTING run id when it deduplicated instead of writing, so report what
+                // actually happened rather than assuming the cells were added.
+                bool wasSkipped = knownRunIds.Contains(runId);
+
+                // Project closed or switched while the import ran (null _currentProjectPath compares unequal here).
+                if (!string.Equals(projectPath, _currentProjectPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show(
+                        wasSkipped
+                            ? "That run was already imported, so nothing was added. (The project has since been closed or changed.)"
+                            : $"Imported {dialog.CellCount} isolated cells into '{dialog.SelectedPlateName}'. " +
+                              "(The project has since been closed or changed, so nothing was refreshed here.)",
+                        "cellenONE Import Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                if (wasSkipped)
+                {
+                    MessageBox.Show(
+                        $"This run is already imported for '{dialog.SelectedPlateName}' — it was deduplicated and " +
+                        "nothing was added. The existing cells were left untouched.",
+                        "Already Imported", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // The importer leaves isolated_cells.raw_file_id NULL on purpose - the reconcile step links cells
+                // to their MS runs. On this route the MS data is usually already imported, so reconciling is
+                // immediately actionable and the import is only half-useful without it.
+                var answer = MessageBox.Show(
+                    $"Imported {dialog.CellCount} isolated cells into '{dialog.SelectedPlateName}'.\n\n" +
+                    "These cells are not yet linked to their MS runs. Open Reconcile Cells ↔ Runs now?",
+                    "cellenONE Import Complete",
+                    MessageBoxButton.YesNo, MessageBoxImage.Information);
+
+                // Preselect the run just imported. Without this the reconcile dialog opens on whichever run has the
+                // newest acquisition date - typically NOT the late-arriving run imported here - and its Apply
+                // clears that other run's links before writing, discarding existing (possibly hand-made) matches.
+                if (answer == MessageBoxResult.Yes)
+                    OpenReconcileDialog(runId);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error importing cellenONE run:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1112,8 +1256,18 @@ namespace SCPBrowser
                 return;
             }
 
+            OpenReconcileDialog();
+        }
+
+        /// <summary>
+        /// Opens the cell/run reconcile dialog, optionally preselecting a run. Preselection matters after a
+        /// cellenONE import: the dialog otherwise defaults to the newest-acquired run, and its Apply clears the
+        /// selected run's links before writing.
+        /// </summary>
+        private void OpenReconcileDialog(int? preselectRunId = null)
+        {
             var dlg = new ReconcileCellsDialog { Owner = this };
-            dlg.Initialize(_currentProjectPath);
+            dlg.Initialize(_currentProjectPath, preselectRunId);
             dlg.ShowDialog();
         }
 

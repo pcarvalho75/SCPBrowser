@@ -52,7 +52,12 @@
                   x:Name="ImportPlateMetadataMenuItem"
                   Click="ImportPlateMetadata_Click"
                   IsEnabled="False"
-                  ToolTip="Register a plate and optionally attach a cellenONE isolation run (cells + images)"/>
+                  ToolTip="Register a NEW plate and optionally attach a cellenONE isolation run (cells + images)"/>
+                <MenuItem Header="Import _cellenONE Run into Existing Plate..."
+                  x:Name="ImportCellenOneRunMenuItem"
+                  Click="ImportCellenOneRun_Click"
+                  IsEnabled="False"
+                  ToolTip="Attach a cellenONE isolation run (cells + images) to a plate that already exists"/>
                 <Separator/>
                 <MenuItem Header="_Parquet File..."
                   x:Name="ImportParquetMenuItem"

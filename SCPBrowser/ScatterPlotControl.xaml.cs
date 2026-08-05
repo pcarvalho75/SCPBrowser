@@ -147,6 +147,81 @@ namespace SCPBrowser
         /// </summary>
         private double _missingRate;
         public double LastMissingRate => _missingRate;
+
+        /// <summary>Cells left out of the last embedding because their population was unchecked AND grey dots are hidden.</summary>
+        private int _excludedByPopulationFilter;
+        public int LastExcludedByPopulationFilter => _excludedByPopulationFilter;
+
+        /// <summary>Signature of the cohort the last embedding was computed over; a change forces a recompute.</summary>
+        private string _previousCohortKey;
+
+        /// <summary>True when the last attempt had too few cells to embed (fewer than 3).</summary>
+        private bool _cohortTooSmall;
+        public bool LastCohortTooSmall => _cohortTooSmall;
+
+        /// <summary>
+        /// Identifies WHICH cells will enter the embedding.
+        ///
+        /// While grey dots are shown, unchecked populations are still on screen and still legitimately define the
+        /// axes, so the cohort is simply "everything" and toggling a legend checkbox must NOT trigger an expensive
+        /// recompute. Once grey dots are hidden those cells are gone from the figure, so the checked sets become
+        /// part of the cohort's identity and any change to them has to invalidate the embedding.
+        /// </summary>
+        private string CohortKey(ScatterPlotOptions options)
+        {
+            if (!_hideUnselected) return "ALL";
+
+            string Join(HashSet<string> s) =>
+                s == null || s.Count == 0 ? "-" : string.Join("", s.OrderBy(x => x, StringComparer.Ordinal));
+
+            return "HIDE|" + Join(options?.CheckedCellTypes)
+                 + "|" + Join(options?.CheckedBioConditions)
+                 + "|" + Join(options?.CheckedPlates);
+        }
+
+        /// <summary>
+        /// Whether a run survives the legend's checked-population filters, using EXACTLY the rule
+        /// UpdateSelectionWithFilters applies when it decides what to grey: a run with no value for a category
+        /// always passes that category; a run WITH a value passes only if that value is checked. Sharing the rule
+        /// is the point - if the embedding dropped a different set than the display greys, the two would disagree.
+        /// </summary>
+        private bool PassesCheckedPopulationFilters(string rawFile, ProteomicsData data)
+        {
+            var o = _currentOptions;
+            if (o == null) return true;
+
+            // Cell type
+            string cellType = null;
+            if (o.CellTypePredictions != null && o.CellTypePredictions.TryGetValue(rawFile, out var pred))
+                cellType = pred?.TopCellType;
+            if (!string.IsNullOrEmpty(cellType))
+            {
+                if (o.CheckedCellTypes == null || o.CheckedCellTypes.Count == 0 || !o.CheckedCellTypes.Contains(cellType))
+                    return false;
+            }
+
+            // Biological condition
+            string condition = null;
+            if (data?.BiologicalConditionPerFile != null)
+                data.BiologicalConditionPerFile.TryGetValue(rawFile, out condition);
+            if (!string.IsNullOrEmpty(condition))
+            {
+                if (o.CheckedBioConditions == null || o.CheckedBioConditions.Count == 0 || !o.CheckedBioConditions.Contains(condition))
+                    return false;
+            }
+
+            // Plate
+            string plate = null;
+            if (o.PlatePerFile != null)
+                o.PlatePerFile.TryGetValue(rawFile, out plate);
+            if (!string.IsNullOrEmpty(plate))
+            {
+                if (o.CheckedPlates == null || o.CheckedPlates.Count == 0 || !o.CheckedPlates.Contains(plate))
+                    return false;
+            }
+
+            return true;
+        }
         private Dictionary<string, int> _plateMappingPerFile;
 
         // Selection styling constants
@@ -298,7 +373,12 @@ namespace SCPBrowser
             bool dimRedSettingsChanged = currentDimRedSettings != null &&
                 (currentDimRedSettings.DiffersFrom(_previousDimRedSettings));
 
-            if (_currentData != data || hvpChanged || batchCorrectionChanged || dimRedSettingsChanged)
+            // Cohort change = the SET OF CELLS entering the embedding changed (grey dots hidden with a different
+            // set of populations checked). That invalidates the embedding just as surely as a settings change.
+            string cohortKey = CohortKey(options);
+            bool cohortChanged = !string.Equals(cohortKey, _previousCohortKey, StringComparison.Ordinal);
+
+            if (_currentData != data || hvpChanged || batchCorrectionChanged || dimRedSettingsChanged || cohortChanged)
             {
                 _pcaResult = null;
                 _pcaProteinNames = null;
@@ -311,6 +391,7 @@ namespace SCPBrowser
             _hvpProteinIds = newHvpIds;
             _previousApplyBatchCorrection = options?.ApplyBatchCorrection ?? false;
             _previousDimRedSettings = currentDimRedSettings?.Clone();
+            _previousCohortKey = cohortKey;
             _currentData = data;
             _currentOptions = options;
 
@@ -362,7 +443,10 @@ namespace SCPBrowser
                 bool dimRedSettingsChanged = currentDimRedSettings != null && 
                     (currentDimRedSettings.DiffersFrom(_previousDimRedSettings));
 
-                if (_currentData != data || hvpChanged || batchCorrectionChanged || dimRedSettingsChanged)
+                string cohortKey = CohortKey(options);
+                bool cohortChanged = !string.Equals(cohortKey, _previousCohortKey, StringComparison.Ordinal);
+
+                if (_currentData != data || hvpChanged || batchCorrectionChanged || dimRedSettingsChanged || cohortChanged)
                 {
                     _pcaResult = null;
                     _pcaProteinNames = null;
@@ -387,6 +471,7 @@ namespace SCPBrowser
                 _hvpProteinIds = newHvpIds;
                 _previousApplyBatchCorrection = options?.ApplyBatchCorrection ?? false;
                 _previousDimRedSettings = currentDimRedSettings?.Clone();
+                _previousCohortKey = cohortKey;
 
                 _currentData = data;
                 _currentOptions = options;
@@ -546,6 +631,20 @@ namespace SCPBrowser
                     {
                         rawFiles = rawFiles.Where(rf => !excluded.Contains(rf)).ToList();
 
+                    }
+
+                    // "Hide Grey Dots" means the unchecked populations are GONE, not merely dimmed - so they must
+                    // not shape the embedding either. While they are only greyed they remain part of the dataset
+                    // being displayed, and leaving them in the matrix is the honest choice: the axes are defined
+                    // by everything on screen. Once the user hides them, continuing to let them define the
+                    // variance structure, the HVP ranking, the per-protein z-scores and the UMAP neighbour graph
+                    // would place the surviving cells in a space partly built from data the user has removed.
+                    _excludedByPopulationFilter = 0;
+                    if (_hideUnselected)
+                    {
+                        int beforeChecked = rawFiles.Count;
+                        rawFiles = rawFiles.Where(rf => PassesCheckedPopulationFilters(rf, data)).ToList();
+                        _excludedByPopulationFilter = beforeChecked - rawFiles.Count;
                     }
 
                     // Determine which proteins to use - HVPs if available, otherwise all
@@ -1185,10 +1284,15 @@ namespace SCPBrowser
 
                 if (nSamples < 3 || nProteins < 2)
                 {
+                    // Too little left to embed. Record why so the header can say so - returning silently here
+                    // leaves the previous picture on screen and the user cannot tell the difference between
+                    // "nothing changed" and "this could not be computed".
+                    _cohortTooSmall = nSamples < 3;
                     _pcaResult = null;
                     _pcaProteinNames = null;
                     return;
                 }
+                _cohortTooSmall = false;
 
                 // Run NIPALS PCA - compute N components (capped by matrix dimensions)
                 int maxComponents = Math.Min(settings.NumPcaComponents, Math.Min(nSamples - 1, nProteins - 1));

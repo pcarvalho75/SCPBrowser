@@ -1879,6 +1879,15 @@ namespace SCPBrowser
                 double missing = ScatterPlot.LastMissingRate;
                 if (missing > 0)
                     baseHeader += $"  |  {missing:P0} missing";
+
+                // Say when the embedding was rebuilt on a subset. Two identical-looking UMAPs computed on
+                // different cohorts are not comparable, so the cohort has to be visible on the figure itself.
+                int droppedByPopulation = ScatterPlot.LastExcludedByPopulationFilter;
+                if (droppedByPopulation > 0)
+                    baseHeader += $"  |  recomputed without {droppedByPopulation} hidden cell{(droppedByPopulation == 1 ? "" : "s")}";
+
+                if (ScatterPlot.LastCohortTooSmall)
+                    baseHeader += "  |  too few cells left to compute an embedding — re-check a population";
             }
 
             // The HVP filter was asked for but nothing could be scored, so it was bypassed. Say so — a silent
@@ -1980,6 +1989,15 @@ namespace SCPBrowser
         private void HideGreyDotsCheckBox_Changed(object sender, RoutedEventArgs e)
         {
             ScatterPlot.SetHideUnselected(HideGreyDotsCheckBox.IsChecked == true);
+
+            // In PCA/UMAP the greyed cells are not merely dimmed - they were used to BUILD the axes. Hiding them
+            // therefore has to rebuild the embedding from the remaining cells, otherwise the survivors are shown
+            // in a space defined partly by data the user just removed. In the raw scatter views the axes are
+            // per-cell measurements, so hiding is purely cosmetic and no recompute is needed.
+            var selectedItem = ViewModeComboBox.SelectedItem as ComboBoxItem;
+            string viewMode = selectedItem?.Tag?.ToString() ?? "PeptideTic";
+            if (_currentData != null && (viewMode == "PCA" || viewMode == "UMAP"))
+                RefreshChart();
         }
 
         private System.Windows.Threading.DispatcherTimer _contaminantCutoffDebounce;

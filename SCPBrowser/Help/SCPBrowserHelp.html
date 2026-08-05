@@ -419,9 +419,36 @@ clip.</p>
 </table>
 
 <div class="note"><b>Read the plot header</b>
-It states how many proteins the embedding actually used, the realised missingness, whether the HVP filter was
-bypassed because too few cells were available to score variability, and — for batch correction — if the
-correction was skipped or fell back to plate-only.</div>
+It states how many proteins the embedding actually used, the realised missingness, whether the embedding was
+recomputed on a subset of cells, whether the HVP filter was bypassed because too few cells were available to
+score variability, and — for batch correction — if the correction was skipped or fell back to plate-only.</div>
+
+<h3 id="excluding">Excluding a population from the embedding</h3>
+<p>Unchecking a cell type, biological condition or plate in the legend <b>greys</b> those cells. The embedding
+does not change, and that is deliberate: the greyed cells are still shown, so they still legitimately define the
+axes you are looking at.</p>
+
+<p>Ticking <b>Hide Grey Dots</b> removes them from the figure — and then the embedding is <b>recomputed from the
+remaining cells only</b>. This matters because PCA and UMAP axes are derived from the whole cohort: while a
+population is present it contributes to the variance structure, the highly-variable-protein ranking, the
+per-protein z-scores and the UMAP neighbour graph. Leaving it in after you have removed it from view would
+place the surviving cells in a space partly defined by data you had excluded.</p>
+
+<table>
+  <tr><th>Action</th><th>Cells shown</th><th>Embedding</th></tr>
+  <tr><td>Untick a population in the legend</td><td>Greyed, still visible</td><td>Unchanged — they still define the axes</td></tr>
+  <tr><td>Untick, then tick <b>Hide Grey Dots</b></td><td>Removed</td><td><b>Recomputed</b> without them</td></tr>
+</table>
+
+<div class="warn"><b>Two embeddings over different cohorts are not comparable</b>
+Coordinates, cluster shapes and label purity all change when the cohort changes, so a UMAP computed on all cells
+and one computed on a subset cannot be compared point-for-point — even though they look alike. When cells have
+been excluded the plot header says <code>recomputed without N hidden cells</code>; record that alongside the
+figure. If you hide so much that fewer than three cells remain, no embedding can be computed and the header
+says so.</div>
+
+<p>In the raw scatter views (protein count, ion current, contaminant ratio) the axes are per-cell measurements
+rather than a shared decomposition, so hiding cells there is purely cosmetic and nothing is recomputed.</p>
 
 <h3>K-means</h3>
 <p>Colour by <b>K-means</b> to cluster on the currently displayed axes. The basis (for example
@@ -513,6 +540,16 @@ re-import — that creates duplicate runs.</p>
 
 <h3>Image exclusions are not affecting the analysis</h3>
 <p>Cells must be linked to their MS runs first — <span class="path">Utils ▸ Reconcile Cells ↔ Runs…</span>.</p>
+
+<h3>I excluded a population but the UMAP looks the same</h3>
+<p>Unticking a population greys it; the embedding is deliberately left alone while those cells are still on
+screen. Tick <b>Hide Grey Dots</b> to remove them and recompute without them — the header will then read
+<code>recomputed without N hidden cells</code>. See
+<a href="#excluding">Excluding a population from the embedding</a>.</p>
+
+<h3>Hiding grey dots emptied the plot</h3>
+<p>Fewer than three cells were left, which is not enough to compute an embedding; the header says so. Re-tick a
+population, or relax the QC filters.</p>
 
 <h3>Numbers changed after an update</h3>
 <p>Check the analysis report and the plot header: the protein count used, the normalisation and

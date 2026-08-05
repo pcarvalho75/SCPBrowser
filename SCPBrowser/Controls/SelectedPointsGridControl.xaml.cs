@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -121,7 +121,7 @@ namespace SCPBrowser
             SelectedPointsGrid.CellEditEnding += SelectedPointsGrid_CellEditEnding;
         }
 
-        private void SelectedPointsGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
+        private void SelectedPointsGrid_CellEditEnding(object? sender, DataGridCellEditEndingEventArgs e)
         {
             if (e.Column.Header?.ToString() == "✓" && e.Row.Item is SelectedPointData data)
             {

@@ -1,4 +1,4 @@
-// ProjectBrowser2.xaml.cs
+﻿// ProjectBrowser2.xaml.cs
 // Mother control that coordinates three child browser controls
 // Location: SCPBrowser/Controls/ProjectBrowser2.xaml.cs
 
@@ -71,7 +71,7 @@ namespace SCPBrowser
             ConditionDeleted?.Invoke(this, e);
         }
 
-        private async void OmicBrowser_KeyMarkersChanged(object sender, KeyMarkersChangedEventArgs e)
+        private async void OmicBrowser_KeyMarkersChanged(object? sender, KeyMarkersChangedEventArgs e)
         {
             _omicChanged = true;
 
@@ -89,7 +89,7 @@ namespace SCPBrowser
             }
         }
 
-        private async void OmicBrowser_PriorWeightsChanged(object sender, PriorWeightsChangedEventArgs e)
+        private async void OmicBrowser_PriorWeightsChanged(object? sender, PriorWeightsChangedEventArgs e)
         {
             _omicChanged = true;
 
@@ -107,7 +107,7 @@ namespace SCPBrowser
             }
         }
 
-        private void OmicBrowser_ExclusionsChanged(object sender, CellTypeExclusionsChangedEventArgs e)
+        private void OmicBrowser_ExclusionsChanged(object? sender, CellTypeExclusionsChangedEventArgs e)
         {
             // Excluded cell types are read fresh from OmicBrowser at reclassify time,
             // so there is nothing to persist here. We just record that something changed

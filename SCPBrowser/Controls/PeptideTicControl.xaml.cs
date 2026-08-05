@@ -1,4 +1,4 @@
-using SCPBrowser.GOTools;
+﻿using SCPBrowser.GOTools;
 using SCPBrowser.Models;
 using SCPBrowser.Services;
 using SCPBrowser.Controls;
@@ -565,7 +565,7 @@ namespace SCPBrowser
             e.Handled = !char.IsDigit(e.Text[0]) && e.Text[0] != '.';
         }
 
-        private void SelectedPointsGridPanel_RunInclusionChanged(object sender, RunInclusionChangedEventArgs e)
+        private void SelectedPointsGridPanel_RunInclusionChanged(object? sender, RunInclusionChangedEventArgs e)
         {
             // Bubble up to MainWindow for database persistence
             RunInclusionChanged?.Invoke(this, e);
@@ -580,7 +580,7 @@ namespace SCPBrowser
         /// </summary>
         public void ConfirmExclusionsCleared() => SelectedPointsGridPanel?.ConfirmExclusionsCleared();
 
-        private void SelectedPointsGridPanel_ClearAllExclusionsRequested(object sender, EventArgs e)
+        private void SelectedPointsGridPanel_ClearAllExclusionsRequested(object? sender, EventArgs e)
         {
             // Bubble up to MainWindow for database persistence
             ClearAllExclusionsRequested?.Invoke(this, e);
@@ -2125,7 +2125,7 @@ namespace SCPBrowser
                 : "Excluded Runs";
         }
 
-        private void ScatterPlot_SelectionChanged(object sender, PlotSelectionChangedEventArgs e)
+        private void ScatterPlot_SelectionChanged(object? sender, PlotSelectionChangedEventArgs e)
         {
 
 
@@ -2337,7 +2337,7 @@ namespace SCPBrowser
             return selectedRuns.Count > 0 ? selectedRuns : null;
         }
 
-        private void SelectedPointsGridPanel_GridSelectionChanged(object sender, SelectedPointData selectedData)
+        private void SelectedPointsGridPanel_GridSelectionChanged(object? sender, SelectedPointData selectedData)
         {
             if (selectedData == null)
                 return;

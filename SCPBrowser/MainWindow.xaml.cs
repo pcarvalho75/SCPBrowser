@@ -621,7 +621,7 @@ namespace SCPBrowser
             }
         }
 
-        private async void DataFilterService_FilteredDataChanged(object sender, EventArgs e)
+        private async void DataFilterService_FilteredDataChanged(object? sender, EventArgs e)
         {
             try
             {
@@ -644,7 +644,7 @@ namespace SCPBrowser
             }
         }
 
-        private void MainControlTab_ProteinCutoffChanged(object sender, int newCutoff)
+        private void MainControlTab_ProteinCutoffChanged(object? sender, int newCutoff)
         {
             // Use debouncing to avoid excessive filter operations when dragging slider.
             // Timer and Tick handler are wired once in the constructor; here we just
@@ -692,7 +692,7 @@ namespace SCPBrowser
             }
         }
 
-        private void MainControlTab_MaxProteinCutoffChanged(object sender, int newUpperCutoff)
+        private void MainControlTab_MaxProteinCutoffChanged(object? sender, int newUpperCutoff)
         {
             // Debounced for the same reason as the lower cutoff: each change triggers a full re-filter.
             _pendingMaxProteinCutoff = newUpperCutoff;
@@ -722,7 +722,7 @@ namespace SCPBrowser
             }
         }
 
-        private async void MainControlTab_RunExcludeRequested(object sender, string rawFileName)
+        private async void MainControlTab_RunExcludeRequested(object? sender, string rawFileName)
         {
             if (!_hasOpenProject) return;
             try
@@ -738,7 +738,7 @@ namespace SCPBrowser
             }
         }
 
-        private async void MainControlTab_RunRestoreRequested(object sender, string rawFileName)
+        private async void MainControlTab_RunRestoreRequested(object? sender, string rawFileName)
         {
             if (!_hasOpenProject) return;
             try
@@ -754,7 +754,7 @@ namespace SCPBrowser
             }
         }
 
-        private async void MainControlTab_ClearExclusionsRequested(object sender, EventArgs e)
+        private async void MainControlTab_ClearExclusionsRequested(object? sender, EventArgs e)
         {
             if (!_hasOpenProject) return;
             try
@@ -770,7 +770,7 @@ namespace SCPBrowser
             }
         }
 
-        private async void PlateFilterControl_PlateSelectionChanged(object sender, PlateSelectionChangedEventArgs e)
+        private async void PlateFilterControl_PlateSelectionChanged(object? sender, PlateSelectionChangedEventArgs e)
         {
             try
             {
@@ -797,7 +797,7 @@ namespace SCPBrowser
             }
         }
 
-        private void PlateFilterControl_PlateColorChanged(object sender, PlateColorChangedEventArgs e)
+        private void PlateFilterControl_PlateColorChanged(object? sender, PlateColorChangedEventArgs e)
         {
             if (!_hasOpenProject) return;
 
@@ -1759,7 +1759,7 @@ namespace SCPBrowser
         /// which is the same control the debounced filter pipeline already listens to - so there is exactly one
         /// code path that applies this value, and the two places that display it cannot disagree.
         /// </summary>
-        private void Settings_ProteinCutoffSaved(object sender, int newCutoff)
+        private void Settings_ProteinCutoffSaved(object? sender, int newCutoff)
         {
             if (!_hasOpenProject) return;
             if (MainControlTab.ProteinCutoff == newCutoff) return;
@@ -2243,12 +2243,12 @@ namespace SCPBrowser
         }
 
 
-        private void PeptideTicTab_SelectionChangedForBioTessera(object sender, EventArgs e)
+        private void PeptideTicTab_SelectionChangedForBioTessera(object? sender, EventArgs e)
         {
             _bioTesseraNeedsUpdate = true;
         }
 
-        private async void ProteinMatrixTab_ContaminantsUpdated(object sender, EventArgs e)
+        private async void ProteinMatrixTab_ContaminantsUpdated(object? sender, EventArgs e)
         {
             var contaminantIds = ProteinMatrixTab.ContaminantIds;
             var originalData = _dataFilterService?.OriginalData;
@@ -2438,7 +2438,7 @@ namespace SCPBrowser
             }
         }
 
-        private async void PeptideTicTab_CellTypePredictionsRequested(object sender, EventArgs e)
+        private async void PeptideTicTab_CellTypePredictionsRequested(object? sender, EventArgs e)
         {
             try
             {
@@ -2507,7 +2507,7 @@ namespace SCPBrowser
         /// main-screen "Cell Type" colour option, caches the predictions (so re-selecting it works without a profile),
         /// auto-selects Cell Type mode, and colours — fixing the "dropdown stays locked after Classify" issue.
         /// </summary>
-        private async void ProjectBrowserDialog_MarkerCellsClassified(object sender, EventArgs e)
+        private async void ProjectBrowserDialog_MarkerCellsClassified(object? sender, EventArgs e)
         {
             try
             {
@@ -2558,7 +2558,7 @@ namespace SCPBrowser
             return map;
         }
 
-        private async void PeptideTicTab_ExportDiagnosticsRequested(object sender, EventArgs e)
+        private async void PeptideTicTab_ExportDiagnosticsRequested(object? sender, EventArgs e)
         {
             try
             {
@@ -2626,7 +2626,7 @@ namespace SCPBrowser
             }
         }
 
-        private async void PeptideTicTab_ContaminantRatioCutoffChanged(object sender, double cutoff)
+        private async void PeptideTicTab_ContaminantRatioCutoffChanged(object? sender, double cutoff)
         {
             try
             {
@@ -2769,7 +2769,7 @@ namespace SCPBrowser
             }
         }
 
-        private async void ProjectBrowserDialog_ReclassifyRequested(object sender, ReclassifyRequestedEventArgs e)
+        private async void ProjectBrowserDialog_ReclassifyRequested(object? sender, ReclassifyRequestedEventArgs e)
         {
             try
             {
@@ -2885,7 +2885,7 @@ namespace SCPBrowser
             }
         }
 
-        private async void PeptideTicTab_RunInclusionChanged(object sender, RunInclusionChangedEventArgs e)
+        private async void PeptideTicTab_RunInclusionChanged(object? sender, RunInclusionChangedEventArgs e)
         {
             try
             {
@@ -2911,7 +2911,7 @@ namespace SCPBrowser
             }
         }
 
-        private async void PeptideTicTab_ClearAllExclusionsRequested(object sender, EventArgs e)
+        private async void PeptideTicTab_ClearAllExclusionsRequested(object? sender, EventArgs e)
         {
             try
             {

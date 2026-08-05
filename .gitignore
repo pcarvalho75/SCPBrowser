@@ -361,3 +361,11 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# AI assistant working files - kept locally, not published
+.claude/
+.agents/
+.cursor/
+CLAUDE.md
+AGENTS.md
+AUDIT_ROADMAP.md
+AUDIT_FINDINGS.md

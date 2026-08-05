@@ -14,11 +14,14 @@
     </Window.Resources>
     <Window.InputBindings>
         <KeyBinding Key="F5" Command="local:MainWindow.ReloadProjectDataCommand"/>
+        <KeyBinding Key="F1" Command="local:MainWindow.UserGuideCommand"/>
     </Window.InputBindings>
     <Window.CommandBindings>
         <CommandBinding Command="local:MainWindow.ReloadProjectDataCommand"
                         Executed="ReloadProjectData_Click"
                         CanExecute="ReloadProjectData_CanExecute"/>
+        <CommandBinding Command="local:MainWindow.UserGuideCommand"
+                        Executed="UserGuide_Click"/>
     </Window.CommandBindings>
 
     <Grid>
@@ -127,6 +130,12 @@
       IsEnabled="False"/>
             </MenuItem>
             <MenuItem Header="_Help">
+                <MenuItem Header="_User Guide"
+                          x:Name="UserGuideMenuItem"
+                          Click="UserGuide_Click"
+                          InputGestureText="F1"
+                          ToolTip="Open the built-in user guide: workflow, cellenONE image QC, classification, dimensionality reduction, export"/>
+                <Separator/>
                 <MenuItem Header="Submit _Feedback..." Click="SubmitFeedback_Click"/>
                 <Separator/>
                 <MenuItem Header="_About" Click="About_Click"/>

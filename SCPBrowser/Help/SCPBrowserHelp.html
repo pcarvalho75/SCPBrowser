@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SCPBrowser — User Guide</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#16202c; --muted:#5b6b7c; --rule:#e2e8f0; --card:#f8fafc;
+    --accent:#2563eb; --accent-soft:#eff6ff; --warn:#b45309; --warn-soft:#fffbeb;
+    --ok:#047857; --ok-soft:#ecfdf5; --code:#f1f5f9;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1520; --fg:#e6edf5; --muted:#9fb0c2; --rule:#243244; --card:#151e2b;
+      --accent:#7aa7ff; --accent-soft:#16233a; --warn:#f0b429; --warn-soft:#2a2213;
+      --ok:#34d399; --ok-soft:#10241c; --code:#1a2432;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:15px/1.65 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .layout{display:flex;min-height:100vh;align-items:flex-start}
+  nav{position:sticky;top:0;flex:0 0 268px;height:100vh;overflow-y:auto;
+      border-right:1px solid var(--rule);padding:22px 16px 40px;background:var(--card)}
+  nav h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+         margin:20px 0 8px}
+  nav h2:first-of-type{margin-top:10px}
+  nav a{display:block;padding:5px 9px;border-radius:6px;color:var(--fg);text-decoration:none;font-size:13.5px}
+  nav a:hover{background:var(--accent-soft);color:var(--accent)}
+  .brand{font-weight:700;font-size:16px;margin-bottom:2px}
+  .brandsub{font-size:12px;color:var(--muted)}
+  main{flex:1 1 auto;max-width:900px;padding:34px 42px 90px;min-width:0}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em}
+  .lede{color:var(--muted);font-size:16px;margin:0 0 28px}
+  h2{font-size:22px;margin:44px 0 12px;padding-top:10px;border-top:1px solid var(--rule);letter-spacing:-.01em}
+  h3{font-size:16.5px;margin:26px 0 8px}
+  p,li{color:var(--fg)}
+  ul,ol{padding-left:22px}
+  li{margin:5px 0}
+  code{background:var(--code);padding:1.5px 6px;border-radius:4px;font-size:13px;
+       font-family:"Cascadia Mono",Consolas,monospace}
+  .path{font-weight:600;color:var(--accent)}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px}
+  th,td{border:1px solid var(--rule);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:var(--card);font-weight:600}
+  .note,.warn,.ok{border-radius:8px;padding:13px 16px;margin:16px 0;font-size:14.2px}
+  .note{background:var(--accent-soft);border-left:3px solid var(--accent)}
+  .warn{background:var(--warn-soft);border-left:3px solid var(--warn)}
+  .ok{background:var(--ok-soft);border-left:3px solid var(--ok)}
+  .note b,.warn b,.ok b{display:block;margin-bottom:3px}
+  .steps{counter-reset:s;list-style:none;padding-left:0}
+  .steps>li{counter-increment:s;position:relative;padding-left:40px;margin:14px 0}
+  .steps>li::before{content:counter(s);position:absolute;left:0;top:0;width:26px;height:26px;
+    border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700;
+    display:flex;align-items:center;justify-content:center}
+  footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--rule);
+          color:var(--muted);font-size:13px}
+  @media print{nav{display:none}main{max-width:none;padding:0}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+  <div class="brand">SCPBrowser</div>
+  <div class="brandsub">User Guide</div>
+
+  <h2>Getting started</h2>
+  <a href="#overview">What SCPBrowser does</a>
+  <a href="#quickstart">Quick start</a>
+  <a href="#projects">Projects</a>
+
+  <h2>Building a dataset</h2>
+  <a href="#plates">Plates &amp; cellenONE</a>
+  <a href="#doublets">Image-based doublet QC</a>
+  <a href="#msdata">Importing MS data</a>
+  <a href="#reconcile">Reconciling cells ↔ runs</a>
+
+  <h2>Analysis</h2>
+  <a href="#qc">Quality control</a>
+  <a href="#reference">Reference profiles</a>
+  <a href="#classification">Cell-type classification</a>
+  <a href="#validation">Validating the classifier</a>
+  <a href="#dimred">Dimensionality reduction</a>
+  <a href="#go">GO enrichment</a>
+
+  <h2>Output</h2>
+  <a href="#export">Export &amp; reporting</a>
+  <a href="#reproducibility">Reproducibility</a>
+
+  <h2>Reference</h2>
+  <a href="#settings">Settings</a>
+  <a href="#menus">Menu reference</a>
+  <a href="#troubleshooting">Troubleshooting</a>
+</nav>
+
+<main>
+<h1>SCPBrowser User Guide</h1>
+<p class="lede">An integrated desktop environment for single-cell proteomics: from data import and
+cell-isolation imaging through quality control, cell-type classification and enrichment analysis, to
+annotated export.</p>
+
+<!-- ───────────────────────────── OVERVIEW ───────────────────────────── -->
+<h2 id="overview">What SCPBrowser does</h2>
+<p>SCPBrowser keeps one experiment in one project file. The cell-isolation micrograph, the isolation
+metadata, the mass-spectrometry run, the quality decisions, the cell-type assignment and the figures all
+live together and stay linked, so any result can be traced back to the individual cell it came from.</p>
+
+<p>The workflow has a fixed order, because each stage consumes what the previous one produced:</p>
+<table>
+  <tr><th>Stage</th><th>What it produces</th></tr>
+  <tr><td>Register a plate (optionally with a cellenONE isolation run)</td><td>Wells, micrographs, isolation metadata</td></tr>
+  <tr><td>Import MS quantification</td><td>Per-cell protein/peptide quantities</td></tr>
+  <tr><td>Reconcile cells ↔ runs</td><td>The link between a well and its raw file</td></tr>
+  <tr><td>Quality control</td><td>The set of cells that enter the analysis</td></tr>
+  <tr><td>Import a reference profile</td><td>The classes a cell can be assigned to</td></tr>
+  <tr><td>Classify</td><td>A cell type per cell, with a score and margin</td></tr>
+  <tr><td>Reduce dimensions / enrich</td><td>Embeddings, clusters, GO terms</td></tr>
+  <tr><td>Export</td><td>Annotated data, figures, an analysis report</td></tr>
+</table>
+
+<div class="note"><b>The status strip tells you where you are</b>
+Under the toolbar, a strip shows <code>Plates · MS runs · Reference · Classified · FASTA</code>. Anything not
+yet satisfied is a link — click it to run the step that satisfies it. These are project totals, not
+filtered-view counts.</div>
+
+<!-- ───────────────────────────── QUICK START ───────────────────────────── -->
+<h2 id="quickstart">Quick start</h2>
+<ol class="steps">
+  <li><b>Create a project.</b> <span class="path">File ▸ New Project…</span> A project is a single
+      <code>.db</code> file plus an <code>imports/</code> folder that holds copies of your data.</li>
+  <li><b>Register a plate.</b> <span class="path">Import ▸ Import Plate Metadata…</span> Do this first —
+      MS data cannot be imported until at least one plate exists. If you have a cellenONE isolation run,
+      attach it here and its cells and images come in with the plate.</li>
+  <li><b>Import your MS quantification.</b> <span class="path">Import ▸ Parquet File…</span> for DIA-NN
+      output, or <span class="path">Import ▸ Excel Gene Matrix…</span> for a gene/pg matrix. Assign each
+      run's plate and biological condition before the Import button enables.</li>
+  <li><b>Link cells to runs.</b> <span class="path">Utils ▸ Reconcile Cells ↔ Runs…</span> if you imported
+      cellenONE data.</li>
+  <li><b>Set quality filters.</b> On the Explorer tab, set the minimum protein count and review the
+      contaminant ratio.</li>
+  <li><b>Import a reference profile.</b> <span class="path">Import ▸ Omic Profile…</span> — this defines the
+      candidate cell types.</li>
+  <li><b>Classify and explore.</b> Colour by Cell Type, switch to PCA or UMAP, run GO enrichment.</li>
+  <li><b>Export.</b> <span class="path">Utils ▸ Export to PatternLab (PLP)…</span> and
+      <span class="path">Utils ▸ Export Analysis Report…</span></li>
+</ol>
+
+<!-- ───────────────────────────── PROJECTS ───────────────────────────── -->
+<h2 id="projects">Projects</h2>
+<p>A project is self-contained: the SQLite database holds plates, runs, quantities, isolation metadata,
+images, classifications and settings, and imported source files are copied into the project's
+<code>imports/</code> folder so the project keeps working if the originals move.</p>
+
+<h3>Opening, reloading, closing</h3>
+<ul>
+  <li><span class="path">File ▸ Open Project…</span> — recent projects are also listed on the welcome screen.</li>
+  <li><span class="path">File ▸ Reload Project Data</span> (<code>F5</code>) — re-reads imports from disk. Use
+      this after restoring a missing file, or if something looks stale.</li>
+  <li><span class="path">File ▸ Close Project</span> — clears the session; nothing is lost.</li>
+</ul>
+
+<div class="warn"><b>If files are missing</b>
+If an imported file is absent from <code>imports/</code> at open time, SCPBrowser tells you exactly which
+ones and marks the window title <b>PARTIAL DATA</b>. Every count, figure and export then reflects only the
+files that loaded. Restore the missing files and press <code>F5</code> — do <i>not</i> re-import, which
+would duplicate runs.</div>
+
+<!-- ───────────────────────────── PLATES ───────────────────────────── -->
+<h2 id="plates">Plates &amp; cellenONE integration</h2>
+<p>A plate represents one physical sample carrier. Every MS run belongs to a plate, which is why a plate must
+exist before data can be imported.</p>
+
+<h3>Registering a plate</h3>
+<p><span class="path">Import ▸ Import Plate Metadata…</span> Give the plate a name and, optionally, run date,
+instrument, operator and a description. If you attach a cellenONE isolation run in the same dialog, these
+fields are auto-filled from the run and its cells and images are imported against the new plate.</p>
+
+<h3>Attaching an isolation run later</h3>
+<p><span class="path">Import ▸ Import cellenONE Run into Existing Plate…</span> for when the isolation data
+arrives after the plate was registered. Choose the target plate — the picker shows what each plate already
+holds — and select the <code>.Run</code> folder containing the <code>*_isolated.xls</code> file.</p>
+
+<div class="note"><b>Safeguards</b>
+Re-importing the same run is deduplicated and reported as such. If the run is already attached to a
+<i>different</i> plate, you are warned before anything is written, because that would create a second copy of
+the same cells. The import is irreversible, so the target plate is worth checking.</div>
+
+<h3>What is imported</h3>
+<p>For each dispensed well: drop number, target well, field position, X/Y position, diameter, elongation,
+circularity, transmitted and fluorescence intensity, isolation timestamp, and the cropped transmitted-light
+micrograph (plus fluorescence channels where present).</p>
+
+<!-- ───────────────────────────── DOUBLETS ───────────────────────────── -->
+<h2 id="doublets">Image-based doublet QC</h2>
+<p>Open <span class="path">Utils ▸ Cell Plate Viewer…</span> to inspect an isolation run: the plate layout with
+per-well micrographs, the isolation metadata for a selected well, a gating scatter, and the image-derived cell
+count.</p>
+
+<h3>Why the image is necessary</h3>
+<p>Standard proteomic quality metrics — peptide count, signal intensity, coefficient of variation — cannot
+identify wells that received more than one cell. A doublet carries roughly twice the protein and therefore
+<i>scores better</i> on those metrics than a singlet. Discriminating multiplets requires a signal orthogonal
+to the proteomic measurement, and the isolation micrograph provides one at no additional experimental cost.
+The rationale is set out by Loi <i>et al.</i> (<a href="https://doi.org/10.64898/2025.12.01.691577">preprint,
+2025</a>), whose scpImaging pipeline established the approach.</p>
+
+<div class="warn"><b>Instrument counts and morphology gates are not sufficient</b>
+A well can contain two cells while the instrument's own object counter records one, and while the recorded
+morphology (diameter, elongation, circularity) sits comfortably inside the singlet gates used during
+isolation. Such an event is invisible to the isolation-time criteria and, for the reason above, invisible to
+the downstream proteomic filters as well. Only re-segmenting the micrograph resolves it.</div>
+
+<h3>Reviewing and excluding</h3>
+<p>Wells whose image-derived count exceeds one are flagged automatically. For each flagged well you can
+<b>Keep</b>, <b>Discard</b>, or annotate with a note. Discarded wells are excluded from downstream analysis,
+and the exclusion is recorded with the reason <code>cellenONE QC: discarded</code>, so an automated QC
+exclusion stays distinguishable from one made by hand later.</p>
+
+<p>Because the link is stored in the project, every cell-type assignment remains traceable to the image of the
+cell it came from.</p>
+
+<!-- ───────────────────────────── MS DATA ───────────────────────────── -->
+<h2 id="msdata">Importing MS data</h2>
+
+<h3>DIA-NN parquet</h3>
+<p><span class="path">Import ▸ Parquet File…</span> Select the report, then assign every run a plate and a
+biological condition. The Import button stays disabled until the dialog has everything it needs, and it tells
+you what is missing.</p>
+
+<table>
+  <tr><th>Quantity used</th><td><code>Precursor.Quantity</code> — the same column throughout the app, for the
+      stored quantities, the analysis matrix and any parquet-derived reference.</td></tr>
+  <tr><th>Peptide identity</th><td><code>Stripped.Sequence</code></td></tr>
+  <tr><th>Confidence filter</th><td>Identifications are filtered at <b>1% FDR</b> using <code>Q.Value</code>
+      and <code>PG.Q.Value</code> where those columns exist. An identification carrying no q-value is
+      rejected rather than admitted.</td></tr>
+</table>
+
+<h3>Excel gene matrix</h3>
+<p><span class="path">Import ▸ Excel Gene Matrix…</span> for a gene- or protein-group matrix. Cell type is
+auto-detected from each sample's folder path. Gene-matrix projects have no peptide dimension, so
+peptide-specific columns are hidden rather than filled with a duplicate of the protein count.</p>
+
+<div class="warn"><b>Formats cannot be mixed</b>
+Parquet and Excel intensities are not comparable, so a project holds one or the other. SCPBrowser refuses the
+second format and explains why.</div>
+
+<h3>Search database</h3>
+<p><span class="path">Import ▸ Search Database (FASTA)…</span> enables sequence coverage in the Protein
+Coverage tab. Optional; everything else works without it.</p>
+
+<!-- ───────────────────────────── RECONCILE ───────────────────────────── -->
+<h2 id="reconcile">Reconciling cells ↔ runs</h2>
+<p><span class="path">Utils ▸ Reconcile Cells ↔ Runs…</span> links each isolated well to its mass-spectrometry
+raw file. Until this is done the isolation data and the proteomic data exist side by side but are not
+connected, so image-based exclusions cannot reach the analysis.</p>
+
+<ol>
+  <li>Choose the isolation run.</li>
+  <li><b>Suggest</b> proposes matches using the selected strategy.</li>
+  <li>Correct any row by hand — set a run to <code>(none)</code> to leave a cell unlinked.</li>
+  <li><b>Apply links</b> writes the result.</li>
+</ol>
+
+<div class="note"><b>Apply replaces the run's links</b>
+Applying clears the selected run's existing links and writes the current table in one transaction, so a
+failure part-way cannot leave the run half-linked. If you have curated links by hand, be aware that Apply
+replaces them with what is on screen.</div>
+
+<!-- ───────────────────────────── QC ───────────────────────────── -->
+<h2 id="qc">Quality control</h2>
+
+<h3>Protein-count filters</h3>
+<p>On the Explorer tab, <b>Min. Proteins G.</b> sets the minimum protein groups a cell must have to enter the
+analysis; <b>Max. Proteins G.</b> sets an upper bound (useful for spotting outliers). The minimum is also in
+<span class="path">Utils ▸ Settings</span> and the two stay in step — changing it in either place re-filters
+the open session immediately.</p>
+
+<h3>Contaminants</h3>
+<p>On the Protein Matrix tab, mark protein groups as contaminants and press <b>Apply Contaminants</b> to
+compute a per-cell contaminant ratio, which becomes a colouring mode and an exclusion criterion.</p>
+<ul>
+  <li><b>Bundled cRAP…</b> marks a conservative cRAP subset (keratins, proteases, serum and milk proteins).
+      Every match is listed for confirmation first.</li>
+  <li><b>Load list…</b> accepts a plain one-per-line accession list or a FASTA, so the official cRAP file can
+      be used directly.</li>
+  <li>Multi-select rows, or filter with the search box and use <b>Select All Visible</b>.</li>
+</ul>
+<div class="note"><b>Nothing is excluded until you apply</b>
+Marking a protein only tags it. The contaminant ratio and any exclusion take effect when you press
+<b>Apply Contaminants</b>. Note that some bundled entries (albumin, transferrin, immunoglobulins) are genuine
+human proteins that are contaminants only in the sense of culture/serum carry-over — judge them for your
+experiment.</div>
+
+<h3>Excluding individual cells</h3>
+<p>Uncheck a run in the selected-points grid, or exclude from the Cell Plate Viewer. <b>Clear Exclusions</b>
+restores every manually excluded run in the project — it is not limited to the current selection, and it
+cannot be undone.</p>
+
+<!-- ───────────────────────────── REFERENCE ───────────────────────────── -->
+<h2 id="reference">Reference profiles</h2>
+<p>Classification compares each cell against a reference profile per candidate class.
+<span class="path">Import ▸ Omic Profile (Transcriptomic / Proteomic)…</span> accepts:</p>
+<ul>
+  <li>a transcriptomic matrix (TSV) plus metadata,</li>
+  <li>a <code>.pref</code> proteomic reference,</li>
+  <li>a parquet dataset you label yourself, from which a proteomic reference is built.</li>
+</ul>
+
+<div class="warn"><b>Importing a reference replaces the previous one</b>
+The profiles are replaced wholesale, so any existing cell-type assignments were produced by a reference that
+no longer exists. SCPBrowser therefore discards those assignments and offers to reclassify immediately. Take
+the offer, or classify again before reading any figure.</div>
+
+<div class="note"><b>Transcriptomic references: a caveat</b>
+Transcript and protein abundances correlate only partially, so a transcriptomic reference encodes
+relationships that need not hold at the protein level, and a transcriptionally discriminative marker may be
+poorly measured in a single-cell proteome. Where a proteomic reference is available, prefer it; where it is
+not, read assignments together with the confidence and stability diagnostics rather than as categorical
+labels.</div>
+
+<!-- ───────────────────────────── CLASSIFICATION ───────────────────────────── -->
+<h2 id="classification">Cell-type classification</h2>
+<p>Each cell is scored against every candidate class and assigned to the highest-scoring one. Two scorers are
+available; the project remembers which it uses, and results from one are never displayed as the other's.</p>
+
+<table>
+  <tr><th>Method</th><th>How it scores</th><th>Use when</th></tr>
+  <tr><td><b>QScore</b> (default)</td>
+      <td>Four rank-based channels — Spearman correlation, a signature-rank term, a Mann–Whitney AUROC, and a
+      detection log-likelihood — combined by log-pooling (a product of experts).</td>
+      <td>Generally. It is the better-validated scorer and treats absence as evidence.</td></tr>
+  <tr><td><b>Standard</b></td>
+      <td>Four metrics — correlation, specificity-weighted similarity, marker enrichment, marker coverage —
+      each softmaxed and averaged.</td>
+      <td>Reproducing earlier analyses made with this method.</td></tr>
+</table>
+
+<h3>Scores and margins</h3>
+<p>Scores are normalised across the candidate classes so they sum to one. The <b>assignment score</b> is the
+winning value and the <b>margin</b> is the gap to the runner-up.</p>
+
+<div class="warn"><b>The score is a relative share, not a probability</b>
+Because the scores are forced to sum to one, the classifier cannot answer "none of these": a cell whose true
+type is absent from the reference still receives a high score for whichever listed class it least disagrees
+with. Always read the score together with the margin — a top share of 0.35 with a 0.02 margin is a very
+different statement from 0.35 with a 0.20 margin.</div>
+
+<h3>Adding domain knowledge</h3>
+<p>In the Project Browser you can supply <b>key markers</b> per class, <b>exclude</b> classes that cannot occur
+in your sample, and set <b>prior weights</b> for expected population frequencies. These act as multiplicative
+adjustments on the scores — they bias the result without overriding the data. All are optional; by default the
+classifier runs unaided.</p>
+
+<h3>Confidence threshold</h3>
+<p>The <b>Min Confidence</b> slider on the Explorer relabels cells below the threshold as
+<code>Undetermined</code> rather than discarding them. The default is 10%.</p>
+
+<!-- ───────────────────────────── VALIDATION ───────────────────────────── -->
+<h2 id="validation">Validating the classifier</h2>
+
+<h3>Evaluate Classifier</h3>
+<p><span class="path">Utils ▸ Evaluate Classifier…</span> benchmarks classification against your biological
+conditions as ground truth. It runs repeated stratified k-fold cross-validation and leave-one-out, rebuilding
+the reference from each fold's training cells so no cell is ever scored against a reference it contributed to.
+It also reports a learning curve, per-channel contributions, and subset-resampling stability.</p>
+
+<p>The dialog opens preselected to the classifier your project actually uses. Export produces a self-contained
+HTML report with figures plus a plain-text file of the numbers.</p>
+
+<div class="note"><b>Nothing is saved to the project</b>
+Every fold builds its reference in memory. Results leave only through the files you export.</div>
+
+<h3>Subset stability</h3>
+<p>Each cell is re-classified from random halves of its detected proteins. Agreement with the full-data call
+tells you whether an assignment rests on broad evidence or on a few proteins that happened to be measured.
+This is a different question from confidence: a cell can be assigned correctly with a large margin and still
+be sensitive to which proteins were captured.</p>
+
+<h3>Classification Confidence Map</h3>
+<p><span class="path">Utils ▸ Classification Confidence Map…</span> produces a per-cell × per-class figure with
+a margin plot, using the project's selected classifier and its key markers, exclusions and priors. The heatmap
+is a display of relative scores over the full reference, not a held-out estimate — held-out validation is
+overlaid separately, and cells that could not be evaluated are marked rather than assumed correct.</p>
+
+<!-- ───────────────────────────── DIMRED ───────────────────────────── -->
+<h2 id="dimred">Dimensionality reduction</h2>
+<p>Switch the Explorer's view mode to <b>PCA</b> or <b>UMAP</b>. The settings popup controls the whole
+preprocessing pipeline; every parameter has a tooltip stating its default and effect.</p>
+
+<h3>Preprocessing order</h3>
+<p>select proteins → log₂ → <b>per-cell normalisation</b> → optional batch correction → optional z-score →
+clip.</p>
+
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td>Per-cell norm</td><td>Median-centre</td>
+      <td>Removes per-cell differences in input amount, cell size and depth. Without it PC1 easily becomes a
+      depth axis that looks like a cell population. <code>None</code> reproduces analyses made before this
+      option existed.</td></tr>
+  <tr><td>Missing values</td><td>Protein mean</td>
+      <td>How unquantified proteins are filled in. <code>Zero</code> treats "not measured" as a measured zero,
+      which with 40–70% missingness drags each protein's centre down and inflates its variance.</td></tr>
+  <tr><td>Z-score scaling</td><td>On</td><td>Standardises each protein so abundant ones do not dominate.</td></tr>
+  <tr><td>Clip max</td><td>10</td><td>Clamps z-scores to ±clip, limiting outlier influence.</td></tr>
+  <tr><td>Top HVPs only</td><td>Off</td>
+      <td>Restricts the embedding to the most variable proteins. <b>Off means all quantified proteins are
+      used.</b></td></tr>
+  <tr><td>Batch correction</td><td>Off</td>
+      <td>ComBat with plate as batch and biological condition preserved as a covariate.</td></tr>
+  <tr><td>UMAP neighbours / seed</td><td>15 / 42</td><td>Neighbourhood size and the seed that makes the embedding reproducible.</td></tr>
+</table>
+
+<div class="note"><b>Read the plot header</b>
+It states how many proteins the embedding actually used, the realised missingness, whether the HVP filter was
+bypassed because too few cells were available to score variability, and — for batch correction — if the
+correction was skipped or fell back to plate-only.</div>
+
+<h3>K-means</h3>
+<p>Colour by <b>K-means</b> to cluster on the currently displayed axes. The basis (for example
+<code>UMAP axes, k=5</code>) is shown next to the control and stored with the assignments, so a saved
+clustering always records what it was computed on. Clusters are data-driven groupings, not cell-type calls.</p>
+
+<!-- ───────────────────────────── GO ───────────────────────────── -->
+<h2 id="go">GO enrichment</h2>
+<p>Configure an ontology and species annotations once via <span class="path">Utils ▸ GO Database…</span>. GO is
+optional — everything else works without it, and only GO-dependent views are disabled until it is present.</p>
+
+<p>Enrichment uses a hypergeometric test with Benjamini–Hochberg FDR control. Redundant terms are reduced by
+semantic similarity (a REVIGO port) and rendered as a weighted Voronoi treemap in the BioTessera tab, where
+tile area encodes the chosen metric and colour encodes fold change.</p>
+
+<div class="warn"><b>Interpreting the treemap</b>
+Area encodes the weight only insofar as the layout solver converged; check the reported area error before
+treating relative tile sizes as quantitative. Terms that cannot be rendered are reported rather than silently
+omitted.</div>
+
+<!-- ───────────────────────────── EXPORT ───────────────────────────── -->
+<h2 id="export">Export &amp; reporting</h2>
+<ul>
+  <li><b><span class="path">Utils ▸ Export to PatternLab (PLP)…</span></b> — annotated dataset for differential
+      analysis, carrying cell-type and condition labels.</li>
+  <li><b><span class="path">Utils ▸ Export Analysis Report…</span></b> — the settings behind the current
+      figures: filters, normalisation, HVP state, batch correction, seeds, excluded runs.</li>
+  <li><b>Figures</b> — the evaluation report and confidence map export as self-contained HTML plus standalone
+      SVG, on a white background for manuscript pages.</li>
+  <li><b>Protein matrix</b> — CSV export of the quantification table.</li>
+</ul>
+
+<!-- ───────────────────────────── REPRO ───────────────────────────── -->
+<h2 id="reproducibility">Reproducibility</h2>
+<p>To describe an analysis in a manuscript, or repeat it later:</p>
+<ol>
+  <li>Export the analysis report — it records the parameters that produced the current figures.</li>
+  <li>Note the classifier method (QScore or Standard) and whether key markers, priors or exclusions were used.</li>
+  <li>Note the reference profile's origin — proteomic or transcriptomic, and which dataset.</li>
+  <li>Keep the UMAP seed if the embedding is shown; with the same seed and settings it reproduces exactly.</li>
+  <li>Report the QC thresholds: minimum protein count, contaminant handling, and any excluded cells.</li>
+</ol>
+<p>The source code is available at
+<a href="https://github.com/pcarvalho75/SCPBrowser">github.com/pcarvalho75/SCPBrowser</a>.</p>
+
+<!-- ───────────────────────────── SETTINGS ───────────────────────────── -->
+<h2 id="settings">Settings</h2>
+<p><span class="path">Utils ▸ Settings</span></p>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>Effect</th></tr>
+  <tr><td>Min. proteins per cell</td><td>800</td><td>QC gate; decides which cells enter every analysis and export. Applies to the open session immediately.</td></tr>
+  <tr><td>Classification confidence threshold</td><td>10%</td><td>Below this a cell is labelled <code>Undetermined</code>.</td></tr>
+  <tr><td>GO p-value cutoff</td><td>0.05</td><td>Significance threshold for enrichment.</td></tr>
+  <tr><td>GO minimum overlap</td><td>2</td><td>Fewest sample genes a term needs to be tested.</td></tr>
+</table>
+
+<!-- ───────────────────────────── MENUS ───────────────────────────── -->
+<h2 id="menus">Menu reference</h2>
+<table>
+  <tr><th>File</th><td>New / Open / Close Project · Reload Project Data (<code>F5</code>) · Exit</td></tr>
+  <tr><th>Import</th><td>Import Plate Metadata… · Import cellenONE Run into Existing Plate… · Parquet File… ·
+      Excel Gene Matrix… · Search Database (FASTA)… · Omic Profile…</td></tr>
+  <tr><th>Utils</th><td>GO Database… · Settings · Cell Plate Viewer… · Reconcile Cells ↔ Runs… ·
+      Evaluate Classifier… · Classification Confidence Map… · Project Browser ·
+      Export to PatternLab (PLP)… · Export Analysis Report… · Clear Cell Type Classifications</td></tr>
+  <tr><th>Help</th><td>User Guide (<code>F1</code>) · Submit Feedback… · About</td></tr>
+</table>
+
+<!-- ───────────────────────────── TROUBLESHOOTING ───────────────────────────── -->
+<h2 id="troubleshooting">Troubleshooting</h2>
+
+<h3>The Import button stays disabled</h3>
+<p>The dialog states the reason beneath the button: no plate registered, no file chosen, or runs still missing
+a plate or biological condition. Register a plate first if you have none.</p>
+
+<h3>Colour by Cell Type is greyed out</h3>
+<p>No reference profile is loaded. Use <span class="path">Import ▸ Omic Profile…</span>.</p>
+
+<h3>The window title says PARTIAL DATA</h3>
+<p>Imported files are missing from <code>imports/</code>. Restore them and press <code>F5</code>. Do not
+re-import — that creates duplicate runs.</p>
+
+<h3>Cell types disappeared after importing a reference</h3>
+<p>Expected: the previous assignments came from the reference you replaced and were discarded. Reclassify.</p>
+
+<h3>Cell Plate Viewer is empty</h3>
+<p>The project has no cellenONE data. Attach a run via
+<span class="path">Import ▸ Import cellenONE Run into Existing Plate…</span>.</p>
+
+<h3>Image exclusions are not affecting the analysis</h3>
+<p>Cells must be linked to their MS runs first — <span class="path">Utils ▸ Reconcile Cells ↔ Runs…</span>.</p>
+
+<h3>Numbers changed after an update</h3>
+<p>Check the analysis report and the plot header: the protein count used, the normalisation and
+missing-value modes, and the HVP state are all stated there. The pre-existing behaviours remain selectable
+(<code>None</code>, <code>Zero</code>, HVP off) if you need to reproduce an earlier figure.</p>
+
+<footer>
+SCPBrowser — single-cell proteomics analysis platform.
+Source: <a href="https://github.com/pcarvalho75/SCPBrowser">github.com/pcarvalho75/SCPBrowser</a>.
+Image-based multiplet detection follows the rationale of Loi <i>et al.</i>,
+<a href="https://doi.org/10.64898/2025.12.01.691577">doi.org/10.64898/2025.12.01.691577</a> (2025).
+</footer>
+</main>
+</div>
+</body>
+</html>

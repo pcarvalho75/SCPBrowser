@@ -20,6 +20,11 @@ namespace SCPBrowser
         public static readonly System.Windows.Input.RoutedCommand ReloadProjectDataCommand =
             new System.Windows.Input.RoutedCommand("ReloadProjectData", typeof(MainWindow));
 
+        // Routed command for F1 / Help ▸ User Guide. Available with no project open, which is exactly when a
+        // first-time user needs it.
+        public static readonly System.Windows.Input.RoutedCommand UserGuideCommand =
+            new System.Windows.Input.RoutedCommand("UserGuide", typeof(MainWindow));
+
         // Project management fields
         private string _currentProjectPath;
         private ProjectDatabaseService _projectDatabaseService;
@@ -1868,6 +1873,35 @@ namespace SCPBrowser
             {
                 MessageBox.Show($"Could not open feedback dialog: {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Opens the built-in user guide in the default browser. The guide ships next to the executable
+        /// (Help\SCPBrowserHelp.html, copied by the build), so it works offline and in a ClickOnce install.
+        /// </summary>
+        private void UserGuide_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string helpPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Help", "SCPBrowserHelp.html");
+
+                if (!File.Exists(helpPath))
+                {
+                    MessageBox.Show(
+                        "The user guide could not be found next to the application:\n\n" + helpPath + "\n\n" +
+                        "It is also published with the source at github.com/pcarvalho75/SCPBrowser.",
+                        "User Guide", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(helpPath) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Could not open the user guide:\n\n" + ex.Message,
+                    "User Guide", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

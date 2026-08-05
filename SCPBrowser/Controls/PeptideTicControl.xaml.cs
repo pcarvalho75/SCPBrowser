@@ -1523,7 +1523,16 @@ namespace SCPBrowser
 
             _colorPickerPopup.IsOpen = true;
         }
-        private async void RefreshChart()
+        /// <summary>
+        /// Fire-and-forget refresh, as used by the many UI handlers that do not need to await it.
+        /// </summary>
+        private void RefreshChart() => _ = RefreshChartAsync();
+
+        /// <summary>
+        /// Awaitable refresh, for callers that must know when the (possibly seconds-long) recompute has finished -
+        /// e.g. to re-enable the control that triggered it.
+        /// </summary>
+        private async Task RefreshChartAsync()
         {
             try
             {
@@ -1658,7 +1667,11 @@ namespace SCPBrowser
                 bool batchChanged = (options.ApplyBatchCorrection) != ScatterPlot.PreviousApplyBatchCorrection;
                 bool dimRedChanged = options.DimRedSettings != null && options.DimRedSettings.DiffersFrom(ScatterPlot.PreviousDimRedSettings);
                 bool dataChanged = _currentData != ScatterPlot.CurrentData;
-                willInvalidate = batchChanged || dimRedChanged || dataChanged;
+                // Hiding or revealing grey dots changes WHICH cells the embedding is built from, which is just as
+                // much a recompute as changing a setting. Without this the work fell through to UpdatePlot and ran
+                // synchronously on the UI thread, freezing the window with no wait screen.
+                bool cohortChanged = ScatterPlot.WillCohortChange(options);
+                willInvalidate = batchChanged || dimRedChanged || dataChanged || cohortChanged;
             }
 
             bool needsHeavyCompute = (options.UsePcaView && (ScatterPlot.NeedsPcaCompute || willInvalidate))
@@ -1986,7 +1999,9 @@ namespace SCPBrowser
             }
         }
 
-        private void HideGreyDotsCheckBox_Changed(object sender, RoutedEventArgs e)
+        private bool _hideGreyRecomputing;
+
+        private async void HideGreyDotsCheckBox_Changed(object sender, RoutedEventArgs e)
         {
             ScatterPlot.SetHideUnselected(HideGreyDotsCheckBox.IsChecked == true);
 
@@ -1996,8 +2011,23 @@ namespace SCPBrowser
             // per-cell measurements, so hiding is purely cosmetic and no recompute is needed.
             var selectedItem = ViewModeComboBox.SelectedItem as ComboBoxItem;
             string viewMode = selectedItem?.Tag?.ToString() ?? "PeptideTic";
-            if (_currentData != null && (viewMode == "PCA" || viewMode == "UMAP"))
-                RefreshChart();
+            if (_currentData == null || (viewMode != "PCA" && viewMode != "UMAP"))
+                return;
+
+            // The recompute takes seconds on a real dataset. Await it and hold the checkbox disabled meanwhile,
+            // so a second toggle cannot queue an overlapping embedding computation on top of the first.
+            if (_hideGreyRecomputing) return;
+            _hideGreyRecomputing = true;
+            HideGreyDotsCheckBox.IsEnabled = false;
+            try
+            {
+                await RefreshChartAsync();
+            }
+            finally
+            {
+                HideGreyDotsCheckBox.IsEnabled = true;
+                _hideGreyRecomputing = false;
+            }
         }
 
         private System.Windows.Threading.DispatcherTimer _contaminantCutoffDebounce;

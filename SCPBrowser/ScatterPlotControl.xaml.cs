@@ -167,6 +167,14 @@ namespace SCPBrowser
         /// recompute. Once grey dots are hidden those cells are gone from the figure, so the checked sets become
         /// part of the cohort's identity and any change to them has to invalidate the embedding.
         /// </summary>
+        /// <summary>
+        /// Whether these options would change the set of cells entering the embedding, and therefore force a
+        /// recompute. The caller needs this BEFORE calling UpdatePlot so it can put the work on a background
+        /// thread behind the wait screen - otherwise the recompute runs on the UI thread and the window freezes.
+        /// </summary>
+        public bool WillCohortChange(ScatterPlotOptions options)
+            => !string.Equals(CohortKey(options), _previousCohortKey, StringComparison.Ordinal);
+
         private string CohortKey(ScatterPlotOptions options)
         {
             if (!_hideUnselected) return "ALL";

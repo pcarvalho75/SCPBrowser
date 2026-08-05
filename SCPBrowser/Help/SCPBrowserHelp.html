@@ -18,8 +18,14 @@
     }
   }
   *{box-sizing:border-box}
+  /* Deliberately NOT scroll-behavior:smooth. Smooth scrolling is animated per frame, and in embedded or
+     snapshot renderers those frames may never run - the page then simply does not move and the contents look
+     broken. An instant jump always works. */
   body{margin:0;background:var(--bg);color:var(--fg);
        font:15px/1.65 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  /* Keep a jumped-to heading clear of the top edge instead of flush against it. */
+  h2[id]{scroll-margin-top:18px}
+  nav a.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
   .layout{display:flex;min-height:100vh;align-items:flex-start}
   nav{position:sticky;top:0;flex:0 0 268px;height:100vh;overflow-y:auto;
       border-right:1px solid var(--rule);padding:22px 16px 40px;background:var(--card)}
@@ -521,5 +527,51 @@ Image-based multiplet detection follows the rationale of Loi <i>et al.</i>,
 </footer>
 </main>
 </div>
+
+<script>
+// Navigation fallback + active-section highlighting.
+//
+// Plain "#anchor" links are handled natively by a browser, but some embedded viewers and static-snapshot
+// renderers suppress default fragment navigation, and then the sidebar appears dead. Handling the click
+// explicitly makes the contents work everywhere; it is a no-op wherever the default already works, because
+// preventDefault is only called once the target has actually been found and scrolled to.
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('nav a[href^="#"]'));
+
+  links.forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      var target = document.querySelector(a.getAttribute('href'));
+      if (!target) return;                       // let the browser deal with it
+      e.preventDefault();
+      // Instant, not smooth: an animated scroll needs frames that some embedded viewers never run, and the
+      // page would silently stay put.
+      target.scrollIntoView({ behavior: 'auto', block: 'start' });
+      if (history && history.replaceState) history.replaceState(null, '', a.getAttribute('href'));
+      setActive(a);
+    });
+  });
+
+  function setActive(active) {
+    links.forEach(function (l) { l.classList.toggle('active', l === active); });
+  }
+
+  // Highlight whichever section is currently in view, so the reader keeps their place in a long page.
+  if ('IntersectionObserver' in window) {
+    var byId = {};
+    links.forEach(function (l) { byId[l.getAttribute('href').slice(1)] = l; });
+
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting && byId[entry.target.id]) setActive(byId[entry.target.id]);
+      });
+    }, { rootMargin: '0px 0px -75% 0px', threshold: 0 });
+
+    Object.keys(byId).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+  }
+})();
+</script>
 </body>
 </html>

@@ -445,6 +445,8 @@ namespace SCPBrowser
             UseHvpCheckBox.IsChecked = s.UseHvpFilter;
             HvpCountTextBox.Text = s.HvpCount.ToString();
             _hvpCount = s.HvpCount;
+            SelectComboByTag(NormalizationComboBox, ((int)s.Normalization).ToString());
+            SelectComboByTag(MissingValuesComboBox, ((int)s.MissingValues).ToString());
 
             // Show/hide PCA view mode
             PcaViewItem.Visibility = s.ShowPcaView ? Visibility.Visible : Visibility.Collapsed;
@@ -459,10 +461,33 @@ namespace SCPBrowser
             BatchCorrectionCheckBox.IsChecked = s.ApplyBatchCorrection;
         }
 
+        /// <summary>Selects the item whose Tag matches, leaving the selection unchanged if none does.</summary>
+        private static void SelectComboByTag(System.Windows.Controls.ComboBox combo, string tag)
+        {
+            if (combo == null) return;
+            foreach (var obj in combo.Items)
+                if (obj is System.Windows.Controls.ComboBoxItem item &&
+                    string.Equals(item.Tag?.ToString(), tag, StringComparison.Ordinal))
+                {
+                    combo.SelectedItem = item;
+                    return;
+                }
+        }
+
+        private static int ReadComboTag(System.Windows.Controls.ComboBox combo, int fallback)
+        {
+            if (combo?.SelectedItem is System.Windows.Controls.ComboBoxItem item &&
+                int.TryParse(item.Tag?.ToString(), out int v))
+                return v;
+            return fallback;
+        }
+
         private DimensionReductionSettings ReadSettingsFromUI()
         {
             var s = DimensionReductionSettings.CreateDefaults();
             s.ZScoreScale = ZScaleCheckBox.IsChecked == true;
+            s.Normalization = (Models.CellNormalization)ReadComboTag(NormalizationComboBox, (int)s.Normalization);
+            s.MissingValues = (Models.MissingValueMode)ReadComboTag(MissingValuesComboBox, (int)s.MissingValues);
             if (double.TryParse(ClipMaxTextBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double clip))
                 s.ClipMaxValue = Math.Max(1, clip);
             if (int.TryParse(PcaComponentsTextBox.Text, out int nPca))
@@ -1745,7 +1770,18 @@ namespace SCPBrowser
                 return _hvpResults;
             }
 
-            if (_dimRedSettings != null && _dimRedSettings.UseHvpFilter)
+            // Filter OFF must mean "use every quantified protein". _hvpResults carries IsHighlyVariable = true for
+            // the top 2000 of the ranking pool, and the embedding keeps only flagged proteins - so returning the
+            // list unchanged here silently restricted PCA/UMAP to those 2000 even with the box unchecked. On a
+            // 4000-protein Astral dataset that dropped half the quantified proteome from every embedding without
+            // the user asking, and would be described incorrectly in a paper. Returning null makes the consumer
+            // fall through to its all-proteins branch.
+            if (_dimRedSettings == null || !_dimRedSettings.UseHvpFilter)
+            {
+                _hvpUnscored = false;
+                return null;
+            }
+
             {
                 // If VST never ran (too few proteins cleared the detection filter — e.g. a filtered view with under
                 // ~20 cells), every VarianceStandardized is 0.0 and this ordering degenerates to "alphabetically
@@ -1778,8 +1814,6 @@ namespace SCPBrowser
                     })
                     .ToList();
             }
-
-            return _hvpResults;
         }
 
         private void UpdatePlotHeader(int fileCount, ScatterPlotOptions options)
@@ -1817,6 +1851,28 @@ namespace SCPBrowser
             else
             {
                 baseHeader = $"{XyAxisLabel()} ({fileCount} files)";
+            }
+
+            // State how many proteins the embedding actually used. Which proteins enter PCA/UMAP is a methods-level
+            // decision, and it was previously invisible - the filter checkbox did not mean what it appeared to.
+            if (options.UsePcaView || options.UseUmapView)
+            {
+                int used = options.HvpResults?.Count(h => h.IsHighlyVariable)
+                           ?? _currentData?.ProteinQuantMatrix?.Count
+                           ?? 0;
+                if (used > 0)
+                {
+                    bool filtered = options.DimRedSettings?.UseHvpFilter == true && !_hvpUnscored;
+                    baseHeader += filtered
+                        ? $"  |  {used:N0} highly variable proteins"
+                        : $"  |  {used:N0} proteins (all quantified)";
+                }
+
+                // How much of the matrix was imputed rather than measured. At high missingness the embedding is
+                // substantially a statement about detection, and the reader should be told so on the figure.
+                double missing = ScatterPlot.LastMissingRate;
+                if (missing > 0)
+                    baseHeader += $"  |  {missing:P0} missing";
             }
 
             // The HVP filter was asked for but nothing could be scored, so it was bypassed. Say so — a silent

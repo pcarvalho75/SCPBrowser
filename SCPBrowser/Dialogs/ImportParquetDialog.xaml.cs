@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -415,8 +415,8 @@ namespace SCPBrowser
                 {
                     RawFileColumn = "Run",
                     ProteinGroupColumn = "Protein.Group",
-                    PeptideColumn = "Stripped.Sequence",
-                    TotalIonCurrentColumn = "Precursor.Quantity"
+                    PeptideColumn = ColumnMapping.DefaultPeptideColumn,
+                    TotalIonCurrentColumn = ColumnMapping.DefaultQuantityColumn
                 };
 
                 // Load data to extract raw file names
@@ -983,8 +983,8 @@ namespace SCPBrowser
                 {
                     RawFileColumn = "Run",
                     ProteinGroupColumn = "Protein.Group",
-                    PeptideColumn = "Stripped.Sequence",
-                    TotalIonCurrentColumn = "Precursor.Quantity"
+                    PeptideColumn = ColumnMapping.DefaultPeptideColumn,
+                    TotalIonCurrentColumn = ColumnMapping.DefaultQuantityColumn
                 };
                 string mappingJson = System.Text.Json.JsonSerializer.Serialize(mapping);
 

@@ -4,6 +4,26 @@ using SCPBrowser.Services;
 
 namespace SCPBrowser.Models
 {
+    /// <summary>Per-cell normalisation applied before batch correction and z-scoring.</summary>
+    public enum CellNormalization
+    {
+        /// <summary>No per-cell normalisation (the behaviour before this option existed).</summary>
+        None = 0,
+        /// <summary>Subtract each cell's median log2 abundance over its observed proteins.</summary>
+        MedianCentre = 1,
+        /// <summary>Scale each cell to a common total intensity before the log transform.</summary>
+        TotalIntensity = 2
+    }
+
+    /// <summary>How proteins not quantified in a cell are filled in for dimensionality reduction.</summary>
+    public enum MissingValueMode
+    {
+        /// <summary>Write 0 (the historical behaviour; treats "not measured" as a measured zero).</summary>
+        Zero = 0,
+        /// <summary>Use the protein's mean across the cells where it was observed.</summary>
+        ProteinMean = 1
+    }
+
     /// <summary>
     /// Settings for the dimensionality reduction pipeline (PCA/UMAP).
     /// Persisted per-project via ProjectDatabaseService key-value store.
@@ -15,6 +35,29 @@ namespace SCPBrowser.Models
         // Preprocessing
         public bool ZScoreScale { get; set; } = true;
         public double ClipMaxValue { get; set; } = 10.0;
+
+        /// <summary>
+        /// Per-cell normalisation applied to the log2 matrix BEFORE batch correction and z-scoring.
+        ///
+        /// Single-cell proteomes differ in input amount, cell size and depth, so without this two cells that differ
+        /// only in how much material they contained separate in PCA/UMAP as if they were biologically different -
+        /// PC1 easily becomes a depth axis that then gets named as a population. "MedianCentre" subtracts each
+        /// cell's median log2 abundance (a robust, standard SCP choice); "TotalIntensity" divides by the cell's
+        /// summed intensity before the log. "None" is the historical behaviour, kept so earlier analyses can be
+        /// reproduced exactly.
+        /// </summary>
+        public CellNormalization Normalization { get; set; } = CellNormalization.MedianCentre;
+
+        /// <summary>
+        /// How proteins not quantified in a given cell are treated.
+        ///
+        /// The historical behaviour wrote 0, which in log2 space is a REAL abundance, not "unknown" - with 40-70%
+        /// missingness that drags means down and inflates variance, and the HVP service's own documentation says
+        /// explicitly that missing must not be treated as zero. "ProteinMean" substitutes the protein's mean over
+        /// the cells where it WAS observed, which leaves the protein's centre unchanged instead of pulling it
+        /// toward zero.
+        /// </summary>
+        public MissingValueMode MissingValues { get; set; } = MissingValueMode.ProteinMean;
 
         // PCA
         public int NumPcaComponents { get; set; } = 30;
@@ -59,6 +102,8 @@ namespace SCPBrowser.Models
             s.UseHvpFilter = await ReadBoolAsync(db, "UseHvpFilter", s.UseHvpFilter);
             s.HvpCount = await ReadIntAsync(db, "HvpCount", s.HvpCount);
             s.ApplyBatchCorrection = await ReadBoolAsync(db, "ApplyBatchCorrection", s.ApplyBatchCorrection);
+            s.Normalization = (CellNormalization)await ReadIntAsync(db, "Normalization", (int)s.Normalization);
+            s.MissingValues = (MissingValueMode)await ReadIntAsync(db, "MissingValues", (int)s.MissingValues);
 
             return s;
         }
@@ -85,6 +130,8 @@ namespace SCPBrowser.Models
             await db.SetSettingAsync(KeyPrefix + "UseHvpFilter", UseHvpFilter.ToString());
             await db.SetSettingAsync(KeyPrefix + "HvpCount", HvpCount.ToString());
             await db.SetSettingAsync(KeyPrefix + "ApplyBatchCorrection", ApplyBatchCorrection.ToString());
+            await db.SetSettingAsync(KeyPrefix + "Normalization", ((int)Normalization).ToString());
+            await db.SetSettingAsync(KeyPrefix + "MissingValues", ((int)MissingValues).ToString());
         }
 
         /// <summary>
@@ -103,7 +150,10 @@ namespace SCPBrowser.Models
                 || UseGuidedEmbedding != other.UseGuidedEmbedding
                 || Math.Abs(GuidedWeight - other.GuidedWeight) > 1e-9
                 || UseHvpFilter != other.UseHvpFilter
-                || HvpCount != other.HvpCount;
+                || HvpCount != other.HvpCount
+                // Both change the matrix that PCA/UMAP consumes, so the embedding must be recomputed.
+                || Normalization != other.Normalization
+                || MissingValues != other.MissingValues;
         }
 
         /// <summary>
@@ -124,7 +174,9 @@ namespace SCPBrowser.Models
                 ShowPcaView = ShowPcaView,
                 UseHvpFilter = UseHvpFilter,
                 HvpCount = HvpCount,
-                ApplyBatchCorrection = ApplyBatchCorrection
+                ApplyBatchCorrection = ApplyBatchCorrection,
+                Normalization = Normalization,
+                MissingValues = MissingValues
             };
         }
 

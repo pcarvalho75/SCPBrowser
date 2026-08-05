@@ -59,6 +59,31 @@
 
                         <!-- Preprocessing Section -->
                         <TextBlock Text="PREPROCESSING" FontSize="10" Foreground="#8888AA" FontWeight="SemiBold" Margin="0,0,0,6"/>
+
+                        <!-- Per-cell normalisation. Without it, cells differing only in input amount / size / depth
+                             separate as if they were biologically different and PC1 becomes a depth axis. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <TextBlock Text="Per-cell norm:" Foreground="#9090A0" VerticalAlignment="Center" Margin="0,0,6,0"
+                                       ToolTip="Removes per-cell differences in input amount, cell size and depth&#x0a;BEFORE batch correction and z-scoring.&#x0a;Without it, PC1 often becomes a depth axis that looks like a cell population.&#x0a;Default: Median-centre (robust to missing values)."/>
+                            <ComboBox x:Name="NormalizationComboBox" Width="130" Height="22" FontSize="11"
+                                      ToolTip="None reproduces analyses made before this option existed.">
+                                <ComboBoxItem Content="None" Tag="0"/>
+                                <ComboBoxItem Content="Median-centre" Tag="1" IsSelected="True"/>
+                                <ComboBoxItem Content="Total intensity" Tag="2"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- Missing values. In log2 space a written 0 is a real abundance, not "unknown". -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <TextBlock Text="Missing values:" Foreground="#9090A0" VerticalAlignment="Center" Margin="0,0,6,0"
+                                       ToolTip="How proteins not quantified in a cell are filled in.&#x0a;Zero treats 'not measured' as a measured zero, which with 40-70% missingness&#x0a;drags each protein's centre down and inflates its variance.&#x0a;Default: protein mean over the cells where it WAS observed."/>
+                            <ComboBox x:Name="MissingValuesComboBox" Width="130" Height="22" FontSize="11"
+                                      ToolTip="Zero reproduces analyses made before this option existed.">
+                                <ComboBoxItem Content="Zero" Tag="0"/>
+                                <ComboBoxItem Content="Protein mean" Tag="1" IsSelected="True"/>
+                            </ComboBox>
+                        </StackPanel>
+
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                             <CheckBox x:Name="ZScaleCheckBox" IsChecked="True" VerticalAlignment="Center" Margin="0,0,6,0"
                                       ToolTip="Standardize each protein to mean=0, stdev=1 across samples.&#x0a;Prevents high-abundance proteins from dominating PCA.&#x0a;Recommended: ON for most proteomics data."/>

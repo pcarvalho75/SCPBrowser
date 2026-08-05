@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -105,8 +105,8 @@ namespace SCPBrowser
                 {
                     RawFileColumn = "Run",
                     ProteinGroupColumn = "Protein.Group",
-                    PeptideColumn = "Stripped.Sequence",
-                    TotalIonCurrentColumn = "Precursor.Quantity"
+                    PeptideColumn = ColumnMapping.DefaultPeptideColumn,
+                    TotalIonCurrentColumn = ColumnMapping.DefaultQuantityColumn
                 };
 
                 LoadedData = await parquetService.LoadParquetFileAsync(filePath, mapping);

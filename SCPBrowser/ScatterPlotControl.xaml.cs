@@ -137,6 +137,14 @@ namespace SCPBrowser
         }
         private bool _previousApplyBatchCorrection = false;
         private HashSet<string> _hvpProteinIds;
+
+        /// <summary>
+        /// Fraction of the last embedding's matrix that was NOT measured and had to be filled in. Surfaced so the
+        /// user can see how much of the picture is imputed rather than observed - at 60% missingness the embedding
+        /// is substantially a statement about detection, not abundance.
+        /// </summary>
+        private double _missingRate;
+        public double LastMissingRate => _missingRate;
         private Dictionary<string, int> _plateMappingPerFile;
 
         // Selection styling constants
@@ -555,8 +563,29 @@ namespace SCPBrowser
                 int nSamples = rawFiles.Count;
                 int nProteins = proteins.Count;
 
-                // Build matrix: rows = samples, columns = proteins (log2 transformed)
+                // Build matrix: rows = samples, columns = proteins (log2 transformed).
+                // `observed` tracks which entries are real measurements, because in log2 space a written 0 is
+                // indistinguishable from a genuine abundance and must not be treated as one.
                 double[,] matrix = new double[nSamples, nProteins];
+                bool[,] observed = new bool[nSamples, nProteins];
+
+                // Optional per-cell scaling BEFORE the log: equalises how much material each cell contributed, so
+                // that input amount / cell size / depth does not masquerade as biology in the embedding.
+                var cellScale = new double[nSamples];
+                for (int i = 0; i < nSamples; i++) cellScale[i] = 1.0;
+                if (settings?.Normalization == Models.CellNormalization.TotalIntensity)
+                {
+                    var totals = new double[nSamples];
+                    for (int i = 0; i < nSamples; i++)
+                        for (int j = 0; j < nProteins; j++)
+                            if (data.ProteinQuantMatrix[proteins[j]].TryGetValue(rawFiles[i], out double v) && v > 0)
+                                totals[i] += v;
+                    var positive = totals.Where(t => t > 0).ToList();
+                    double reference = positive.Count > 0 ? positive.Average() : 0;
+                    for (int i = 0; i < nSamples; i++)
+                        cellScale[i] = (totals[i] > 0 && reference > 0) ? reference / totals[i] : 1.0;
+                }
+
                 for (int i = 0; i < nSamples; i++)
                 {
                     string rawFile = rawFiles[i];
@@ -564,9 +593,55 @@ namespace SCPBrowser
                     {
                         string protein = proteins[j];
                         if (data.ProteinQuantMatrix[protein].TryGetValue(rawFile, out double value) && value > 0)
-                            matrix[i, j] = Math.Log2(value + 1);
+                        {
+                            matrix[i, j] = Math.Log2(value * cellScale[i] + 1);
+                            observed[i, j] = true;
+                        }
                         else
-                            matrix[i, j] = 0;
+                        {
+                            matrix[i, j] = 0;      // provisional; replaced below unless MissingValues == Zero
+                        }
+                    }
+                }
+
+                // Median-centre each cell over its OBSERVED proteins. Robust to missingness, and the standard
+                // single-cell choice: it removes the per-cell offset without letting undetected proteins vote.
+                if (settings?.Normalization == Models.CellNormalization.MedianCentre)
+                {
+                    for (int i = 0; i < nSamples; i++)
+                    {
+                        var vals = new List<double>(nProteins);
+                        for (int j = 0; j < nProteins; j++) if (observed[i, j]) vals.Add(matrix[i, j]);
+                        if (vals.Count == 0) continue;
+                        vals.Sort();
+                        double median = vals.Count % 2 == 1
+                            ? vals[vals.Count / 2]
+                            : (vals[vals.Count / 2 - 1] + vals[vals.Count / 2]) / 2.0;
+                        for (int j = 0; j < nProteins; j++) if (observed[i, j]) matrix[i, j] -= median;
+                    }
+                }
+
+                // Fill unobserved entries. Writing 0 makes "not measured" look like a measured low abundance, which
+                // with 40-70% missingness drags each protein's centre down and inflates its variance - so the
+                // default substitutes the protein's mean over the cells where it WAS seen, leaving that centre
+                // unchanged. Zero remains available to reproduce analyses made before this option existed.
+                _missingRate = 0;
+                int missingCount = 0;
+                for (int i = 0; i < nSamples; i++)
+                    for (int j = 0; j < nProteins; j++)
+                        if (!observed[i, j]) missingCount++;
+                if (nSamples > 0 && nProteins > 0)
+                    _missingRate = (double)missingCount / (nSamples * nProteins);
+
+                if (settings?.MissingValues == Models.MissingValueMode.ProteinMean)
+                {
+                    for (int j = 0; j < nProteins; j++)
+                    {
+                        double sum = 0; int n = 0;
+                        for (int i = 0; i < nSamples; i++) if (observed[i, j]) { sum += matrix[i, j]; n++; }
+                        if (n == 0) continue;                    // never observed: leave at 0 for every cell
+                        double mean = sum / n;
+                        for (int i = 0; i < nSamples; i++) if (!observed[i, j]) matrix[i, j] = mean;
                     }
                 }
 

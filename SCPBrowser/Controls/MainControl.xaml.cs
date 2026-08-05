@@ -416,12 +416,17 @@ namespace SCPBrowser
 
                 StatusText.Text = "Loading data...";
 
+                // Use the SAME columns the import persisted and the reference was built from. This path previously
+                // read Ms1.Area / Modified.Sequence while every other path used Precursor.Quantity /
+                // Stripped.Sequence, so the analysis matrix, the stored quant, and any parquet-derived reference
+                // were three different quantities carrying the same labels - and the profile classifier and the
+                // marker classifier scored cells on different ones.
                 var mapping = new ColumnMapping
                 {
                     RawFileColumn = "Run",
                     ProteinGroupColumn = "Protein.Group",
-                    PeptideColumn = "Modified.Sequence",
-                    TotalIonCurrentColumn = "Ms1.Area",
+                    PeptideColumn = ColumnMapping.DefaultPeptideColumn,
+                    TotalIonCurrentColumn = ColumnMapping.DefaultQuantityColumn,
                     TargetProteinIdentifiers = new List<string>()
                 };
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -97,6 +97,24 @@ namespace SCPBrowser.Services
 
     public class ColumnMapping
     {
+        // ---- Canonical DIA-NN columns -----------------------------------------------------------------------
+        // These were previously written as literals at five call sites, and they DISAGREED: the in-memory analysis
+        // matrix was built from Ms1.Area/Modified.Sequence while the persisted protein_quant_summary, the import
+        // preview, the Plate Browser columns and the parquet-derived REFERENCE all used
+        // Precursor.Quantity/Stripped.Sequence. The consequences were not cosmetic - a cell could be scored on one
+        // quantity against a reference built from the other, the marker classifier (which reads
+        // protein_quant_summary) and the profile classifier (which reads the in-memory matrix) disagreed by
+        // construction, and two different quantities were displayed under one "Total Ion Current" label.
+        //
+        // Precursor.Quantity is DIA-NN's headline precursor quantity and was already what the stored data and the
+        // reference used, so it is the single source of truth here.
+
+        /// <summary>DIA-NN's precursor quantity — the quantity every path must agree on.</summary>
+        public const string DefaultQuantityColumn = "Precursor.Quantity";
+
+        /// <summary>Peptide identity column. Stripped (unmodified) sequence, matching the stored data.</summary>
+        public const string DefaultPeptideColumn = "Stripped.Sequence";
+
         public string RawFileColumn { get; set; } = string.Empty;
         public string ProteinGroupColumn { get; set; } = string.Empty;
         public string PeptideColumn { get; set; } = string.Empty;
@@ -144,6 +162,39 @@ namespace SCPBrowser.Services
         // Parameterless constructor for file parsing only (backwards compatibility)
         public ParquetDataService() : base(null)
         {
+        }
+
+        // ---- Identification confidence -------------------------------------------------------------------------
+        // DIA-NN's q-values were previously ignored entirely, so every identification was accepted no matter how
+        // poor. 1% FDR is the field convention and the level published single-cell proteomics numbers are quoted
+        // at; set a threshold to 0 to disable that filter and reproduce the unfiltered behaviour.
+
+        /// <summary>Precursor-level q-value cutoff (Q.Value). 0 disables. Default 0.01 = 1% FDR.</summary>
+        public double QValueThreshold { get; set; } = 0.01;
+
+        /// <summary>Protein-group q-value cutoff (PG.Q.Value). 0 disables. Default 0.01 = 1% FDR.</summary>
+        public double ProteinQValueThreshold { get; set; } = 0.01;
+
+        /// <summary>Rows rejected by the q-value filters during the last parse, for honest reporting.</summary>
+        public long RowsFilteredByQValue { get; private set; }
+
+        /// <summary>
+        /// True when the value is present, numeric and at or below the threshold. A missing or unparsable q-value
+        /// FAILS: an identification carrying no confidence must not be admitted as though it had passed.
+        /// </summary>
+        private static bool PassesThreshold(object value, double threshold)
+        {
+            if (threshold <= 0) return true;
+            if (value == null) return false;
+            try
+            {
+                double q = Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture);
+                return !double.IsNaN(q) && q <= threshold;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         // ==================== FILE PARSING METHODS ====================
@@ -406,6 +457,16 @@ namespace SCPBrowser.Services
                     var genesField = dataFields.FirstOrDefault(f =>
                         f.Name.Equals("Genes", StringComparison.Ordinal));
 
+                    // Confidence columns. DIA-NN emits per-precursor Q.Value and per-protein-group PG.Q.Value, but
+                    // nothing here ever read them: every identification was accepted regardless of its FDR, so the
+                    // per-cell protein counts included identifications no published SCP pipeline would keep, and
+                    // were therefore not comparable to numbers reported elsewhere. Filtering is applied only when
+                    // the columns exist, so gene-matrix and older inputs are unaffected.
+                    var qValueField = dataFields.FirstOrDefault(f =>
+                        f.Name.Equals("Q.Value", StringComparison.Ordinal));
+                    var pgQValueField = dataFields.FirstOrDefault(f =>
+                        f.Name.Equals("PG.Q.Value", StringComparison.Ordinal));
+
                     if (rawFileField == null)
                         throw new InvalidOperationException($"Column '{mapping.RawFileColumn}' not found");
                     if (proteinField == null)
@@ -438,6 +499,20 @@ namespace SCPBrowser.Services
                                 genesData = genesColumn.Data as Array;
                             }
 
+                            Array qValueData = null;
+                            if (qValueField != null && QValueThreshold > 0)
+                            {
+                                var qCol = await groupReader.ReadColumnAsync(qValueField);
+                                qValueData = qCol.Data as Array;
+                            }
+
+                            Array pgQValueData = null;
+                            if (pgQValueField != null && ProteinQValueThreshold > 0)
+                            {
+                                var pgQCol = await groupReader.ReadColumnAsync(pgQValueField);
+                                pgQValueData = pgQCol.Data as Array;
+                            }
+
                             var rawFileData = rawFileColumn.Data as Array;
                             var proteinData = proteinColumn.Data as Array;
                             var peptideData = peptideColumn.Data as Array;
@@ -445,6 +520,14 @@ namespace SCPBrowser.Services
 
                             for (int row = 0; row < rawFileData.Length; row++)
                             {
+                                // Drop identifications above the FDR thresholds before anything counts them. A null
+                                // q-value is treated as failing: an identification with no confidence attached
+                                // should not silently enter the analysis as though it had passed.
+                                if (qValueData != null && !PassesThreshold(qValueData.GetValue(row), QValueThreshold))
+                                { RowsFilteredByQValue++; continue; }
+                                if (pgQValueData != null && !PassesThreshold(pgQValueData.GetValue(row), ProteinQValueThreshold))
+                                { RowsFilteredByQValue++; continue; }
+
                                 var rawFile = rawFileData.GetValue(row)?.ToString();
                                 var protein = proteinData.GetValue(row)?.ToString();
                                 var peptide = peptideData.GetValue(row)?.ToString();
@@ -850,8 +933,8 @@ namespace SCPBrowser.Services
             {
                 RawFileColumn = "Run",
                 ProteinGroupColumn = "Protein.Group",
-                PeptideColumn = "Stripped.Sequence",
-                TotalIonCurrentColumn = "Precursor.Quantity"
+                PeptideColumn = ColumnMapping.DefaultPeptideColumn,
+                TotalIonCurrentColumn = ColumnMapping.DefaultQuantityColumn
             };
 
             var data = await LoadParquetFileAsync(parquetPath, mapping);

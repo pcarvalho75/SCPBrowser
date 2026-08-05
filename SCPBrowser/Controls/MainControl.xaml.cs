@@ -91,22 +91,55 @@ namespace SCPBrowser
         }
 
         /// <summary>
-        /// Reloads the reference database (call after importing new omic data)
+        /// Reloads the reference database (call after importing new omic data).
+        ///
+        /// Also DISCARDS the existing cell-type classifications. Importing a reference replaces the profiles
+        /// wholesale (the writer runs with clearExistingData), so every stored label was produced by a reference
+        /// that no longer exists. Leaving them behind is not a cosmetic staleness problem: those labels keep
+        /// colouring the UMAP, feeding the confidence map and going out in the PLP export, while the UI reports the
+        /// import succeeded - i.e. results attributed to a reference that was never used to produce them.
+        /// Returns true when stored classifications were discarded, so the caller can offer to reclassify.
         /// </summary>
-        public async System.Threading.Tasks.Task ReloadTranscriptomicReferenceAsync()
+        public async System.Threading.Tasks.Task<bool> ReloadTranscriptomicReferenceAsync()
         {
             var mainWindow = Window.GetWindow(this) as MainWindow;
             if (mainWindow == null || !mainWindow.HasOpenProject)
-                return;
+                return false;
 
             var databasePath = mainWindow.ProjectReferenceDatabasePath;
+            bool clearedClassifications = false;
 
             if (File.Exists(databasePath))
             {
                 try
                 {
                     StatusText.Text = "Reloading reference database...";
+
+                    // Drop labels derived from the OUTGOING reference before the new one is loaded. LoadDatabaseAsync
+                    // clears the in-memory cache; this clears the persisted rows, which would otherwise be reloaded
+                    // and served as if they matched the new reference.
+                    try
+                    {
+                        var classificationService = new Services.CellTypeClassificationService(databasePath);
+                        var importId = await new Services.ParquetDataService(databasePath).GetMostRecentImportIdAsync();
+                        if (importId.HasValue)
+                        {
+                            var existing = await classificationService.LoadCellTypeClassificationsAsync(importId.Value);
+                            if (existing != null && existing.Count > 0)
+                            {
+                                await classificationService.DeleteAllCellTypeClassificationsAsync(importId.Value);
+                                clearedClassifications = true;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Never let cleanup failure block the reference import; the reference itself still loads and
+                        // the (now possibly stale) labels are recomputed on the next classification pass.
+                    }
+
                     await _cellTypeClassificationManager.LoadDatabaseAsync(databasePath);
+                    _cellTypePredictions = null;
 
                     if (_cellTypeClassificationManager.IsLoaded)
                     {
@@ -123,16 +156,12 @@ namespace SCPBrowser
                     StatusText.Text = $"Error reloading reference: {ex.Message}";
                 }
             }
+
+            return clearedClassifications;
         }
 
         private async System.Threading.Tasks.Task LoadTranscriptomicReferenceAsync()
         {
-            if (_cellTypeClassificationManager.IsLoaded)
-            {
-                // Already loaded, nothing to do
-                return;
-            }
-
             // Get the project database path (contains both project and reference data)
             var mainWindow = Window.GetWindow(this) as MainWindow;
             if (mainWindow == null || !mainWindow.HasOpenProject)
@@ -142,6 +171,23 @@ namespace SCPBrowser
             }
 
             var databasePath = mainWindow.ProjectReferenceDatabasePath;
+
+            // Reload whenever the reference SOURCE differs from what is loaded. This control and its manager are
+            // single instances that live for the window's lifetime, and opening a project never closes the previous
+            // one, so short-circuiting on "IsLoaded" alone kept project A's reference in memory for project B - and
+            // B's cells were then classified against A's profiles, B's stored classifications overwritten with the
+            // result, and B's legend coloured from A's cell types. Nothing warned.
+            if (_cellTypeClassificationManager.IsLoaded
+                && string.Equals(_cellTypeClassificationManager.LoadedReferencePath, databasePath,
+                                 StringComparison.OrdinalIgnoreCase))
+            {
+                // The right reference for this project is already loaded.
+                return;
+            }
+
+            // A different project's reference (or none) is loaded: drop any predictions computed against it so a
+            // stale set cannot be displayed while the correct one is being built.
+            _cellTypePredictions = null;
 
             if (File.Exists(databasePath))
             {
@@ -250,6 +296,18 @@ namespace SCPBrowser
         public void SetDatabaseService(ProjectDatabaseService db)
         {
             _databaseService = db;
+        }
+
+        /// <summary>
+        /// Drops every in-memory copy of the cell-type predictions: this control's own set and the classification
+        /// manager's cache. Deleting the database rows alone is not enough - the manager is a session-lifetime
+        /// singleton, so its cache would keep serving the deleted classifications to the plots and the export,
+        /// which is the opposite of what "clear classifications" tells the user it did.
+        /// </summary>
+        public void ClearCellTypePredictions()
+        {
+            _cellTypePredictions = null;
+            _cellTypeClassificationManager?.ClearCache();
         }
 
         public bool IsTranscriptomicDatabaseLoaded()        {

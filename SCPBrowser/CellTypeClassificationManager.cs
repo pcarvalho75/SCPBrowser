@@ -24,6 +24,19 @@ namespace SCPBrowser
         private int _cachedImportId = -1;
         private string _cachedMethod;
 
+        // import_id is a per-database AUTOINCREMENT, so project A and project B both have import 1. Keying the
+        // cache on (importId, method) alone therefore COLLIDES across projects and can serve A's predictions for
+        // B. The reference source path disambiguates them.
+        private string _cachedProjectPath;
+
+        /// <summary>
+        /// Path of the reference database currently loaded into <see cref="_database"/>, or null if none. This
+        /// manager is a session-lifetime singleton reused across project opens, so the loaded reference must be
+        /// identified by WHERE IT CAME FROM - otherwise opening a second project keeps the first project's
+        /// reference and classifies the new project's cells against it.
+        /// </summary>
+        public string LoadedReferencePath { get; private set; }
+
         public bool IsLoaded => _database != null;
         public TranscriptomicDatabase Database => _database;
         public bool HasPredictions => _cachedPredictions != null && _cachedPredictions.Count > 0;
@@ -87,14 +100,22 @@ namespace SCPBrowser
 
             _database = await _referenceService.LoadTranscriptomicDataAsync(databasePath);
 
+            // Record WHICH reference is loaded, and drop any cache built against the previous one. Both matter for
+            // the same reason: this manager outlives a single project.
+            _cachedPredictions = null;
+            _cachedImportId = -1;
+            _cachedMethod = null;
+            _cachedProjectPath = null;
+
             // Null means the database exists but has no reference profiles imported yet — normal initial state
             if (_database == null)
             {
                 _classifier = null;
-
+                LoadedReferencePath = null;
                 return;
             }
 
+            LoadedReferencePath = databasePath;
             _classifier = BuildClassifier(ClassificationMethod);
 
 
@@ -151,7 +172,10 @@ namespace SCPBrowser
             // 1. Check if already in memory cache — but ONLY if it was computed for THIS import and the active method.
             if (!forceRecompute && _cachedPredictions != null && _cachedPredictions.Count > 0
                 && _cachedImportId == importId
-                && string.Equals(_cachedMethod, ClassificationMethod, StringComparison.OrdinalIgnoreCase))
+                && string.Equals(_cachedMethod, ClassificationMethod, StringComparison.OrdinalIgnoreCase)
+                // import_id is per-database, so it repeats across projects; without the project path a cache built
+                // for project A would be served for project B's import of the same number.
+                && string.Equals(_cachedProjectPath, projectDatabasePath, StringComparison.OrdinalIgnoreCase))
             {
 
                 return _cachedPredictions;
@@ -182,6 +206,7 @@ namespace SCPBrowser
                     _cachedPredictions = existingPredictions;
                     _cachedImportId = importId;
                     _cachedMethod = ClassificationMethod;
+                    _cachedProjectPath = projectDatabasePath;
                     return _cachedPredictions;
                 }
             }
@@ -207,10 +232,11 @@ namespace SCPBrowser
 
 
 
-            // 6. Store in cache (keyed to this import + method) and return
+            // 6. Store in cache (keyed to this project + import + method) and return
             _cachedPredictions = predictions;
             _cachedImportId = importId;
             _cachedMethod = ClassificationMethod;
+            _cachedProjectPath = projectDatabasePath;
             return _cachedPredictions;
         }
 

@@ -64,6 +64,16 @@ namespace SCPBrowser
                                   "Conditions are auto-derived from each run's folder on import.";
         }
 
+        /// <summary>
+        /// Preselects the scorer the calling project actually classifies with, so the benchmark measures the
+        /// method in use rather than whichever one the checkbox defaults to.
+        /// </summary>
+        public void PreselectScorer(string classificationMethod)
+        {
+            QuantScorerCheck.IsChecked =
+                !string.Equals(classificationMethod, "Standard", StringComparison.OrdinalIgnoreCase);
+        }
+
         private async void Run_Click(object sender, RoutedEventArgs e)
         {
             var chosen = _conditions.Where(c => c.IsIncluded).Select(c => c.Name).ToList();

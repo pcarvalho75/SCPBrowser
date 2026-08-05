@@ -663,6 +663,12 @@ namespace SCPBrowser
 
                 await _cellTypeService.DeleteAllCellTypeClassificationsAsync(importId.Value);
 
+                // Deleting the rows is only half of it: the classification manager caches predictions in memory for
+                // the session and the plot control holds its own copy, so without this the app carries on
+                // displaying - and exporting - the classifications it just told the user it had cleared.
+                MainControlTab.ClearCellTypePredictions();
+                PeptideTicTab.SetCellTypePredictions(null, null);
+
                 MessageBox.Show(
                     "Cell type classifications cleared successfully.\n\n" +
                     "Click 'Color by Cell Type' to recompute.",
@@ -674,6 +680,35 @@ namespace SCPBrowser
             {
 
                 MessageBox.Show($"Error clearing classifications:\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// After a reference import replaced the profiles, the previous cell-type labels were discarded (they were
+        /// derived from a reference that no longer exists). Tell the user plainly and offer to recompute now, so
+        /// the project is not left in the confusing state of "reference imported, but nothing is classified".
+        /// </summary>
+        private async Task OfferReclassifyAfterReferenceChangeAsync(bool clearedStaleLabels)
+        {
+            if (!clearedStaleLabels) return;
+            if (!MainControlTab.IsTranscriptomicDatabaseLoaded()) return;
+
+            var answer = MessageBox.Show(
+                "The previous cell-type classifications were produced by the reference you just replaced, so they " +
+                "have been discarded.\n\nReclassify all cells against the new reference now?",
+                "Reference Changed",
+                MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (answer != MessageBoxResult.Yes) return;
+
+            try
+            {
+                await AutoRunCellTypeClassificationAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not reclassify:\n\n{ex.Message}", "Reclassify",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1060,7 +1095,7 @@ namespace SCPBrowser
         /// Read-only with respect to the project: the dialog builds every fold's reference in memory and never
         /// writes the reference DB or the classifications table.
         /// </summary>
-        private void EvaluateClassifier_Click(object sender, RoutedEventArgs e)
+        private async void EvaluateClassifier_Click(object sender, RoutedEventArgs e)
         {
             var data = MainControlTab?.GetCurrentData();
             if (data == null || data.RawFileNames == null || data.RawFileNames.Count == 0)
@@ -1071,7 +1106,26 @@ namespace SCPBrowser
                 return;
             }
 
+            // Preselect the classifier THIS PROJECT actually uses, resolved exactly as the manager and the
+            // confidence map do (explicit setting → stored method → Quantitative). Without this the dialog opened
+            // on whatever the checkbox happened to default to, so a project set to Standard was benchmarked as
+            // QScore (or vice versa) and the report was branded with the method that was never used to classify it.
+            string method = "Quantitative";
+            try
+            {
+                if (!string.IsNullOrEmpty(_projectReferenceDatabasePath))
+                {
+                    method = await new ProjectDatabaseService(_projectReferenceDatabasePath)
+                        .GetSettingAsync("classification_method", null);
+                    if (string.IsNullOrEmpty(method))
+                        method = await new CellTypeClassificationService(_projectReferenceDatabasePath)
+                            .GetStoredScorerMethodAsync() ?? "Quantitative";
+                }
+            }
+            catch { method = "Quantitative"; }
+
             var dialog = new ClassifierEvaluationDialog(data) { Owner = this };
+            dialog.PreselectScorer(method);
             dialog.ShowDialog();
         }
 
@@ -1528,8 +1582,9 @@ namespace SCPBrowser
 
 
                 // Hot reload: Update MainControl's transcriptomic reference
-                await MainControlTab.ReloadTranscriptomicReferenceAsync();
+                bool clearedStaleLabels = await MainControlTab.ReloadTranscriptomicReferenceAsync();
                 PeptideTicTab.EnableCellTypeClassification(MainControlTab.IsTranscriptomicDatabaseLoaded());
+                await OfferReclassifyAfterReferenceChangeAsync(clearedStaleLabels);
             }
             catch (Exception ex)
             {
@@ -1576,8 +1631,9 @@ namespace SCPBrowser
 
 
 
-                await MainControlTab.ReloadTranscriptomicReferenceAsync();
+                bool clearedStaleLabels = await MainControlTab.ReloadTranscriptomicReferenceAsync();
                 PeptideTicTab.EnableCellTypeClassification(MainControlTab.IsTranscriptomicDatabaseLoaded());
+                await OfferReclassifyAfterReferenceChangeAsync(clearedStaleLabels);
             }
             catch (Exception ex)
             {
@@ -1640,8 +1696,9 @@ namespace SCPBrowser
 
 
                 // Hot reload
-                await MainControlTab.ReloadTranscriptomicReferenceAsync();
+                bool clearedStaleLabels = await MainControlTab.ReloadTranscriptomicReferenceAsync();
                 PeptideTicTab.EnableCellTypeClassification(MainControlTab.IsTranscriptomicDatabaseLoaded());
+                await OfferReclassifyAfterReferenceChangeAsync(clearedStaleLabels);
             }
             catch (Exception ex)
             {

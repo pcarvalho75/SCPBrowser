@@ -2351,6 +2351,13 @@ namespace SCPBrowser
                 PeptideTicTab.RestoreCheckedStates(checkedCellTypes, checkedBioConditions, checkedPlates);
             }
 
+            // "Hide Grey Dots" is restored with the checked sets, not separately: the two together decide which
+            // cells the embedding is built from, so reopening a project with one restored and the other not would
+            // show a different cohort than the user left.
+            var hideGrey = await _projectDatabaseService.GetSettingAsync("HideGreyDots");
+            if (!string.IsNullOrEmpty(hideGrey) && bool.TryParse(hideGrey, out bool hideGreyValue))
+                PeptideTicTab.RestoreHideGreyDots(hideGreyValue);
+
             // Restore color maps
             if (cellTypeColors != null || bioConditionColors != null || plateColors != null)
             {

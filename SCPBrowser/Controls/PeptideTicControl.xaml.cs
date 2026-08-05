@@ -70,6 +70,11 @@ namespace SCPBrowser
                 await _databaseService.SetSettingAsync("CheckedCellTypes", string.Join(",", _checkedCellTypes));
                 await _databaseService.SetSettingAsync("CheckedBioConditions", string.Join(",", _checkedBioConditions));
                 await _databaseService.SetSettingAsync("CheckedPlates", string.Join(",", _checkedPlates));
+                // Persisted with the checked sets because it belongs to the same decision: together they define
+                // WHICH cells the embedding is built from, so restoring one without the other would reopen the
+                // project showing a different cohort than the user left it in.
+                await _databaseService.SetSettingAsync("HideGreyDots",
+                    (HideGreyDotsCheckBox.IsChecked == true).ToString());
             }
             catch (Exception ex)
             {
@@ -174,6 +179,25 @@ namespace SCPBrowser
                         PopulateBioConditionCheckboxes();
                         break;
                 }
+            }
+            finally
+            {
+                _suppressCheckboxEvents = false;
+            }
+        }
+
+        /// <summary>
+        /// Restores the "Hide Grey Dots" state saved with the project. Applied without firing the change handler,
+        /// because the caller restores this during project load and the chart is drawn afterwards anyway -
+        /// letting the handler run here would kick off a redundant embedding recompute mid-load.
+        /// </summary>
+        public void RestoreHideGreyDots(bool hide)
+        {
+            _suppressCheckboxEvents = true;
+            try
+            {
+                HideGreyDotsCheckBox.IsChecked = hide;
+                ScatterPlot.SetHideUnselected(hide);
             }
             finally
             {
@@ -2003,7 +2027,12 @@ namespace SCPBrowser
 
         private async void HideGreyDotsCheckBox_Changed(object sender, RoutedEventArgs e)
         {
+            if (_suppressCheckboxEvents) return;
+
             ScatterPlot.SetHideUnselected(HideGreyDotsCheckBox.IsChecked == true);
+
+            // Sticky per project: this is part of the cohort definition, not a transient view toggle.
+            SaveCheckedStatesAsync();
 
             // In PCA/UMAP the greyed cells are not merely dimmed - they were used to BUILD the axes. Hiding them
             // therefore has to rebuild the embedding from the remaining cells, otherwise the survivors are shown

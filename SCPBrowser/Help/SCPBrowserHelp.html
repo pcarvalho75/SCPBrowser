@@ -450,6 +450,11 @@ says so.</div>
 <p>In the raw scatter views (protein count, ion current, contaminant ratio) the axes are per-cell measurements
 rather than a shared decomposition, so hiding cells there is purely cosmetic and nothing is recomputed.</p>
 
+<div class="ok"><b>The choice is remembered</b>
+<b>Hide Grey Dots</b> is saved with the project alongside the legend's checked sets, because together they define
+which cells the embedding is built from. Reopening the project restores the same cohort — so a figure you come
+back to is the one you left.</div>
+
 <h3>K-means</h3>
 <p>Colour by <b>K-means</b> to cluster on the currently displayed axes. The basis (for example
 <code>UMAP axes, k=5</code>) is shown next to the control and stored with the assignments, so a saved

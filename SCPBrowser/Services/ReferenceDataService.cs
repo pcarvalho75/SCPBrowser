@@ -32,6 +32,8 @@ namespace SCPBrowser.Services
             var expressionMatrix = new Dictionary<string, Dictionary<string, double>>();
             var detectionMatrix = new Dictionary<string, Dictionary<string, double>>();
             var cellTypes = new List<string>();
+            var missingDetectionExamples = new List<string>();
+            int missingDetectionCount = 0;
 
             string currentSection = null;
 
@@ -131,6 +133,21 @@ namespace SCPBrowser.Services
                     }
                 }
 
+                // An expressed protein with no matching DETECTION entry cannot be stored honestly:
+                // percent_expressing is NOT NULL in the schema, and the classifier reads an ABSENT key as
+                // "unknown, judge on specificity alone" (CellTypePredictor) while a stored 0.0 silently
+                // disqualifies the protein as a marker. A detection fraction cannot be invented, so collect
+                // the offenders and reject the file below - before the write path clears the reference.
+                foreach (var protein in profile.MedianExpression.Keys)
+                {
+                    if (!profile.PercentExpressing.ContainsKey(protein))
+                    {
+                        if (missingDetectionExamples.Count < 5)
+                            missingDetectionExamples.Add($"{protein} / {cellType}");
+                        missingDetectionCount++;
+                    }
+                }
+
                 database.CellTypeProfiles[cellType] = profile;
 
                 // Create metadata
@@ -147,6 +164,15 @@ namespace SCPBrowser.Services
                     CellCount = cellCount,
                     GenesExpressed = profile.MedianExpression.Count
                 };
+            }
+
+            if (missingDetectionCount > 0)
+            {
+                throw new InvalidDataException(
+                    $"Proteomics reference '{Path.GetFileName(prefFilePath)}' is incomplete: {missingDetectionCount:N0} " +
+                    "protein/cell-type pairs carry an EXPRESSION value but have no matching value under " +
+                    $"##SECTION:DETECTION (e.g. {string.Join(", ", missingDetectionExamples)}). Detection fractions " +
+                    "cannot be inferred from expression, so nothing was imported and the existing reference is unchanged.");
             }
 
             progress?.ReportProgress($"Loaded proteomics reference: {database.TotalCellTypes} cell types, {database.TotalGenes} proteins");
@@ -224,48 +250,54 @@ namespace SCPBrowser.Services
 
                 // Tables are created by ProjectDataService, no need to ensure here
 
-                // Clear existing data if requested
-                if (clearExistingData)
-                {
-                    progress?.ReportMessage("Clearing existing transcriptomic data...");
-                    using (var command = connection.CreateCommand())
-                    {
-                        command.CommandText = @"
-                            DELETE FROM cell_type_profiles;
-                            DELETE FROM cell_type_metadata;
-                        ";
-                        await command.ExecuteNonQueryAsync();
-                    }
-                    progress?.ReportProgress("Database cleared");
-                }
-
-                // Performance optimizations for bulk insert
+                // Memory-sizing pragmas only. This is the LIVE project database - it also holds every parquet
+                // import, classification and cellenONE blob - so synchronous=OFF / journal_mode=MEMORY would
+                // stake the whole project on nothing killing the process during the import. The single
+                // transaction below is where the bulk-insert speed actually comes from.
                 progress?.ReportMessage("Optimizing database for bulk insert...");
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"
-                        PRAGMA synchronous = OFF;
-                        PRAGMA journal_mode = MEMORY;
                         PRAGMA temp_store = MEMORY;
                         PRAGMA cache_size = -64000;
                     ";
                     await command.ExecuteNonQueryAsync();
                 }
 
-                // Write cell type profiles
-                await WriteCellTypeProfilesAsync(connection, parsedData.CellTypeProfiles, progress);
+                // Clear and rewrite inside ONE transaction: if any part of the write fails, the project must
+                // not be left with the previous reference deleted and no replacement in its place.
+                using (var transaction = connection.BeginTransaction())
+                {
+                    // Clear existing data if requested
+                    if (clearExistingData)
+                    {
+                        progress?.ReportMessage("Clearing existing transcriptomic data...");
+                        using (var command = connection.CreateCommand())
+                        {
+                            command.CommandText = @"
+                                DELETE FROM cell_type_profiles;
+                                DELETE FROM cell_type_metadata;
+                            ";
+                            await command.ExecuteNonQueryAsync();
+                        }
+                        progress?.ReportProgress("Database cleared");
+                    }
 
-                // Write cell type metadata
-                await WriteCellTypeMetadataAsync(connection, parsedData.CellTypeMetadata, progress);
+                    // Write cell type profiles
+                    await WriteCellTypeProfilesAsync(connection, parsedData.CellTypeProfiles, progress);
 
-                // Restore normal settings
+                    // Write cell type metadata
+                    await WriteCellTypeMetadataAsync(connection, parsedData.CellTypeMetadata, progress);
+
+                    await transaction.CommitAsync();
+                }
+
+                // VACUUM rewrites the whole file and cannot run inside a transaction, so it only happens once
+                // the new reference is committed and durable.
                 progress?.ReportMessage("Finalizing database...");
                 using (var command = connection.CreateCommand())
                 {
-                    command.CommandText = @"
-                        PRAGMA synchronous = FULL;
-                        VACUUM;
-                    ";
+                    command.CommandText = "VACUUM;";
                     await command.ExecuteNonQueryAsync();
                 }
                 progress?.ReportProgress("Database write complete");
@@ -292,38 +324,45 @@ namespace SCPBrowser.Services
                 {
                     var batch = genes.Skip(i).Take(batchSize).ToList();
 
-                    using (var transaction = connection.BeginTransaction())
+                    // The caller owns the transaction, so a failure part-way through rolls the whole
+                    // reference back rather than committing a half-written one.
+                    using (var command = connection.CreateCommand())
                     {
-                        using (var command = connection.CreateCommand())
+                        var valuesClauses = new List<string>();
+                        var parameters = new List<SqliteParameter>();
+
+                        for (int j = 0; j < batch.Count; j++)
                         {
-                            var valuesClauses = new List<string>();
-                            var parameters = new List<SqliteParameter>();
+                            var gene = batch[j];
+                            var paramPrefix = $"@p{j}_";
 
-                            for (int j = 0; j < batch.Count; j++)
+                            if (!profile.PercentExpressing.TryGetValue(gene, out var percentExpressing))
                             {
-                                var gene = batch[j];
-                                var paramPrefix = $"@p{j}_";
-
-                                valuesClauses.Add($"({paramPrefix}cell_type, {paramPrefix}gene_name, {paramPrefix}median, {paramPrefix}mean, {paramPrefix}percent)");
-
-                                parameters.Add(new SqliteParameter($"{paramPrefix}cell_type", profile.CellType));
-                                parameters.Add(new SqliteParameter($"{paramPrefix}gene_name", gene));
-                                parameters.Add(new SqliteParameter($"{paramPrefix}median", profile.MedianExpression[gene]));
-                                parameters.Add(new SqliteParameter($"{paramPrefix}mean", profile.MeanExpression[gene]));
-                                parameters.Add(new SqliteParameter($"{paramPrefix}percent", profile.PercentExpressing[gene]));
+                                // percent_expressing is NOT NULL and no stored value can mean "unknown" - the
+                                // classifier reads an absent key that way, but a substituted 0.0 would silently
+                                // disqualify the gene as a marker. Abort and let the transaction roll back.
+                                throw new InvalidDataException(
+                                    $"Cell type '{profile.CellType}' has an expression value for '{gene}' but no " +
+                                    "percent-expressing value; the reference was not written.");
                             }
 
-                            command.CommandText = $@"
-                                INSERT OR REPLACE INTO cell_type_profiles 
-                                (cell_type, gene_name, median_expression, mean_expression, percent_expressing)
-                                VALUES {string.Join(", ", valuesClauses)}
-                            ";
+                            valuesClauses.Add($"({paramPrefix}cell_type, {paramPrefix}gene_name, {paramPrefix}median, {paramPrefix}mean, {paramPrefix}percent)");
 
-                            command.Parameters.AddRange(parameters.ToArray());
-                            await command.ExecuteNonQueryAsync();
+                            parameters.Add(new SqliteParameter($"{paramPrefix}cell_type", profile.CellType));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}gene_name", gene));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}median", profile.MedianExpression[gene]));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}mean", profile.MeanExpression[gene]));
+                            parameters.Add(new SqliteParameter($"{paramPrefix}percent", percentExpressing));
                         }
 
-                        await transaction.CommitAsync();
+                        command.CommandText = $@"
+                            INSERT OR REPLACE INTO cell_type_profiles
+                            (cell_type, gene_name, median_expression, mean_expression, percent_expressing)
+                            VALUES {string.Join(", ", valuesClauses)}
+                        ";
+
+                        command.Parameters.AddRange(parameters.ToArray());
+                        await command.ExecuteNonQueryAsync();
                     }
 
                     recordsWritten += batch.Count;
@@ -345,40 +384,36 @@ namespace SCPBrowser.Services
         {
             progress?.ReportMessage($"Writing metadata for {metadataList.Count} cell types...");
 
-            using (var transaction = connection.BeginTransaction())
+            // The caller owns the transaction - metadata and profiles commit together or not at all.
+            using (var command = connection.CreateCommand())
             {
-                using (var command = connection.CreateCommand())
+                var valuesClauses = new List<string>();
+                var parameters = new List<SqliteParameter>();
+
+                for (int i = 0; i < metadataList.Count; i++)
                 {
-                    var valuesClauses = new List<string>();
-                    var parameters = new List<SqliteParameter>();
+                    var metadata = metadataList[i];
+                    var paramPrefix = $"@m{i}_";
 
-                    for (int i = 0; i < metadataList.Count; i++)
-                    {
-                        var metadata = metadataList[i];
-                        var paramPrefix = $"@m{i}_";
+                    valuesClauses.Add($"({paramPrefix}cell_type, {paramPrefix}cell_count, {paramPrefix}genes_expressed, {paramPrefix}age_range, {paramPrefix}batch_info)");
 
-                        valuesClauses.Add($"({paramPrefix}cell_type, {paramPrefix}cell_count, {paramPrefix}genes_expressed, {paramPrefix}age_range, {paramPrefix}batch_info)");
-
-                        parameters.Add(new SqliteParameter($"{paramPrefix}cell_type", metadata.CellType));
-                        parameters.Add(new SqliteParameter($"{paramPrefix}cell_count", metadata.CellCount));
-                        parameters.Add(new SqliteParameter($"{paramPrefix}genes_expressed", metadata.GenesExpressed));
-                        parameters.Add(new SqliteParameter($"{paramPrefix}age_range",
-                            string.IsNullOrEmpty(metadata.AgeRange) ? DBNull.Value : metadata.AgeRange));
-                        parameters.Add(new SqliteParameter($"{paramPrefix}batch_info",
-                            string.IsNullOrEmpty(metadata.BatchInfo) ? DBNull.Value : metadata.BatchInfo));
-                    }
-
-                    command.CommandText = $@"
-                        INSERT OR REPLACE INTO cell_type_metadata 
-                        (cell_type, cell_count, genes_expressed, age_range, batch_info)
-                        VALUES {string.Join(", ", valuesClauses)}
-                    ";
-
-                    command.Parameters.AddRange(parameters.ToArray());
-                    await command.ExecuteNonQueryAsync();
+                    parameters.Add(new SqliteParameter($"{paramPrefix}cell_type", metadata.CellType));
+                    parameters.Add(new SqliteParameter($"{paramPrefix}cell_count", metadata.CellCount));
+                    parameters.Add(new SqliteParameter($"{paramPrefix}genes_expressed", metadata.GenesExpressed));
+                    parameters.Add(new SqliteParameter($"{paramPrefix}age_range",
+                        string.IsNullOrEmpty(metadata.AgeRange) ? DBNull.Value : metadata.AgeRange));
+                    parameters.Add(new SqliteParameter($"{paramPrefix}batch_info",
+                        string.IsNullOrEmpty(metadata.BatchInfo) ? DBNull.Value : metadata.BatchInfo));
                 }
 
-                await transaction.CommitAsync();
+                command.CommandText = $@"
+                    INSERT OR REPLACE INTO cell_type_metadata
+                    (cell_type, cell_count, genes_expressed, age_range, batch_info)
+                    VALUES {string.Join(", ", valuesClauses)}
+                ";
+
+                command.Parameters.AddRange(parameters.ToArray());
+                await command.ExecuteNonQueryAsync();
             }
 
             progress?.ReportProgress("Cell type metadata complete");

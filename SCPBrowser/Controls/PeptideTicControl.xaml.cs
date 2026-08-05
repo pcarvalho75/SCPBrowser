@@ -670,7 +670,10 @@ namespace SCPBrowser
             else
             {
                 ColorByCellTypeItem.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xEC, 0xEC));
-                ColorByCellTypeItem.ToolTip = "Import a transcriptomic or proteomic reference via the Reference menu to enable cell type classification.";
+                // There is no "Reference" menu - the importer is Import → Omic Profile.... This tooltip is the only
+                // instruction a user gets for the step that unlocks cell type classification, so it has to name a
+                // path that exists.
+                ColorByCellTypeItem.ToolTip = "Import a transcriptomic or proteomic reference via Import → Omic Profile... to enable cell type classification.";
             }
         }
 
@@ -1917,6 +1920,9 @@ namespace SCPBrowser
             ScatterPlot.SetHideUnselected(HideGreyDotsCheckBox.IsChecked == true);
         }
 
+        private System.Windows.Threading.DispatcherTimer _contaminantCutoffDebounce;
+        private double _pendingContaminantCutoff = 1.0;
+
         private void ContaminantCutoffSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (!_isInitialized) return;
@@ -1926,10 +1932,40 @@ namespace SCPBrowser
 
             double newCutoff = percent / 100.0;
             if (Math.Abs(newCutoff - _lastAppliedContaminantCutoff) < 0.005)
+            {
+                // Back at the value that is already applied - drop any pending pass so a drag that returns to where
+                // it started does not re-run the pipeline for nothing.
+                _contaminantCutoffDebounce?.Stop();
                 return;
+            }
 
-            _lastAppliedContaminantCutoff = newCutoff;
-            ContaminantRatioCutoffChanged?.Invoke(this, newCutoff);
+            // Debounce, like the k-means spinner above. The slider is continuous (no tick snapping), and every raise
+            // runs the whole filter pipeline - three deep copies of the protein quant matrix plus the O(n^2 log n)
+            // HVP LOESS fit - synchronously on this thread, with no loading overlay. Firing per tick froze the window
+            // for the length of the drag; coalescing into one pass once the user settles keeps the reported numbers
+            // identical while the UI stays alive.
+            _pendingContaminantCutoff = newCutoff;
+
+            if (_contaminantCutoffDebounce == null)
+            {
+                _contaminantCutoffDebounce = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(400)
+                };
+                _contaminantCutoffDebounce.Tick += (s, ev) =>
+                {
+                    _contaminantCutoffDebounce.Stop();
+                    if (Math.Abs(_pendingContaminantCutoff - _lastAppliedContaminantCutoff) < 0.005)
+                        return;
+
+                    // Set before raising: the filter pass ends up back in UpdateChart, which reads
+                    // _lastAppliedContaminantCutoff as the cutoff currently in force.
+                    _lastAppliedContaminantCutoff = _pendingContaminantCutoff;
+                    ContaminantRatioCutoffChanged?.Invoke(this, _pendingContaminantCutoff);
+                };
+            }
+            _contaminantCutoffDebounce.Stop();
+            _contaminantCutoffDebounce.Start();
         }
 
         private void DrawContaminantGradient()

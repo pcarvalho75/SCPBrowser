@@ -146,6 +146,27 @@ namespace SCPBrowser
 
         private void ClearExclusionsButton_Click(object sender, RoutedEventArgs e)
         {
+            int excludedHere = _currentGridData?.Count(d => !d.IsIncluded) ?? 0;
+
+            // The handler behind this button deletes every row of excluded_runs, not just the ones in the current
+            // selection, so the prompt has to say that outright - manually excluding cells is the QC step and can
+            // take an hour to redo.
+            var confirm = MessageBox.Show(
+                "Restore every manually excluded run in this project?\n\n" +
+                $"{excludedHere} excluded run(s) are visible in the current selection, but this clears the " +
+                "exclusions for all runs in the project, including ones not shown here.\n\n" +
+                "This cannot be undone - each cell would have to be excluded again by hand.",
+                "Clear All Exclusions",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+
+            if (confirm != MessageBoxResult.Yes)
+                return;
+
+            // Raise first so the database delete is issued before the grid claims everything is included.
+            ClearAllExclusionsRequested?.Invoke(this, EventArgs.Empty);
+
             if (_currentGridData != null)
             {
                 foreach (var item in _currentGridData)
@@ -156,7 +177,6 @@ namespace SCPBrowser
             }
 
             ClearExclusionsButton.Visibility = Visibility.Collapsed;
-            ClearAllExclusionsRequested?.Invoke(this, EventArgs.Empty);
         }
 
         private void CopyToClipboard_Click(object sender, RoutedEventArgs e)

@@ -9,6 +9,7 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
@@ -105,8 +106,43 @@
                 </StackPanel>
             </GroupBox>
 
+            <!-- Cell Quality Control Group -->
+            <GroupBox Grid.Row="3" Style="{StaticResource ModernGroupBox}">
+                <GroupBox.Header>
+                    <TextBlock Text="Cell Quality Control"
+                               Style="{StaticResource SubheaderText}"/>
+                </GroupBox.Header>
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220"/>
+                            <ColumnDefinition Width="200"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   Text="Min. Proteins per Cell:"
+                                   Style="{StaticResource LabelText}"/>
+                        <xctk:IntegerUpDown Grid.Column="1"
+                                            x:Name="ProteinCutoffUpDown"
+                                            Minimum="0"
+                                            Maximum="99999"
+                                            Increment="50"
+                                            VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="2"
+                                   Text="Cells identifying fewer protein groups are removed (default 800)"
+                                   Style="{StaticResource HelpText}"
+                                   VerticalAlignment="Center"
+                                   Margin="15,0,0,0"/>
+                    </Grid>
+                    <TextBlock Style="{StaticResource HelpText}"
+                               TextWrapping="Wrap"
+                               Margin="0,12,0,0"
+                               Text="This is the main QC gate. It is applied before PCA, UMAP, cell type classification and PLP export, so it decides which cells reach every downstream result. 800 suits a high-sensitivity platform; on a less sensitive instrument it will discard most cells and leave a near-empty UMAP, while a value set too low keeps empty wells in the analysis. Saving stores the cutoff with the project and it takes effect the next time the project is opened. To re-filter the session you are in, change 'Min. Proteins G.' on the Explorer tab instead."/>
+                </StackPanel>
+            </GroupBox>
+
             <!-- Action Buttons and Status -->
-            <Grid Grid.Row="3" VerticalAlignment="Top" Margin="0,10,0,0">
+            <Grid Grid.Row="4" VerticalAlignment="Top" Margin="0,10,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>

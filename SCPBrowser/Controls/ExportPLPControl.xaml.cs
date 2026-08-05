@@ -5,7 +5,10 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
@@ -85,8 +88,50 @@ namespace SCPBrowser
 
             _isInitialized = true;
 
+            UpdateLabelModeAvailability();
             UpdateMergePanelVisibility();
             UpdateSummary();
+        }
+
+        /// <summary>
+        /// Greys out the label modes whose backing data does not exist yet and moves the selection off them.
+        /// Secondary defaults to Cell Type, so on a project with no classification every run was skipped for
+        /// want of a label and the panel offered nothing but a skip count to explain it.
+        /// </summary>
+        private void UpdateLabelModeAvailability()
+        {
+            bool hasCellTypes = _cellTypePredictions != null &&
+                                _cellTypePredictions.Values.Any(p => p != null && !string.IsNullOrEmpty(p.TopCellType));
+            bool hasKMeans = _kmeansLabels != null &&
+                             _kmeansLabels.Values.Any(v => !string.IsNullOrEmpty(v));
+            bool hasPlates = _rawFileToPlateId != null && _rawFileToPlateId.Count > 0 &&
+                             _plateIdToName != null && _plateIdToName.Count > 0;
+
+            SetLabelModeState(PrimaryCellTypeItem, "Cell Type", hasCellTypes, "requires classification");
+            SetLabelModeState(SecondaryCellTypeItem, "Cell Type", hasCellTypes, "requires classification");
+            SetLabelModeState(PrimaryKMeansItem, "K-means cluster", hasKMeans, "requires k-means");
+            SetLabelModeState(SecondaryKMeansItem, "K-means cluster", hasKMeans, "requires k-means");
+            SetLabelModeState(PrimaryPlateItem, "Plate", hasPlates, "requires plate metadata");
+            SetLabelModeState(SecondaryPlateItem, "Plate", hasPlates, "requires plate metadata");
+
+            // If the current selection is one of the modes we just disabled, fall back to one that can
+            // actually yield a label. Biological Condition is the last resort: it may still be empty, but
+            // then the skip message names it, which is more than the disabled item could say.
+            if (SecondaryLabelComboBox.SelectedItem is ComboBoxItem secondary && !secondary.IsEnabled)
+                SecondaryLabelComboBox.SelectedItem = hasPlates ? SecondaryPlateItem : SecondaryBioConditionItem;
+
+            if (PrimaryLabelComboBox.SelectedItem is ComboBoxItem primary && !primary.IsEnabled)
+                PrimaryLabelComboBox.SelectedItem = PrimaryBioConditionItem;
+        }
+
+        private static void SetLabelModeState(ComboBoxItem item, string modeName, bool available, string requirement)
+        {
+            if (item == null)
+                return;
+
+            item.IsEnabled = available;
+            // Tag drives ParseLabelMode, so annotating Content is safe.
+            item.Content = available ? modeName : $"{modeName} — {requirement}";
         }
 
         /// <summary>
@@ -252,7 +297,9 @@ namespace SCPBrowser
             ExportButton.IsEnabled = summary.TotalRuns > 0 && summary.ClassBreakdown.Count > 0;
 
             if (summary.SkippedRuns > 0)
-                StatusText.Text = $"⚠ {summary.SkippedRuns} run(s) skipped: {summary.SkipReason}";
+                // SkipReason already carries its own run counts per label mode, and the total sits in the
+                // Skipped Runs row above, so repeating the total here would just read as two numbers.
+                StatusText.Text = $"⚠ {summary.SkipReason}";
             else
                 StatusText.Text = $"Ready to export {summary.TotalRuns} runs across {summary.ClassBreakdown.Count} classes.";
         }
@@ -371,7 +418,7 @@ namespace SCPBrowser
             }
         }
 
-        private void ExportButton_Click(object sender, RoutedEventArgs e)
+        private async void ExportButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -407,6 +454,20 @@ namespace SCPBrowser
                     selectedRuns, _data, options,
                     _cellTypePredictions, _rawFileToPlateId, _plateIdToName, _kmeansLabels);
 
+                // Provenance sidecar. The .plp itself records no filter, seed, classifier or selection, so
+                // write the settings block beside it. A failed sidecar must never read as a failed export.
+                string sidecarLine;
+                string sidecarPath = System.IO.Path.ChangeExtension(saveDialog.FileName, ".settings.txt");
+                try
+                {
+                    System.IO.File.WriteAllText(sidecarPath, await BuildAnalysisReportAsync());
+                    sidecarLine = $"Settings: {System.IO.Path.GetFileName(sidecarPath)}";
+                }
+                catch (Exception sidecarEx)
+                {
+                    sidecarLine = $"Settings file could not be written: {sidecarEx.Message}";
+                }
+
                 StatusText.Text = $"✅ Exported {summary.TotalRuns} runs, {summary.TotalProteins} proteins to {System.IO.Path.GetFileName(saveDialog.FileName)}";
                 ExportButton.IsEnabled = true;
 
@@ -415,7 +476,8 @@ namespace SCPBrowser
                     $"Runs: {summary.TotalRuns}\n" +
                     $"Proteins: {summary.TotalProteins}\n" +
                     $"Classes: {summary.ClassBreakdown.Count}\n\n" +
-                    $"File: {saveDialog.FileName}",
+                    $"File: {saveDialog.FileName}\n" +
+                    sidecarLine,
                     "Export Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -444,6 +506,364 @@ namespace SCPBrowser
                 });
             }
             catch { }
+        }
+
+        // --- Analysis report ---------------------------------------------------------------------------
+        // Parameters live in three disconnected stores (per-project DB keys, global user settings, and
+        // session-only UI state) and no screen shows them together, so "what settings produced this figure?"
+        // had no answer. This block gathers everything that can be stated truthfully and names the rest as
+        // not captured rather than printing a default that was never actually used.
+
+        private async void ExportReportButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isInitialized || _data == null)
+            {
+                MessageBox.Show("Load a project with omic data before writing an analysis report.",
+                    "Analysis Report", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var saveDialog = new SaveFileDialog
+            {
+                Filter = "HTML report (*.html)|*.html|Text report (*.txt)|*.txt",
+                DefaultExt = ".html",
+                FileName = "SCPBrowser_AnalysisReport.html",
+                Title = "Save Analysis Report"
+            };
+
+            if (saveDialog.ShowDialog() != true)
+                return;
+
+            try
+            {
+                ExportReportButton.IsEnabled = false;
+
+                string report = await BuildAnalysisReportAsync();
+                bool asHtml = saveDialog.FileName.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ||
+                              saveDialog.FileName.EndsWith(".htm", StringComparison.OrdinalIgnoreCase);
+
+                System.IO.File.WriteAllText(saveDialog.FileName, asHtml ? WrapReportInHtml(report) : report);
+
+                StatusText.Text = $"Analysis report written to {System.IO.Path.GetFileName(saveDialog.FileName)}";
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"Analysis report failed: {ex.Message}";
+
+                MessageBox.Show(
+                    $"Error writing the analysis report:\n\n{ex.Message}",
+                    "Analysis Report",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                ExportReportButton.IsEnabled = true;
+            }
+        }
+
+        /// <summary>
+        /// Builds the plain-text provenance block shared by the report file and the PLP sidecar.
+        /// </summary>
+        private async Task<string> BuildAnalysisReportAsync()
+        {
+            var options = BuildOptions();
+            var selectedRuns = GetSelectedRuns();
+            var summary = PLPExportService.GetExportSummary(
+                selectedRuns, _data, options,
+                _cellTypePredictions, _rawFileToPlateId, _plateIdToName, _kmeansLabels);
+
+            var inv = CultureInfo.InvariantCulture;
+            var sb = new StringBuilder();
+
+            sb.AppendLine("SCPBrowser analysis report");
+            sb.AppendLine("==========================");
+            sb.AppendLine();
+            sb.AppendLine(ReportLine("Generated", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", inv)));
+            sb.AppendLine(ReportLine("SCPBrowser version", GetApplicationVersion()));
+
+            // The project database is the only per-project store; without it the DB-backed sections below
+            // are unavailable and are reported as such instead of falling back to factory defaults.
+            string databasePath = (Window.GetWindow(this) as MainWindow)?.ProjectReferenceDatabasePath;
+            ProjectDatabaseService db = null;
+            if (!string.IsNullOrEmpty(databasePath))
+            {
+                try { db = new ProjectDatabaseService(databasePath); }
+                catch (Exception ex) { Debug.WriteLine($"[BuildAnalysisReportAsync] project DB unavailable: {ex}"); }
+            }
+
+            sb.AppendLine(ReportLine("Project file", databasePath));
+
+            if (db != null)
+            {
+                try
+                {
+                    var projectInfo = await db.GetProjectInfoAsync();
+                    if (projectInfo != null)
+                    {
+                        sb.AppendLine(ReportLine("Project name", projectInfo.ProjectName));
+                        sb.AppendLine(ReportLine("Project created", projectInfo.CreatedDate.ToString("yyyy-MM-dd HH:mm:ss", inv)));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[BuildAnalysisReportAsync] project info: {ex}");
+                }
+            }
+
+            // --- Data ---
+            sb.AppendLine();
+            sb.AppendLine("Data");
+            sb.AppendLine("----");
+
+            if (db != null && !string.IsNullOrEmpty(databasePath))
+            {
+                try
+                {
+                    var importedFiles = await new ParquetDataService(databasePath).GetAllImportedParquetFilesAsync();
+                    sb.AppendLine(ReportLine("Imported files", (importedFiles?.Count ?? 0).ToString(inv)));
+                    if (importedFiles != null)
+                    {
+                        foreach (var file in importedFiles)
+                            sb.AppendLine("    " + file);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[BuildAnalysisReportAsync] imported files: {ex}");
+                    sb.AppendLine(ReportLine("Imported files", "(could not be read from the project)"));
+                }
+            }
+
+            sb.AppendLine(ReportLine("Runs available to export", (_data.RawFileNames?.Count ?? 0).ToString(inv)));
+            sb.AppendLine(ReportLine("Runs in this selection", selectedRuns.Count.ToString(inv)));
+            sb.AppendLine(ReportLine("Proteins in this selection", summary.TotalProteins.ToString(inv)));
+            sb.AppendLine();
+            sb.AppendLine("    Runs reaching this panel have already passed the plate filter, the protein-count");
+            sb.AppendLine("    cutoff and the contaminant-ratio cutoff, so \"runs available to export\" is a filtered");
+            sb.AppendLine("    count, not the number of runs imported. Per-import file hash and quantity-column");
+            sb.AppendLine("    mapping are stored in the project database but are not surfaced here.");
+
+            // --- Filters ---
+            sb.AppendLine();
+            sb.AppendLine("Filters");
+            sb.AppendLine("-------");
+
+            if (db != null)
+            {
+                sb.AppendLine(ReportLine("Min. proteins per cell", await ReadSettingAsync(db, "ProteinCutoff")));
+                sb.AppendLine(ReportLine("Max. proteins per cell", await ReadSettingAsync(db, "UpperProteinCutoff")));
+            }
+
+            sb.AppendLine(ReportLine("Biological conditions kept", DescribeSet(_checkedBioConditions)));
+            sb.AppendLine(ReportLine("Cell types kept", DescribeSet(_checkedCellTypes)));
+            sb.AppendLine(ReportLine("Plates kept", DescribeSet(_checkedPlates)));
+            sb.AppendLine(ReportLine("Manually excluded runs", (_excludedRunNames?.Count ?? 0).ToString(inv)));
+
+            if (_excludedRunNames != null && _excludedRunNames.Count > 0)
+            {
+                foreach (var run in _excludedRunNames.OrderBy(r => r, StringComparer.OrdinalIgnoreCase))
+                    sb.AppendLine("    " + run);
+            }
+
+            sb.AppendLine(ReportLine("Selection source", _selectedRunNames != null
+                ? "Explorer selection (filters + lasso, minus exclusions)"
+                : "re-derived from the filter checkboxes (Explorer had not rendered a selection)"));
+            sb.AppendLine();
+            sb.AppendLine("    The contaminant-ratio cutoff and the lasso outline are session-only state and are");
+            sb.AppendLine("    not persisted with the project; the run list at the end of this report is the only");
+            sb.AppendLine("    durable record of which cells this selection contained.");
+
+            // --- Dimensionality reduction ---
+            sb.AppendLine();
+            sb.AppendLine("Dimensionality reduction (as stored in the project)");
+            sb.AppendLine("---------------------------------------------------");
+
+            if (db != null)
+            {
+                var dimRed = await Models.DimensionReductionSettings.LoadAsync(db);
+                sb.AppendLine(ReportLine("Z-score scaling", dimRed.ZScoreScale.ToString()));
+                sb.AppendLine(ReportLine("Clip max value", dimRed.ClipMaxValue.ToString("R", inv)));
+                sb.AppendLine(ReportLine("PCA components", dimRed.NumPcaComponents.ToString(inv)));
+                sb.AppendLine(ReportLine("PCs used for UMAP", dimRed.NumPcsForUmap.ToString(inv)));
+                sb.AppendLine(ReportLine("UMAP neighbours", dimRed.UmapNeighbors.ToString(inv)));
+                sb.AppendLine(ReportLine("UMAP seed", dimRed.UmapSeed.ToString(inv)));
+                sb.AppendLine(ReportLine("Guided embedding", $"{dimRed.UseGuidedEmbedding} (weight {dimRed.GuidedWeight.ToString("R", inv)})"));
+                sb.AppendLine(ReportLine("HVP filter", $"{dimRed.UseHvpFilter} (top {dimRed.HvpCount.ToString(inv)})"));
+                sb.AppendLine(ReportLine("Batch correction", dimRed.ApplyBatchCorrection.ToString()));
+                sb.AppendLine();
+                sb.AppendLine("    These are the values currently stored in the project. If they were changed after");
+                sb.AppendLine("    the embedding on screen was computed, the plot still reflects the earlier values —");
+                sb.AppendLine("    re-run the embedding to make the two agree.");
+            }
+            else
+            {
+                sb.AppendLine("    Not available: the project database could not be read.");
+            }
+
+            // --- Classification ---
+            sb.AppendLine();
+            sb.AppendLine("Classification");
+            sb.AppendLine("--------------");
+
+            string classificationMethod = db != null ? await ReadSettingAsync(db, "classification_method") : null;
+            if (string.IsNullOrEmpty(classificationMethod) || classificationMethod == NotRecorded)
+            {
+                // No explicit setting: state what actually produced the predictions in memory instead of
+                // printing the resolution default, which may not be the method that ran.
+                var scorers = _cellTypePredictions?.Values
+                    .Where(p => p != null && !string.IsNullOrEmpty(p.ScorerMethod))
+                    .Select(p => p.ScorerMethod)
+                    .Distinct()
+                    .OrderBy(m => m, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                classificationMethod = scorers != null && scorers.Count > 0
+                    ? string.Join(", ", scorers) + " (from the loaded predictions; not stored as a project setting)"
+                    : NotRecorded;
+            }
+
+            sb.AppendLine(ReportLine("Classifier method", classificationMethod));
+
+            if (db != null)
+                sb.AppendLine(ReportLine("Confidence threshold", await ReadSettingAsync(db, "ClassificationConfidenceThreshold")));
+
+            int classifiedInSelection = selectedRuns.Count(r =>
+                _cellTypePredictions != null &&
+                _cellTypePredictions.TryGetValue(r, out var p) &&
+                p != null && !string.IsNullOrEmpty(p.TopCellType));
+
+            sb.AppendLine(ReportLine("Classified in this selection", $"{classifiedInSelection.ToString(inv)} of {selectedRuns.Count.ToString(inv)}"));
+            sb.AppendLine(ReportLine("K-means labels available", (_kmeansLabels?.Count ?? 0).ToString(inv)));
+
+            if (db != null)
+            {
+                sb.AppendLine(ReportLine("GO p-value cutoff", await ReadSettingAsync(db, "GOPValueCutoff")));
+                sb.AppendLine(ReportLine("GO minimum overlap", await ReadSettingAsync(db, "GOMinimumOverlap")));
+            }
+
+            // --- Export ---
+            sb.AppendLine();
+            sb.AppendLine("PLP export");
+            sb.AppendLine("----------");
+            sb.AppendLine(ReportLine("Description", options.Description));
+            sb.AppendLine(ReportLine("Primary label", PLPExportService.DescribeLabelMode(options.PrimaryLabelMode)));
+            sb.AppendLine(ReportLine("Secondary label", PLPExportService.DescribeLabelMode(options.SecondaryLabelMode)));
+            sb.AppendLine(ReportLine("Runs exported", summary.TotalRuns.ToString(inv)));
+            sb.AppendLine(ReportLine("Runs skipped", summary.SkippedRuns.ToString(inv)));
+
+            if (summary.SkippedRuns > 0)
+                sb.AppendLine(ReportLine("Skip reason", summary.SkipReason));
+
+            if (options.CellTypeMergeMap != null && options.CellTypeMergeMap.Count > 0)
+            {
+                sb.AppendLine(ReportLine("Cell type merges", options.CellTypeMergeMap.Count.ToString(inv)));
+                foreach (var merge in options.CellTypeMergeMap.OrderBy(m => m.Key, StringComparer.OrdinalIgnoreCase))
+                    sb.AppendLine($"    {merge.Key} -> {merge.Value}");
+            }
+
+            sb.AppendLine(ReportLine("Classes", summary.ClassBreakdown.Count.ToString(inv)));
+            foreach (var cls in summary.ClassBreakdown.OrderBy(c => c.Key, StringComparer.OrdinalIgnoreCase))
+                sb.AppendLine($"    [{cls.Key}]    {cls.Value.ToString(inv)} run(s)");
+
+            // --- Run list ---
+            sb.AppendLine();
+            sb.AppendLine("Runs in this selection");
+            sb.AppendLine("----------------------");
+            sb.AppendLine("Run\tPrimary\tSecondary\tPlate\tBiological condition\tCell type");
+
+            var labelPairs = PLPExportService.GetRunLabelPairs(
+                selectedRuns, _data, options,
+                _cellTypePredictions, _rawFileToPlateId, _plateIdToName, _kmeansLabels);
+
+            foreach (var pair in labelPairs.OrderBy(p => p.Run, StringComparer.OrdinalIgnoreCase))
+            {
+                string plate = null;
+                if (_rawFileToPlateId != null && _plateIdToName != null &&
+                    _rawFileToPlateId.TryGetValue(pair.Run, out int plateId))
+                    _plateIdToName.TryGetValue(plateId, out plate);
+
+                string condition = null;
+                if (_data.BiologicalConditionPerFile != null)
+                    _data.BiologicalConditionPerFile.TryGetValue(pair.Run, out condition);
+
+                string cellType = null;
+                if (_cellTypePredictions != null && _cellTypePredictions.TryGetValue(pair.Run, out var prediction))
+                    cellType = prediction?.TopCellType;
+
+                sb.AppendLine(string.Join("\t", new[]
+                {
+                    pair.Run,
+                    pair.Primary ?? "",
+                    pair.Secondary ?? "",
+                    plate ?? "",
+                    condition ?? "",
+                    cellType ?? ""
+                }));
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>Marker for values the app genuinely does not know, so no default is mistaken for a used value.</summary>
+        private const string NotRecorded = "(not recorded)";
+
+        private static string ReportLine(string name, string value)
+        {
+            return name.PadRight(30) + (string.IsNullOrWhiteSpace(value) ? NotRecorded : value);
+        }
+
+        private static async Task<string> ReadSettingAsync(ProjectDatabaseService db, string key)
+        {
+            try
+            {
+                return await db.GetSettingAsync(key) ?? NotRecorded;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ReadSettingAsync] {key}: {ex}");
+                return NotRecorded;
+            }
+        }
+
+        /// <summary>
+        /// An empty or absent checkbox set means "no restriction" everywhere in IsRunChecked, so it must not
+        /// be reported as "nothing kept".
+        /// </summary>
+        private static string DescribeSet(HashSet<string> values)
+        {
+            if (values == null || values.Count == 0)
+                return "all (no restriction)";
+
+            return string.Join(", ", values.OrderBy(v => v, StringComparer.OrdinalIgnoreCase));
+        }
+
+        private static string GetApplicationVersion()
+        {
+            return Environment.GetEnvironmentVariable("ClickOnce_CurrentVersion")
+                ?? System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+                ?? "?";
+        }
+
+        private static string WrapReportInHtml(string reportText)
+        {
+            string escaped = (reportText ?? "")
+                .Replace("&", "&amp;")
+                .Replace("<", "&lt;")
+                .Replace(">", "&gt;");
+
+            var sb = new StringBuilder();
+            sb.AppendLine("<!DOCTYPE html>");
+            sb.AppendLine("<html><head><meta charset=\"utf-8\" />");
+            sb.AppendLine("<title>SCPBrowser analysis report</title>");
+            sb.AppendLine("<style>body{background:#f8fafc;color:#1e293b;font-family:'Segoe UI',Arial,sans-serif;margin:24px;}"
+                + "pre{background:#ffffff;border:1px solid #e2e8f0;border-radius:6px;padding:20px;"
+                + "font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.45;white-space:pre-wrap;}</style>");
+            sb.AppendLine("</head><body>");
+            sb.AppendLine("<pre>" + escaped + "</pre>");
+            sb.AppendLine("</body></html>");
+
+            return sb.ToString();
         }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e)

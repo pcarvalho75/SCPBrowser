@@ -143,6 +143,19 @@ namespace SCPBrowser.Controls
 
         private void ClearExclusionsButton_Click(object sender, RoutedEventArgs e)
         {
+            // Excluding bad cells one at a time from this histogram is the QC step, so a mis-click here can cost an
+            // hour of work. Nothing restores the individual exclusions afterwards.
+            var confirm = MessageBox.Show(
+                $"Restore all {_excludedRuns.Count} manually excluded run(s)?\n\n" +
+                "This cannot be undone - each run would have to be excluded again by hand.",
+                "Clear Exclusions",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+
+            if (confirm != MessageBoxResult.Yes)
+                return;
+
             ClearExclusionsRequested?.Invoke(this, EventArgs.Empty);
         }
 

@@ -123,6 +123,31 @@ namespace SCPBrowser.Services
                 });
         }
 
+        /// <summary>
+        /// The DIA-NN raw files that image QC has effectively voted to drop: every raw_file_id reconciled to a
+        /// cell marked "discard" and to no cell in any other state. review_status is otherwise write-only, so this
+        /// is the seam that lets the disposition reach the analysis (as run exclusions) instead of dying in the viewer.
+        /// A raw file linked to both a discarded and a non-discarded cell is deliberately left out — that is an
+        /// ambiguous reconciliation, not a decision.
+        /// </summary>
+        /// <param name="cellenOneRunId">Restrict to discards made in one run; null = the whole project.</param>
+        public Task<List<int>> GetDiscardedRawFileIdsAsync(int? cellenOneRunId = null)
+        {
+            return QueryAsync(@"
+                SELECT DISTINCT ic.raw_file_id
+                FROM isolated_cells ic
+                WHERE ic.raw_file_id IS NOT NULL
+                  AND LOWER(TRIM(COALESCE(ic.review_status, ''))) = 'discard'
+                  AND (@r IS NULL OR ic.cellenone_run_id = @r)
+                  AND NOT EXISTS (
+                        SELECT 1 FROM isolated_cells o
+                        WHERE o.raw_file_id = ic.raw_file_id
+                          AND LOWER(TRIM(COALESCE(o.review_status, ''))) <> 'discard')
+                ORDER BY ic.raw_file_id",
+                r => r.GetInt32(0),
+                cmd => cmd.Parameters.AddWithValue("@r", (object?)cellenOneRunId ?? DBNull.Value));
+        }
+
         /// <summary>cell_id → thumbnail bytes for one channel, for fast grid rendering.</summary>
         public Task<Dictionary<int, byte[]>> GetThumbnailsAsync(int cellenOneRunId, string channel)
         {

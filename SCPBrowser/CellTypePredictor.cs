@@ -19,6 +19,28 @@ namespace SCPBrowser
 
         public Dictionary<string, HashSet<string>> CellTypeMarkers => _cellTypeMarkers;
 
+        // Softmax temperatures for the four scoring channels. They alone determine how peaked the reported
+        // relative score is, yet they appear nowhere in the UI - so they are named here and printed into the
+        // diagnostics export rather than living as bare literals mid-method. Smaller T = more decisive.
+        /// <summary>Spearman channel temperature. Range is -1..1, so 0.1 means a 0.1 difference gives ~2.7x odds.</summary>
+        public const double TSpearman = 0.1;
+        /// <summary>Enrichment channel temperature over -log10(p): 2.0 means a 100x p-value difference gives ~2.7x odds.</summary>
+        public const double TEnrichment = 2.0;
+        /// <summary>Marker-coverage channel temperature. Range is 0..1, so 0.15 means a 15% difference gives ~2.7x odds.</summary>
+        public const double TCoverage = 0.15;
+        /// <summary>Specificity has no fixed range, so its temperature auto-scales to this fraction of the median score.</summary>
+        public const double TSpecificityMedianFactor = 0.2;
+        /// <summary>Floor for the auto-scaled specificity temperature, so a tiny median cannot make the softmax explode.</summary>
+        public const double TSpecificityFloor = 1.0;
+
+        /// <summary>
+        /// One-line description of the fixed scoring parameters, for the diagnostics export and reports. These
+        /// govern the reported score's sharpness and are otherwise invisible to the user.
+        /// </summary>
+        public static string TemperatureSummary =>
+            $"softmax temperatures: Spearman T={TSpearman}, Enrichment T={TEnrichment}, Coverage T={TCoverage}, " +
+            $"Specificity T=max({TSpecificityMedianFactor}*median, {TSpecificityFloor})";
+
         /// <summary>
         /// Creates a new CellTypePredictor using aggregated cell type profiles
         /// </summary>
@@ -210,21 +232,29 @@ namespace SCPBrowser
             // Coverage (0 to 1): T=0.15 means 15% coverage diff → ~2.7x ratio
             var cellTypes = results.Keys.ToList();
 
-            double tSpearman = 0.1;
-            double tEnrichment = 2.0;
-            double tCoverage = 0.15;
+            double tSpearman = TSpearman;
+            double tEnrichment = TEnrichment;
+            double tCoverage = TCoverage;
 
             // Auto-scale specificity temperature to median of values (prevents extreme softmax with large scores)
             var specValues = results.Values.Select(s => s.SpecificityScore).OrderBy(v => v).ToList();
             double medianSpec = specValues[specValues.Count / 2];
-            double tSpecificity = Math.Max(medianSpec * 0.2, 1.0);
+            double tSpecificity = Math.Max(medianSpec * TSpecificityMedianFactor, TSpecificityFloor);
 
             var pSpearman = SoftmaxOverMetric(cellTypes, ct => results[ct].SpearmanCorrelation, tSpearman);
             var pSpecificity = SoftmaxOverMetric(cellTypes, ct => results[ct].SpecificityScore, tSpecificity);
             var pEnrichment = SoftmaxOverMetric(cellTypes, ct => -Math.Log10(Math.Max(results[ct].HypergeometricPValue, 1e-300)), tEnrichment);
             var pCoverage = SoftmaxOverMetric(cellTypes, ct => results[ct].MarkerCoverage, tCoverage);
 
-            // 4. Average per-metric probabilities → base CompositeScore (0–1, sums to 1 across cell types)
+            // 4. Average per-metric probabilities → base CompositeScore.
+            //
+            // IMPORTANT, and easy to misread: this is a RELATIVE SHARE across the cell types present in the loaded
+            // reference, not a probability that the cell IS that type. The values are forced to sum to 1, so the
+            // model can never answer "none of these" - a cell whose true type is absent from the reference still
+            // receives a high score for whichever listed class it least disagrees with. How peaked the number is
+            // depends entirely on the four temperatures above, which are fixed constants. Report it as a relative
+            // score, and read the runner-up margin alongside it: a top share of 0.35 with a 0.02 margin is a very
+            // different statement from 0.35 with a 0.20 margin.
             foreach (var ct in cellTypes)
             {
                 results[ct].CompositeScore = (pSpearman[ct] + pSpecificity[ct] + pEnrichment[ct] + pCoverage[ct]) / 4.0;

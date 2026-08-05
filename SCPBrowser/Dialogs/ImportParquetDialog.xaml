@@ -204,9 +204,9 @@
                 <TextBlock Grid.Row="2" Grid.Column="0"
                            Text="🧪 Plate:"
                            Style="{StaticResource LabelText}"
-     
+
                            Margin="0,8,0,0"
-                           ToolTip="Step 2: Assign raw files to an experimental plate"/>
+                           ToolTip="Step 2: Default plate for the runs below. Each run keeps its own plate in the Plate column."/>
 
                 <ComboBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
                          
@@ -219,8 +219,8 @@
                           VerticalContentAlignment="Center"
                           Margin="0,8,0,0"
                           SelectionChanged="PlateComboBox_SelectionChanged"
-                
-                           ToolTip="Select the plate/experiment for these raw files"/>
+
+                           ToolTip="Default plate for these raw files - re-point individual runs in the Plate column below"/>
 
                 <!-- "New Plate" removed: plate creation now lives in Import ▸ Plate Metadata -->
                 <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2"
@@ -259,6 +259,11 @@
 
                 <Grid Grid.Row="1" Margin="0,0,0,8">
 
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="200"/>
@@ -268,43 +273,69 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0" 
-                   
+                    <TextBlock Grid.Row="0" Grid.Column="0"
+
                              Text="Batch Assign:"
                                Width="80"
                                Style="{StaticResource LabelText}"
-                        
+
                                ToolTip="Step 3: Assign conditions to multiple files at once"/>
 
-                    <ComboBox Grid.Column="1"
+                    <ComboBox Grid.Row="0" Grid.Column="1"
                               x:Name="BatchConditionComboBox"
                               ItemsSource="{Binding ConditionNames}"
-   
+
                               Height="28"
                               Padding="6,4"
                               VerticalContentAlignment="Center"
-             
+
                               Margin="0,0,8,0"
                               ToolTip="Select a biological condition to assign to filtered runs"/>
 
-                    <Button Grid.Column="2"
-                        
+                    <Button Grid.Row="0" Grid.Column="2"
+
                              Content="+ New"
                             Click="NewCondition_Click"
                             Padding="12,6"
                             Height="28"
-           
+
                             Margin="0,0,8,0"
                             ToolTip="Create a new biological condition (e.g., Control, Treatment, 1mo, 6mo)"/>
 
-                    <Button Grid.Column="3"
-                         
+                    <Button Grid.Row="0" Grid.Column="3"
+
                              Content="➡️ Apply to Filtered"
                             Click="ApplyBatchAssignment_Click"
                             Style="{StaticResource SuccessButton}"
                             Height="28"
-         
+
                             ToolTip="Assign the selected condition to all currently visible runs"/>
+
+                    <!-- Plate is per run, not per file: one DIA-NN report covers the whole study -->
+                    <TextBlock Grid.Row="1" Grid.Column="0"
+                               Text="Batch Plate:"
+                               Width="80"
+                               Style="{StaticResource LabelText}"
+                               Margin="0,6,0,0"
+                               ToolTip="Assign a plate to multiple runs at once"/>
+
+                    <ComboBox Grid.Row="1" Grid.Column="1"
+                              x:Name="BatchPlateComboBox"
+                              ItemsSource="{Binding Plates}"
+                              DisplayMemberPath="PlateName"
+                              Height="28"
+                              Padding="6,4"
+                              VerticalContentAlignment="Center"
+                              Margin="0,6,8,0"
+                              ToolTip="Select the plate to assign to filtered runs"/>
+
+                    <Button Grid.Row="1" Grid.Column="3"
+                            Content="➡️ Apply to Filtered"
+                            Click="ApplyBatchPlate_Click"
+                            Style="{StaticResource SuccessButton}"
+                            Height="28"
+                            Margin="0,6,0,0"
+                            ToolTip="Assign the selected plate to all currently visible runs"/>
                 </Grid>
 
                 <Grid Grid.Row="2" Margin="0,0,0,6">
@@ -502,9 +533,33 @@ Assign a condition to each file."/>
                             </DataGridTemplateColumn.CellEditingTemplate>
                         </DataGridTemplateColumn>
 
-                        <DataGridTextColumn Header="Proteins" 
- 
-                                            Binding="{Binding ProteinCount, StringFormat=N0}" 
+                        <!-- Per-run plate. A DIA-NN report covers every plate in the study, and plate is
+                             the batch variable ComBat corrects on, so it cannot be a per-file property. -->
+                        <DataGridTemplateColumn Header="Plate" Width="150" IsReadOnly="True">
+                            <DataGridTemplateColumn.HeaderStyle>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                    <Setter Property="ToolTip" Value="The plate this run was isolated on.
+Defaults to the plate chosen above; change it here for runs from another plate."/>
+                                </Style>
+                            </DataGridTemplateColumn.HeaderStyle>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.Plates, RelativeSource={RelativeSource AncestorType=Window}}"
+                                              DisplayMemberPath="PlateName"
+                                              SelectedValuePath="PlateId"
+                                              SelectedValue="{Binding PlateId, UpdateSourceTrigger=PropertyChanged}"
+                                              SelectionChanged="RowPlateComboBox_SelectionChanged"
+                                              BorderThickness="0"
+                                              Background="Transparent"
+                                              Margin="4,2"
+                                              VerticalContentAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTextColumn Header="Proteins"
+
+                                            Binding="{Binding ProteinCount, StringFormat=N0}"
                                             Width="85" 
          
                                             IsReadOnly="True">
@@ -597,7 +652,7 @@ Assign a condition to each file."/>
                            FontStyle="Italic">
                     <Run Text="💡 Tip:"/>
           
-                    <Run Text="Double-click a Biological Condition cell to edit it directly, or use Batch Assign to set multiple files at once."/>
+                    <Run Text="Double-click a Biological Condition cell to edit it directly, or use Batch Assign to set multiple files at once. Runs from a different plate can be re-pointed in the Plate column."/>
                 </TextBlock>
             </Grid>
         </Border>
@@ -607,7 +662,18 @@ Assign a condition to each file."/>
                     Orientation="Horizontal" 
                     HorizontalAlignment="Right"
                     Margin="0,12,0,0">
-            <Button Content="Import" 
+            <!-- Why the Import button is dead, written from the same branches that disable it -->
+            <TextBlock x:Name="ImportBlockedText"
+                       MaxWidth="560"
+                       TextWrapping="Wrap"
+                       TextAlignment="Right"
+                       VerticalAlignment="Center"
+                       FontSize="11"
+                       FontStyle="Italic"
+                       Foreground="#b45309"
+                       Margin="0,0,12,0"
+                       Visibility="Collapsed"/>
+            <Button Content="Import"
                     x:Name="ImportButton"
                    
                     Click="Import_Click"

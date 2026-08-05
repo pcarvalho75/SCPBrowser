@@ -148,10 +148,26 @@ This adds the PlateFilterControl above the TabControl
                 <!-- TabControl -->
             </Grid.RowDefinitions>
 
-            <!-- Plate Filter Control (initially hidden) -->
-            <local:PlateFilterControl x:Name="PlateFilterControl"
-                              Grid.Row="0"
-                              Visibility="Collapsed"/>
+            <!-- Plate Filter Control + pipeline status strip (both initially hidden) -->
+            <StackPanel Grid.Row="0">
+                <local:PlateFilterControl x:Name="PlateFilterControl"
+                                  Visibility="Collapsed"/>
+
+                <!-- The pipeline has an order (plates -> MS runs -> reference -> classification -> FASTA)
+                     that the artifact-named tabs do not express, so state it in one line. -->
+                <Border x:Name="PipelineStatusStrip"
+                        Background="#f8fafc"
+                        BorderBrush="#e2e8f0"
+                        BorderThickness="0,1,0,1"
+                        Padding="10,4"
+                        Visibility="Collapsed">
+                    <TextBlock x:Name="PipelineStatusText"
+                               FontSize="11"
+                               Foreground="#475569"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="What this project contains. These are project totals — they are not affected by the plate filter or the protein-count cutoff."/>
+                </Border>
+            </StackPanel>
 
             <!-- TabControl - Main application interface (initially hidden) -->
             <TabControl x:Name="MainTabControl" 
@@ -167,7 +183,7 @@ This adds the PlateFilterControl above the TabControl
                 <TabItem Header="Explorer">
                     <local:PeptideTicControl x:Name="PeptideTicTab"/>
                 </TabItem>
-                <TabItem Header="BioTessera">
+                <TabItem Header="BioTessera" x:Name="BioTesseraTabItem">
                     <biotessera:ProteoMappingControl x:Name="BioTesseraTab"/>
                 </TabItem>
             </TabControl>

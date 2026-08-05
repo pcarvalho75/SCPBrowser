@@ -562,7 +562,15 @@ namespace SCPBrowser
             _methodSelector = new ComboBox { FontSize = 11, Margin = new Thickness(0, 0, 0, 4) };
             _methodSelector.Items.Add(new ComboBoxItem { Content = "QScore classifier", Tag = "Quantitative" });
             _methodSelector.Items.Add(new ComboBoxItem { Content = "Standard (4-metric)", Tag = "Standard" });
-            _methodSelector.SelectedIndex = 0;
+            // Show the project's method, not a hardcoded first item — this panel is rebuilt on every cell-type
+            // click, and a selector that keeps resetting to Quantitative is what the reclassify would apply.
+            SetSelectedClassificationMethod(_classificationMethod);
+            // Remember the user's own change so it survives the next rebuild too.
+            _methodSelector.SelectionChanged += (s, e) =>
+            {
+                if (s is ComboBox combo && combo.SelectedItem is ComboBoxItem selected && selected.Tag is string tag)
+                    _classificationMethod = tag;
+            };
             _methodSelector.ToolTip = "QScore: a quantitative classifier — margin-based specificity, rank enrichment (AUROC) and detection likelihood, fused as a product of experts.\n" +
                                       "Standard: Spearman + specificity + marker enrichment + coverage, averaged (what SCPBrowser has always shipped).\n" +
                                       "Key markers, priors and exclusions apply to both. Click Reclassify to apply a change.";
@@ -946,17 +954,27 @@ namespace SCPBrowser
             });
         }
 
+        /// <summary>
+        /// The project's classifier method. Held outside the ComboBox because the whole key-markers panel —
+        /// selector included — is rebuilt every time a cell type is picked; without this field the rebuilt
+        /// selector reverts to "Quantitative" and the next reclassify silently switches a Standard project.
+        /// </summary>
+        private string _classificationMethod = "Quantitative";
+
         /// <summary>The classifier method currently selected ("Quantitative" or "Standard").</summary>
         public string SelectedClassificationMethod =>
-            (_methodSelector?.SelectedItem as ComboBoxItem)?.Tag as string ?? "Quantitative";
+            (_methodSelector?.SelectedItem as ComboBoxItem)?.Tag as string ?? _classificationMethod;
 
         /// <summary>Reflects the project's saved method in the selector (called when the panel is populated).</summary>
         public void SetSelectedClassificationMethod(string method)
         {
+            // Record it even when the selector does not exist yet: the panel is only built once a cell type
+            // is clicked, which is normally after the host has told us what the project uses.
+            _classificationMethod = string.Equals(method, "Standard", StringComparison.OrdinalIgnoreCase) ? "Standard" : "Quantitative";
+
             if (_methodSelector == null) return;
-            string target = string.Equals(method, "Standard", StringComparison.OrdinalIgnoreCase) ? "Standard" : "Quantitative";
             foreach (var item in _methodSelector.Items)
-                if (item is ComboBoxItem ci && (ci.Tag as string) == target) { _methodSelector.SelectedItem = ci; return; }
+                if (item is ComboBoxItem ci && (ci.Tag as string) == _classificationMethod) { _methodSelector.SelectedItem = ci; return; }
         }
 
         private void RefreshMarkersCountText()

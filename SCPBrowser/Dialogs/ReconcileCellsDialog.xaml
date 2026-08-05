@@ -28,9 +28,10 @@
                 <ComboBoxItem Content="By name (drop # / well)"/>
                 <ComboBoxItem Content="By order (drop # ↔ run)"/>
             </ComboBox>
-            <Button Content="Suggest" Click="Suggest_Click" Padding="12,4" Margin="10,0,0,0"/>
-            <Button Content="Clear all links" Click="ClearAll_Click" Padding="12,4" Margin="8,0,0,0"/>
-            <TextBlock x:Name="InfoText" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#64748b"/>
+            <Button x:Name="SuggestButton" Content="Suggest" Click="Suggest_Click" Padding="12,4" Margin="10,0,0,0"/>
+            <Button x:Name="ClearAllButton" Content="Clear all links" Click="ClearAll_Click" Padding="12,4" Margin="8,0,0,0"/>
+            <TextBlock x:Name="InfoText" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#64748b"
+                       Text="Loading cellenONE runs..." TextWrapping="Wrap"/>
         </DockPanel>
 
         <DataGrid Grid.Row="2" x:Name="MatchGrid"
@@ -59,7 +60,7 @@
         </DataGrid>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="Apply links" Click="Apply_Click" Padding="18,6" Margin="0,0,10,0"
+            <Button x:Name="ApplyButton" Content="Apply links" Click="Apply_Click" Padding="18,6" Margin="0,0,10,0"
                     Background="#2563eb" Foreground="White" BorderThickness="0" FontWeight="SemiBold"/>
             <Button Content="Close" Click="Close_Click" IsCancel="True" Padding="18,6"/>
         </StackPanel>

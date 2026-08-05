@@ -37,7 +37,25 @@ namespace SCPBrowser
         private const string SETTING_UPPER_PROTEIN_CUTOFF = "UpperProteinCutoff";
         private DataFilterService _dataFilterService;
         private int _pendingProteinCutoff;
-        private CancellationTokenSource _projectCts;
+
+        /// <summary>
+        /// True while OpenProjectAsync is running. A project load yields to the dispatcher repeatedly
+        /// (service construction, table migrations, GO enrichment) and the loading overlay does not cover
+        /// the menu bar, so without this a second load can start on top of the first: it overwrites every
+        /// service field, and the first load's DataLoaded then writes project A's classifications into
+        /// project B's database.
+        /// </summary>
+        private bool _projectLoadInProgress;
+
+        /// <summary>Project name as shown in the title, kept so the title can be recomputed without it.</summary>
+        private string _currentProjectName;
+
+        /// <summary>
+        /// Non-null while the loaded dataset is a subset of what the project database records, i.e. some
+        /// imports were not found on disk. Every count, figure and export is computed on the subset, so the
+        /// fact rides in the window title and the status strip for the whole session.
+        /// </summary>
+        private string _partialDataNote;
 
 
         // Public properties for controls to access
@@ -153,18 +171,35 @@ namespace SCPBrowser
 
         private async Task OpenProjectAsync(string projectDbPath)
         {
+            // A load in flight owns every service field; a second one would overwrite them mid-flight and the
+            // two loads would then cross-write each other's project database.
+            if (_projectLoadInProgress)
+            {
+                MessageBox.Show(
+                    "A project is still loading. Please wait for it to finish before opening another one.",
+                    "Project Loading",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            _projectLoadInProgress = true;
+            SetProjectEntryPointsEnabled(false);
+
             try
             {
-                // Cancel any previous project's in-flight operations
-                _projectCts?.Cancel();
-                _projectCts = new CancellationTokenSource();
-                var ct = _projectCts.Token;
                 LoadingOverlay.SetMessage("Opening Project");
                 LoadingOverlay.SetProgress("Loading project information...");
                 LoadingOverlay.Show();
 
                 // Allow UI to render the overlay
                 await Task.Delay(50);
+
+                // Detach the previous project's handlers BEFORE its services are replaced below.
+                // PlateFilterControl and MainControlTab are XAML-declared singletons that survive a project
+                // switch and no open path calls CloseProject(), so without this the delegates accumulate and
+                // every later filter action runs once per project ever opened.
+                UnsubscribeProjectEvents();
 
                 _currentProjectPath = projectDbPath;
 
@@ -228,7 +263,7 @@ namespace SCPBrowser
                 PlateFilterControl.Visibility = Visibility.Visible;
 
 
-                // Subscribe to events
+                // Subscribe to events (the matching -= pass ran before the services were replaced above)
                 PlateFilterControl.PlateSelectionChanged += PlateFilterControl_PlateSelectionChanged;
                 PlateFilterControl.PlateColorChanged += PlateFilterControl_PlateColorChanged;
                 MainControlTab.ProteinCutoffChanged += MainControlTab_ProteinCutoffChanged;
@@ -254,56 +289,40 @@ namespace SCPBrowser
                     _dataFilterService.UpperProteinCutoff = upperCutoffValue;
                 }
 
+                _currentProjectName = projectInfo.ProjectName;
                 UpdateWindowTitle(projectInfo.ProjectName);
 
                 // Find and load ALL imported parquet files
                 LoadingOverlay.SetProgress("Finding associated data...");
 
                 List<string> parquetPaths = new List<string>();
+                int expectedImportCount = allImportedFiles?.Count ?? 0;
 
-                if (allImportedFiles != null && allImportedFiles.Count > 0)
+                if (expectedImportCount > 0)
                 {
                     string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
+                    var resolved = await ResolveImportPathsAsync(allImportedFiles, projectDirectory);
+                    parquetPaths = resolved.Paths;
 
-                    foreach (var fileName in allImportedFiles)
-                    {
-                        // Only use the pure filename component so a stored absolute
-                        // path or ".." segment cannot escape the imports folder.
-                        string safeName = Path.GetFileName(fileName ?? string.Empty);
-                        if (string.IsNullOrEmpty(safeName))
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[OpenProject] Skipping invalid imported filename: '{fileName}'");
-                            continue;
-                        }
-                        string parquetPath = Path.Combine(projectDirectory, "imports", safeName);
-                        bool fileExists = await Task.Run(() => File.Exists(parquetPath));
-
-                        if (fileExists)
-                        {
-                            parquetPaths.Add(parquetPath);
-                        }
-                        else
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[OpenProject] Imported parquet missing on disk: {parquetPath}");
-                        }
-                    }
-
-                    if (parquetPaths.Count > 0)
-                    {
-                        LoadingOverlay.SetProgress($"Loading data from {parquetPaths.Count} file(s)...");
-                    }
-                    else
-                    {
+                    // Don't leave the wait screen up underneath a modal the user has to answer.
+                    if (resolved.Missing.Count > 0)
                         LoadingOverlay.Hide();
-                        MessageBox.Show(
-                            "No data files found in imports folder.\n\nPlease re-import your data.",
-                            "Data Files Missing",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Warning);
+
+                    ReportMissingImports(resolved.Missing, expectedImportCount, parquetPaths.Count);
+
+                    if (resolved.Missing.Count > 0)
+                    {
+                        LoadingOverlay.SetMessage("Opening Project");
+                        LoadingOverlay.Show();
                     }
+
+                    LoadingOverlay.SetProgress(parquetPaths.Count > 0
+                        ? $"Loading data from {parquetPaths.Count} file(s)..."
+                        : "No data files could be loaded.");
                 }
                 else
                 {
+                    ReportMissingImports(null, 0, 0);
                     LoadingOverlay.SetProgress("No data imported yet. Please import a Parquet file.");
                 }
 
@@ -313,8 +332,7 @@ namespace SCPBrowser
 
                 LoadingOverlay.Hide();
 
-
-
+                await UpdatePipelineStatusAsync();
 
 
                 AddToRecentProjects(projectDbPath);
@@ -336,6 +354,223 @@ namespace SCPBrowser
                     "Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
+            }
+            finally
+            {
+                _projectLoadInProgress = false;
+                SetProjectEntryPointsEnabled(true);
+            }
+        }
+
+        /// <summary>
+        /// Enables/disables every route that can start a project load. The loading overlay sits inside the
+        /// content grid and does NOT cover the menu bar, so these have to be turned off explicitly for the
+        /// duration of a load.
+        /// </summary>
+        private void SetProjectEntryPointsEnabled(bool enabled)
+        {
+            NewProjectMenuItem.IsEnabled = enabled;
+            OpenProjectMenuItem.IsEnabled = enabled;
+            NewProjectButton.IsEnabled = enabled;
+            OpenProjectButton.IsEnabled = enabled;
+            RecentProjectsList.IsEnabled = enabled;
+        }
+
+        /// <summary>
+        /// Detaches the handlers wired in OpenProjectAsync. PlateFilterControl and MainControlTab are
+        /// XAML-declared singletons that outlive a project, so this must run before the next += pass.
+        /// </summary>
+        private void UnsubscribeProjectEvents()
+        {
+            PlateFilterControl.PlateSelectionChanged -= PlateFilterControl_PlateSelectionChanged;
+            PlateFilterControl.PlateColorChanged -= PlateFilterControl_PlateColorChanged;
+            MainControlTab.ProteinCutoffChanged -= MainControlTab_ProteinCutoffChanged;
+            MainControlTab.MaxProteinCutoffChanged -= MainControlTab_MaxProteinCutoffChanged;
+            MainControlTab.RunExcludeRequested -= MainControlTab_RunExcludeRequested;
+            MainControlTab.RunRestoreRequested -= MainControlTab_RunRestoreRequested;
+            MainControlTab.ClearExclusionsRequested -= MainControlTab_ClearExclusionsRequested;
+            if (_dataFilterService != null)
+                _dataFilterService.FilteredDataChanged -= DataFilterService_FilteredDataChanged;
+        }
+
+        /// <summary>
+        /// Resolves the import filenames recorded in the project database to paths under the project's
+        /// imports folder, and reports which of them are not on disk. Only the pure filename component is
+        /// used so a stored absolute path or ".." segment cannot escape the imports folder.
+        /// </summary>
+        private static async Task<(List<string> Paths, List<string> Missing)> ResolveImportPathsAsync(
+            List<string> importedFileNames, string projectDirectory)
+        {
+            var paths = new List<string>();
+            var missing = new List<string>();
+
+            if (importedFileNames == null)
+                return (paths, missing);
+
+            foreach (var fileName in importedFileNames)
+            {
+                string safeName = Path.GetFileName(fileName ?? string.Empty);
+                if (string.IsNullOrEmpty(safeName))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ResolveImportPaths] Invalid imported filename: '{fileName}'");
+                    missing.Add(string.IsNullOrWhiteSpace(fileName) ? "(blank filename in database)" : fileName);
+                    continue;
+                }
+
+                string importPath = Path.Combine(projectDirectory, "imports", safeName);
+                if (await Task.Run(() => File.Exists(importPath)))
+                    paths.Add(importPath);
+                else
+                    missing.Add(safeName);
+            }
+
+            return (paths, missing);
+        }
+
+        /// <summary>
+        /// Records, and tells the user about, imports the database lists but that are not on disk.
+        /// Everything downstream - run counts, protein counts, PCA, HVP, classification, exports - is computed
+        /// on whatever survived, so a silently shortened list presents a subset as the complete project.
+        /// The message names the files and the folder: "please re-import" on its own sends the user to import
+        /// files that are already registered, which renames and duplicates them into a worse state.
+        /// </summary>
+        private void ReportMissingImports(List<string> missing, int expectedCount, int loadedCount)
+        {
+            _partialDataNote = (missing != null && missing.Count > 0)
+                ? $"PARTIAL DATA ({loadedCount} of {expectedCount} imports)"
+                : null;
+            UpdateWindowTitle();
+
+            if (missing == null || missing.Count == 0)
+                return;
+
+            string importsFolder = Path.Combine(
+                Path.GetDirectoryName(_currentProjectPath) ?? string.Empty, "imports");
+
+            const int maxListed = 15;
+            string list = string.Join(Environment.NewLine, missing.Take(maxListed).Select(m => "    " + m));
+            if (missing.Count > maxListed)
+                list += Environment.NewLine + $"    ... and {missing.Count - maxListed} more";
+
+            string headline = loadedCount > 0
+                ? $"{missing.Count} of the {expectedCount} imports recorded in this project were not found on disk, " +
+                  $"so only {loadedCount} were loaded.\n\n" +
+                  $"EVERY count, figure and export from here on reflects those {loadedCount} imports only."
+                : $"None of the {expectedCount} imports recorded in this project were found on disk, " +
+                  "so no data could be loaded.";
+
+            var answer = MessageBox.Show(
+                headline + "\n\nExpected in:\n" + importsFolder + "\n\nMissing:\n" + list +
+                "\n\nA moved or renamed project folder is the usual cause; putting the files back is the fix. " +
+                "Re-importing them would register a second copy.\n\nOpen the imports folder now?",
+                loadedCount > 0 ? "Partial Data - Imports Missing" : "Data Files Missing",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (answer != MessageBoxResult.Yes)
+                return;
+
+            try
+            {
+                // The folder itself may be gone too, and Explorer throws on a path that does not exist.
+                if (Directory.Exists(importsFolder))
+                {
+                    System.Diagnostics.Process.Start(
+                        new System.Diagnostics.ProcessStartInfo(importsFolder) { UseShellExecute = true });
+                }
+                else
+                {
+                    MessageBox.Show(
+                        $"The imports folder does not exist either:\n\n{importsFolder}",
+                        "Folder Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not open the folder:\n\n{ex.Message}", "Open Folder",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Refreshes the one-line pipeline strip above the tabs. Best-effort: a failure here must never break
+        /// a project load, so the whole body is guarded.
+        /// </summary>
+        private async Task UpdatePipelineStatusAsync()
+        {
+            if (!_hasOpenProject)
+            {
+                PipelineStatusStrip.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            try
+            {
+                int plateCount = _plateService != null
+                    ? (await _plateService.GetPlatesAsync())?.Count ?? 0
+                    : 0;
+
+                var data = MainControlTab.GetCurrentData();
+                int runCount = data?.RawFileNames?.Count ?? 0;
+
+                bool hasReference = MainControlTab.IsTranscriptomicDatabaseLoaded();
+
+                // Prefer the saved table over the in-memory cache: marker-only classification writes straight to
+                // raw_file_cell_type_classifications without going through MainControl, so the cache alone would
+                // under-report. Failure here must not cost us the rest of the strip.
+                int classifiedCount = MainControlTab.GetCellTypePredictions()?.Count ?? 0;
+                try
+                {
+                    if (_cellTypeService != null && _parquetService != null)
+                    {
+                        int? importId = await _parquetService.GetMostRecentImportIdAsync();
+                        if (importId.HasValue)
+                        {
+                            var saved = await _cellTypeService.LoadCellTypeClassificationsAsync(importId.Value);
+                            classifiedCount = saved?.Count ?? 0;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[UpdatePipelineStatusAsync] classification count: {ex}");
+                }
+
+                string fastaPath = _projectDatabaseService != null
+                    ? await _projectDatabaseService.GetSettingAsync("fasta_path", "")
+                    : "";
+                bool hasFasta = !string.IsNullOrEmpty(fastaPath) && File.Exists(fastaPath);
+
+                // Name the menu action for each unmet step - the tab names say nothing about the ordering.
+                string plates = plateCount > 0
+                    ? $"Plates {plateCount}"
+                    : "Plates — (Import ▸ Import Plate Metadata...)";
+                string runs = runCount > 0
+                    ? $"MS runs {runCount}"
+                    : "MS runs — (Import ▸ Parquet File...)";
+                string reference = hasReference
+                    ? "Reference ✓"
+                    : "Reference — (Import ▸ Omic Profile...)";
+                string classified = classifiedCount > 0
+                    ? $"Classified {classifiedCount}"
+                    : "Classified —";
+                string fasta = hasFasta
+                    ? "FASTA ✓"
+                    : "FASTA — (Import ▸ Search Database (FASTA)...)";
+
+                string text = string.Join("     ·     ", new[] { plates, runs, reference, classified, fasta });
+                if (!string.IsNullOrEmpty(_partialDataNote))
+                    text = _partialDataNote + "     ·     " + text;
+
+                PipelineStatusText.Text = text;
+                PipelineStatusText.Foreground = string.IsNullOrEmpty(_partialDataNote)
+                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x47, 0x55, 0x69))
+                    : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB9, 0x1C, 0x1C));
+                PipelineStatusStrip.Visibility = Visibility.Visible;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[UpdatePipelineStatusAsync] {ex}");
             }
         }
 
@@ -556,10 +791,17 @@ namespace SCPBrowser
 
         private async Task UpdateBioTesseraTabAsync()
         {
-            var data = _dataFilterService.FilteredData ?? _dataFilterService.OriginalData;
-            
+            // This runs because the user clicked the BioTessera tab. Every exit below used to be silent, so a
+            // blank panel was indistinguishable from a failure - say which of the three reasons it is.
+            var data = _dataFilterService?.FilteredData ?? _dataFilterService?.OriginalData;
+
             if (data == null)
+            {
+                MessageBox.Show(
+                    "There is no data to map yet. Import a DIA-NN parquet file (Import ▸ Parquet File...) first.",
+                    "BioTessera", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
+            }
 
             try
             {
@@ -571,7 +813,13 @@ namespace SCPBrowser
 
                 if (proteins.Count == 0)
                 {
-
+                    MessageBox.Show(
+                        selectedRuns != null && selectedRuns.Count > 0
+                            ? $"None of the {selectedRuns.Count} selected run(s) contributed any proteins, so there is " +
+                              "nothing to map. Widen the Explorer selection or relax the filters and try again."
+                            : "The current filters leave no proteins to map. Relax the protein-count cutoff or the " +
+                              "plate filter and try again.",
+                        "BioTessera", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
@@ -588,6 +836,9 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[BioTessera load/generate] {ex}");
+                MessageBox.Show(
+                    $"The BioTessera map could not be generated:\n\n{ex.Message}",
+                    "BioTessera", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -603,9 +854,17 @@ namespace SCPBrowser
 
                 if (string.IsNullOrEmpty(fastaPath) || !System.IO.File.Exists(fastaPath))
                 {
-
+                    // Returning silently left the panel showing "Select a protein and click Load" over an empty
+                    // dropdown, with nothing anywhere naming the prerequisite. State it in the placeholder.
+                    SetProteinCoveragePlaceholder(string.IsNullOrEmpty(fastaPath)
+                        ? "Protein coverage needs the search database.\nUse Import ▸ Search Database (FASTA)... to load one."
+                        : "The search database recorded for this project is no longer on disk:\n" + fastaPath +
+                          "\nRe-import it with Import ▸ Search Database (FASTA)...");
                     return;
                 }
+
+                // A previous project (or a previous state of this one) may have left the no-FASTA notice up.
+                SetProteinCoveragePlaceholder("Select a protein and click Load to view sequence coverage.");
 
                 // Build parquet paths
                 var allImportedFiles = await _parquetService.GetAllImportedParquetFilesAsync();
@@ -636,7 +895,19 @@ namespace SCPBrowser
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[InitializeProteinCoverageAsync] {ex}");
+                SetProteinCoveragePlaceholder("Protein coverage could not be initialised:\n" + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Sets the Protein Coverage tab's placeholder line. The panel exposes no API for this, and the
+        /// placeholder is the only surface the user sees when the panel was never initialised.
+        /// </summary>
+        private void SetProteinCoveragePlaceholder(string message)
+        {
+            var placeholder = PeptideTicTab?.ProteinCoveragePanel?.PlaceholderText;
+            if (placeholder != null)
+                placeholder.Text = message;
         }
 
         private async void ClearCellTypeClassifications_Click(object sender, RoutedEventArgs e)
@@ -668,6 +939,7 @@ namespace SCPBrowser
                 // displaying - and exporting - the classifications it just told the user it had cleared.
                 MainControlTab.ClearCellTypePredictions();
                 PeptideTicTab.SetCellTypePredictions(null, null);
+                await UpdatePipelineStatusAsync();
 
                 MessageBox.Show(
                     "Cell type classifications cleared successfully.\n\n" +
@@ -737,23 +1009,9 @@ namespace SCPBrowser
         }
 
         private void CloseProject()        {
-            // Cancel all in-flight async operations for this project
-            _projectCts?.Cancel();
-            _projectCts = null;
-
             // Unsubscribe from events to avoid double-subscription on next project open
-            PlateFilterControl.PlateSelectionChanged -= PlateFilterControl_PlateSelectionChanged;
-            PlateFilterControl.PlateColorChanged -= PlateFilterControl_PlateColorChanged;
-            MainControlTab.ProteinCutoffChanged -= MainControlTab_ProteinCutoffChanged;
-            MainControlTab.MaxProteinCutoffChanged -= MainControlTab_MaxProteinCutoffChanged;
-            MainControlTab.RunExcludeRequested -= MainControlTab_RunExcludeRequested;
-            MainControlTab.RunRestoreRequested -= MainControlTab_RunRestoreRequested;
-            MainControlTab.ClearExclusionsRequested -= MainControlTab_ClearExclusionsRequested;
-            if (_dataFilterService != null)
-            {
-                _dataFilterService.FilteredDataChanged -= DataFilterService_FilteredDataChanged;
-                _dataFilterService.Clear();
-            }
+            UnsubscribeProjectEvents();
+            _dataFilterService?.Clear();
 
             _currentProjectPath = null;
             SettingsDialog.SetDatabaseService(null);
@@ -784,7 +1042,10 @@ namespace SCPBrowser
             ExportPLPControl.Visibility = Visibility.Collapsed;
 
             PlateFilterControl.Visibility = Visibility.Collapsed;
+            PipelineStatusStrip.Visibility = Visibility.Collapsed;
 
+            _currentProjectName = null;
+            _partialDataNote = null;
             UpdateWindowTitle();
 
 
@@ -796,13 +1057,19 @@ namespace SCPBrowser
                 ?? System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
                 ?? "?";
 
-            if (string.IsNullOrEmpty(projectName))
+            string name = projectName ?? _currentProjectName;
+
+            // The partial-data marker rides in the title for as long as it holds: once the loaded dataset is a
+            // subset of what the project records, every number on screen is a subset number.
+            string partial = string.IsNullOrEmpty(_partialDataNote) ? "" : $"  [{_partialDataNote}]";
+
+            if (string.IsNullOrEmpty(name))
             {
-                Title = $"SCP Browser v{version}";
+                Title = $"SCP Browser v{version}{partial}";
             }
             else
             {
-                Title = $"SCP Browser v{version} - {projectName}";
+                Title = $"SCP Browser v{version} - {name}{partial}";
             }
         }
 
@@ -841,6 +1108,7 @@ namespace SCPBrowser
 
                 // Refresh the plate filter so the new plate is available immediately.
                 await PlateFilterControl.LoadPlatesAsync(_currentProjectPath);
+                await UpdatePipelineStatusAsync();
 
                 string msg = string.IsNullOrEmpty(dialog.CellenOneRunDir)
                     ? $"Plate '{dialog.PlateInfo.PlateName}' registered."
@@ -1031,6 +1299,29 @@ namespace SCPBrowser
                 return;
             }
 
+            // The dialog's Import button stays disabled until a plate is selected, and a brand-new project has no
+            // plates, so without this the user assigns every condition by hand and then finds Import dead. Block
+            // early with the same message the cellenONE route gives.
+            try
+            {
+                var plates = _plateService != null ? await _plateService.GetPlatesAsync() : null;
+                if (plates == null || plates.Count == 0)
+                {
+                    MessageBox.Show(
+                        "This project has no plates yet, and each imported run has to be assigned to one.\n\n" +
+                        "Use Import ▸ Import Plate Metadata... to register a plate first.",
+                        "No plates",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not load the project's plates:\n\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
             string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
 
             var dialog = new ImportParquetDialog(
@@ -1057,26 +1348,32 @@ namespace SCPBrowser
 
                     // Get ALL imported parquet files and reload data
                     var allImportedFiles = await _parquetService.GetAllImportedParquetFilesAsync();
-                    if (allImportedFiles != null && allImportedFiles.Count > 0)
+                    int expectedImportCount = allImportedFiles?.Count ?? 0;
+                    if (expectedImportCount > 0)
                     {
-                        List<string> parquetPaths = new List<string>();
-                        foreach (var fileName in allImportedFiles)
+                        var resolved = await ResolveImportPathsAsync(allImportedFiles, projectDirectory);
+
+                        // Same rule as project open: a shortened list must never pass for the whole project.
+                        if (resolved.Missing.Count > 0)
+                            LoadingOverlay.Hide();
+
+                        ReportMissingImports(resolved.Missing, expectedImportCount, resolved.Paths.Count);
+
+                        if (resolved.Missing.Count > 0)
                         {
-                            string parquetPath = Path.Combine(projectDirectory, "imports", fileName);
-                            if (File.Exists(parquetPath))
-                            {
-                                parquetPaths.Add(parquetPath);
-                            }
+                            LoadingOverlay.SetMessage("Refreshing Data");
+                            LoadingOverlay.Show();
                         }
 
-                        if (parquetPaths.Count > 0)
+                        if (resolved.Paths.Count > 0)
                         {
-                            LoadingOverlay.SetProgress($"Loading {parquetPaths.Count} parquet file(s)...");
-                            await MainControlTab.LoadDataFromProject(parquetPaths, _projectReferenceDatabasePath);
+                            LoadingOverlay.SetProgress($"Loading {resolved.Paths.Count} parquet file(s)...");
+                            await MainControlTab.LoadDataFromProject(resolved.Paths, _projectReferenceDatabasePath);
                         }
                     }
 
                     LoadingOverlay.Hide();
+                    await UpdatePipelineStatusAsync();
                 }
                 catch (Exception ex)
                 {
@@ -1247,24 +1544,32 @@ namespace SCPBrowser
                     MainControlTab.SetPlateColorMap(PlateFilterControl.GetPlateColorMapById());
 
                     var allImportedFiles = await _parquetService.GetAllImportedParquetFilesAsync();
-                    if (allImportedFiles != null && allImportedFiles.Count > 0)
+                    int expectedImportCount = allImportedFiles?.Count ?? 0;
+                    if (expectedImportCount > 0)
                     {
-                        var importPaths = new List<string>();
-                        foreach (var fileName in allImportedFiles)
+                        var resolved = await ResolveImportPathsAsync(allImportedFiles, projectDirectory);
+
+                        // Same rule as project open: a shortened list must never pass for the whole project.
+                        if (resolved.Missing.Count > 0)
+                            LoadingOverlay.Hide();
+
+                        ReportMissingImports(resolved.Missing, expectedImportCount, resolved.Paths.Count);
+
+                        if (resolved.Missing.Count > 0)
                         {
-                            string path = Path.Combine(projectDirectory, "imports", fileName);
-                            if (File.Exists(path))
-                                importPaths.Add(path);
+                            LoadingOverlay.SetMessage("Refreshing Data");
+                            LoadingOverlay.Show();
                         }
 
-                        if (importPaths.Count > 0)
+                        if (resolved.Paths.Count > 0)
                         {
-                            LoadingOverlay.SetProgress($"Loading {importPaths.Count} import(s)...");
-                            await MainControlTab.LoadDataFromProject(importPaths, _projectReferenceDatabasePath);
+                            LoadingOverlay.SetProgress($"Loading {resolved.Paths.Count} import(s)...");
+                            await MainControlTab.LoadDataFromProject(resolved.Paths, _projectReferenceDatabasePath);
                         }
                     }
 
                     LoadingOverlay.Hide();
+                    await UpdatePipelineStatusAsync();
                 }
                 catch (Exception ex)
                 {
@@ -1585,6 +1890,7 @@ namespace SCPBrowser
                 bool clearedStaleLabels = await MainControlTab.ReloadTranscriptomicReferenceAsync();
                 PeptideTicTab.EnableCellTypeClassification(MainControlTab.IsTranscriptomicDatabaseLoaded());
                 await OfferReclassifyAfterReferenceChangeAsync(clearedStaleLabels);
+                await UpdatePipelineStatusAsync();
             }
             catch (Exception ex)
             {
@@ -1634,6 +1940,7 @@ namespace SCPBrowser
                 bool clearedStaleLabels = await MainControlTab.ReloadTranscriptomicReferenceAsync();
                 PeptideTicTab.EnableCellTypeClassification(MainControlTab.IsTranscriptomicDatabaseLoaded());
                 await OfferReclassifyAfterReferenceChangeAsync(clearedStaleLabels);
+                await UpdatePipelineStatusAsync();
             }
             catch (Exception ex)
             {
@@ -1699,6 +2006,7 @@ namespace SCPBrowser
                 bool clearedStaleLabels = await MainControlTab.ReloadTranscriptomicReferenceAsync();
                 PeptideTicTab.EnableCellTypeClassification(MainControlTab.IsTranscriptomicDatabaseLoaded());
                 await OfferReclassifyAfterReferenceChangeAsync(clearedStaleLabels);
+                await UpdatePipelineStatusAsync();
             }
             catch (Exception ex)
             {
@@ -1801,6 +2109,12 @@ namespace SCPBrowser
 
                 // Restore checkbox states from database
                 await RestoreCheckedStatesAsync();
+
+                // BioTessera renders only when this flag is set, and until now only an Explorer selection change
+                // set it - so going straight to the BioTessera tab after a load gave a permanently blank panel.
+                _bioTesseraNeedsUpdate = true;
+
+                await UpdatePipelineStatusAsync();
             }
             catch (Exception ex)
             {
@@ -2092,6 +2406,7 @@ namespace SCPBrowser
                 var colorMap = BuildMarkerCellTypeColorMap(predictions);
                 PeptideTicTab.EnableCellTypeClassification(true);
                 PeptideTicTab.SetCellTypePredictions(predictions, colorMap, selectCellTypeMode: true);
+                await UpdatePipelineStatusAsync();
             }
             catch (Exception ex)
             {
@@ -2282,28 +2597,39 @@ namespace SCPBrowser
                     await _dataFilterService.LoadPlateMappingAsync(_parquetService, _plateService);
                 }
 
-                // 2. Resolve the surviving parquet imports back to disk paths.
+                // 2. Resolve the surviving parquet imports back to disk paths. Imports the database lists but
+                //    that are not on disk are reported, never silently dropped - the reload would otherwise
+                //    quietly shrink the dataset behind every count and figure on screen.
                 var allImportedFiles = await _parquetService.GetAllImportedParquetFilesAsync();
                 var parquetPaths = new List<string>();
-                if (allImportedFiles != null && allImportedFiles.Count > 0)
+                int expectedImportCount = allImportedFiles?.Count ?? 0;
+                if (expectedImportCount > 0)
                 {
                     string projectDirectory = Path.GetDirectoryName(_currentProjectPath);
+                    var resolved = await ResolveImportPathsAsync(allImportedFiles, projectDirectory);
+                    parquetPaths = resolved.Paths;
 
-                    foreach (var fileName in allImportedFiles)
+                    if (resolved.Missing.Count > 0)
+                        LoadingOverlay.Hide();
+
+                    ReportMissingImports(resolved.Missing, expectedImportCount, parquetPaths.Count);
+
+                    if (resolved.Missing.Count > 0)
                     {
-                        string safeName = Path.GetFileName(fileName ?? string.Empty);
-                        if (string.IsNullOrEmpty(safeName)) continue;
-
-                        string parquetPath = Path.Combine(projectDirectory, "imports", safeName);
-                        bool fileExists = await Task.Run(() => File.Exists(parquetPath));
-                        if (fileExists)
-                            parquetPaths.Add(parquetPath);
+                        LoadingOverlay.SetMessage("Reloading Project Data");
+                        LoadingOverlay.Show();
                     }
+                }
+                else
+                {
+                    ReportMissingImports(null, 0, 0);
                 }
 
                 // 3. Push refreshed data through MainControlTab; its existing DataLoaded
                 //    event chain refreshes ScatterPlot, PeptideTic, ProteinMatrix, etc.
-                LoadingOverlay.SetProgress($"Reloading data from {parquetPaths.Count} file(s)...");
+                LoadingOverlay.SetProgress(expectedImportCount > 0
+                    ? $"Reloading data from {parquetPaths.Count} of {expectedImportCount} file(s)..."
+                    : "Reloading data from 0 file(s)...");
                 await MainControlTab.LoadDataFromProject(parquetPaths, _projectReferenceDatabasePath);
 
                 // 4. If the user has the Project Browser dialog open, refresh its inner
@@ -2316,6 +2642,7 @@ namespace SCPBrowser
                 }
 
                 LoadingOverlay.Hide();
+                await UpdatePipelineStatusAsync();
             }
             catch
             {
@@ -2391,6 +2718,7 @@ namespace SCPBrowser
                 PeptideTicTab.SetCellTypePredictions(predictions, colorMap);
 
                 LoadingOverlay.Hide();
+                await UpdatePipelineStatusAsync();
 
                 // Show summary
                 int totalMarkers = keyMarkers?.Values.Sum(m => m.Count) ?? 0;
@@ -2696,16 +3024,14 @@ namespace SCPBrowser
                 GoStatusPanel.Visibility = Visibility.Collapsed;
             }
 
-            // Enable/disable project buttons on welcome screen
-            OpenProjectButton.IsEnabled = isReady;
-            NewProjectButton.IsEnabled = isReady;
-
-            // Enable/disable File menu items
-            NewProjectMenuItem.IsEnabled = isReady;
-            OpenProjectMenuItem.IsEnabled = isReady;
-
-            // Enable/disable recent projects list
-            RecentProjectsList.IsEnabled = isReady;
+            // GO is one optional colouring mode plus the BioTessera tab, and MainControl.LoadGoEnrichmentAsync
+            // already degrades gracefully without it - so only the GO-dependent surface is gated. Gating Open /
+            // New / Recent on it meant a fresh install could not open its own data until an ontology plus species
+            // annotations had been downloaded.
+            BioTesseraTabItem.IsEnabled = isReady;
+            BioTesseraTabItem.ToolTip = isReady
+                ? null
+                : "Needs the Gene Ontology database - set it up via Utils ▸ GO Database...";
         }
 
         private async void ImportFasta_Click(object sender, RoutedEventArgs e)
@@ -2761,6 +3087,7 @@ namespace SCPBrowser
                 await InitializeProteinCoverageAsync();
 
                 LoadingOverlay.Hide();
+                await UpdatePipelineStatusAsync();
 
                 MessageBox.Show(
                     $"Successfully imported {count:N0} protein annotations from:\n\n{Path.GetFileName(dialog.FileName)}",

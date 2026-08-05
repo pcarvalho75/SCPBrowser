@@ -235,7 +235,7 @@ and how stable each call is to the proteins measured.</div>
             int y = padT;
             foreach (var c in cls)
             {
-                sb.Append($@"<text x=""{padL - 12}"" y=""{y + rowH * 1.5 + 4}"" text-anchor=""end"" font-size=""12.5"" font-weight=""600"" fill=""var(--text-primary)"">{Esc(c.Label)}</text>");
+                sb.Append($@"<text x=""{padL - 12}"" y=""{N(y + rowH * 1.5 + 4)}"" text-anchor=""end"" font-size=""12.5"" font-weight=""600"" fill=""var(--text-primary)"">{Esc(c.Label)}</text>");
                 sb.Append(Bar(padL, y, barMax, rowH, c.Precision, S1));
                 sb.Append(Bar(padL, y + rowH, barMax, rowH, c.Recall, S2));
                 sb.Append(Bar(padL, y + rowH * 2, barMax, rowH, c.F1, S3));
@@ -295,8 +295,8 @@ and how stable each call is to the proteins measured.</div>
                 sb.Append($@"<text x=""{padL - 12}"" y=""{y + 21}"" text-anchor=""end"" font-size=""12.5"" font-weight=""600"" fill=""var(--text-primary)"">{Esc(s.Name)}</text>");
                 sb.Append(Bar(padL, y, barMax, rowH - 4, s.StandaloneAccuracy, dead ? Critical : S1));
                 string tag = dead
-                    ? $@"<tspan fill=""{Critical}"" font-weight=""600"">inert</tspan> · spread {s.MeanSpread:F4}"
-                    : $"spread {s.MeanSpread:F3}";
+                    ? $@"<tspan fill=""{Critical}"" font-weight=""600"">inert</tspan> · spread {N4(s.MeanSpread)}"
+                    : $"spread {N3(s.MeanSpread)}";
                 sb.Append($@"<text x=""{padL + barMax + 66}"" y=""{y + 21}"" font-size=""11.5"" fill=""var(--text-secondary)"">{tag}</text>");
                 y += rowH;
             }
@@ -378,17 +378,17 @@ and how stable each call is to the proteins measured.</div>
             {
                 double a = minY + (maxY - minY) * t / 4.0;
                 double yy = Y(a);
-                sb.Append($@"<line x1=""{padL}"" y1=""{yy:F1}"" x2=""{padL + plotW}"" y2=""{yy:F1}"" stroke=""var(--grid)"" stroke-width=""1""/>");
-                sb.Append($@"<text x=""{padL - 10}"" y=""{yy + 4:F1}"" text-anchor=""end"" font-size=""11"" fill=""var(--text-muted)"">{Pct(a, 0)}</text>");
+                sb.Append($@"<line x1=""{padL}"" y1=""{N(yy)}"" x2=""{padL + plotW}"" y2=""{N(yy)}"" stroke=""var(--grid)"" stroke-width=""1""/>");
+                sb.Append($@"<text x=""{padL - 10}"" y=""{N(yy + 4)}"" text-anchor=""end"" font-size=""11"" fill=""var(--text-muted)"">{Pct(a, 0)}</text>");
             }
 
-            var d = string.Join(" ", pts.Select((p, i) => $"{(i == 0 ? "M" : "L")}{X(p.ReferenceCellsPerClass):F1},{Y(p.Accuracy):F1}"));
+            var d = string.Join(" ", pts.Select((p, i) => $"{(i == 0 ? "M" : "L")}{N(X(p.ReferenceCellsPerClass))},{N(Y(p.Accuracy))}"));
             sb.Append($@"<path d=""{d}"" fill=""none"" stroke=""{S1}"" stroke-width=""2"" stroke-linejoin=""round"" stroke-linecap=""round""/>");
             foreach (var p in pts)
             {
-                sb.Append($@"<circle cx=""{X(p.ReferenceCellsPerClass):F1}"" cy=""{Y(p.Accuracy):F1}"" r=""4.5"" fill=""{S1}"" stroke=""var(--surface-1)"" stroke-width=""2""/>");
-                sb.Append($@"<text x=""{X(p.ReferenceCellsPerClass):F1}"" y=""{Y(p.Accuracy) - 12:F1}"" text-anchor=""middle"" font-size=""11"" fill=""var(--text-secondary)"">{Pct(p.Accuracy, 1)}</text>");
-                sb.Append($@"<text x=""{X(p.ReferenceCellsPerClass):F1}"" y=""{padT + plotH + 18}"" text-anchor=""middle"" font-size=""11.5"" fill=""var(--text-secondary)"">{p.ReferenceCellsPerClass}</text>");
+                sb.Append($@"<circle cx=""{N(X(p.ReferenceCellsPerClass))}"" cy=""{N(Y(p.Accuracy))}"" r=""4.5"" fill=""{S1}"" stroke=""var(--surface-1)"" stroke-width=""2""/>");
+                sb.Append($@"<text x=""{N(X(p.ReferenceCellsPerClass))}"" y=""{N(Y(p.Accuracy) - 12)}"" text-anchor=""middle"" font-size=""11"" fill=""var(--text-secondary)"">{Pct(p.Accuracy, 1)}</text>");
+                sb.Append($@"<text x=""{N(X(p.ReferenceCellsPerClass))}"" y=""{padT + plotH + 18}"" text-anchor=""middle"" font-size=""11.5"" fill=""var(--text-secondary)"">{p.ReferenceCellsPerClass}</text>");
             }
             sb.Append($@"<text x=""{padL + plotW / 2}"" y=""{h - 8}"" text-anchor=""middle"" font-size=""12"" fill=""var(--text-secondary)"">reference cells per class</text>");
             sb.Append("</svg></div></div>");
@@ -449,6 +449,13 @@ and how stable each call is to the proteins measured.</div>
         }
 
         private static string Pct(double v, int dp) => (v * 100).ToString("F" + dp, CultureInfo.InvariantCulture) + "%";
+
+        // Every non-integer number that reaches the markup must be written with an invariant decimal point.
+        // In SVG path data a comma IS the coordinate separator, so a locale that formats 240.5 as "240,5"
+        // does not fail — it silently redraws the curve from different-but-plausible coordinates.
+        private static string N(double v) => v.ToString("F1", CultureInfo.InvariantCulture);
+        private static string N3(double v) => v.ToString("F3", CultureInfo.InvariantCulture);
+        private static string N4(double v) => v.ToString("F4", CultureInfo.InvariantCulture);
 
         private static string Esc(string s) => (s ?? "")
             .Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");

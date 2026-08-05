@@ -61,6 +61,11 @@ namespace SCPBrowser
             MaxProteinCutoffControl.ShowInfinityAtMax = true;
             MaxProteinCutoffControl.SetColorScheme("#fee2e2", "#dc2626", "#dc2626");
 
+            // StatusText now carries the "no reference imported / no GO database" guidance alongside the load
+            // summary, which is longer than the row is wide - without wrapping the warning is silently clipped,
+            // which is the same failure U13 is fixing.
+            StatusText.TextWrapping = TextWrapping.Wrap;
+
             // Bubble up histogram events
             ProteinHistogram.RunExcludeRequested += (s, rawFileName) => RunExcludeRequested?.Invoke(this, rawFileName);
             ProteinHistogram.RunRestoreRequested += (s, rawFileName) => RunRestoreRequested?.Invoke(this, rawFileName);
@@ -205,7 +210,10 @@ namespace SCPBrowser
                     {
                         // No reference profiles imported yet — normal initial state, no error dialog
                         _cellTypePredictions = null;
-                        StatusText.Text = "No reference profiles imported — use Reference menu to import omic data.";
+                        // Name the menu path that actually exists: there is no "Reference" menu, the importer lives
+                        // under Import. Guidance that points at a menu the user cannot find reads as a dead end on
+                        // the one step that gates the whole classification half of the pipeline.
+                        StatusText.Text = "No reference profiles imported — use Import → Omic Profile... to import omic data.";
                     }
                 }
                 catch (Exception ex)
@@ -233,7 +241,8 @@ namespace SCPBrowser
 
             if (!goStatusService.DatabaseExists || !goStatusService.HasOntology)
             {
-                StatusText.Text = "GO database not configured. Use Tools → GO Database to set up.";
+                // The GO setup dialog is under Utils, not a "Tools" menu (which does not exist).
+                StatusText.Text = "GO database not configured. Use Utils → GO Database... to set up.";
                 _goEnrichmentResults = null;
                 return;
             }
@@ -242,7 +251,7 @@ namespace SCPBrowser
             var humanSpecies = goStatusService.InstalledSpecies?.FirstOrDefault(s => s.TaxonId == 9606);
             if (humanSpecies == null)
             {
-                StatusText.Text = "No GO annotations for Human. Use Tools → GO Database to download.";
+                StatusText.Text = "No GO annotations for Human. Use Utils → GO Database... to download.";
                 _goEnrichmentResults = null;
                 return;
             }
@@ -493,7 +502,19 @@ namespace SCPBrowser
                 await LoadTranscriptomicReferenceAsync();
                 await LoadGoEnrichmentAsync();
 
-                StatusText.Text = $"Loaded successfully: {_currentData.TotalRawFiles} runs";
+                // Both loaders report a missing reference / unconfigured GO database into StatusText, and this line
+                // used to overwrite that unconditionally - so the two warnings that gate the classification half of
+                // the pipeline were never actually seen. Carry them forward next to the run count instead of
+                // silently claiming an unqualified success.
+                var loadSummary = $"Loaded successfully: {_currentData.TotalRawFiles} runs";
+                var missing = new List<string>();
+                if (!_cellTypeClassificationManager.IsLoaded)
+                    missing.Add("no reference profile imported (Import → Omic Profile...)");
+                if (_goEnrichmentResults == null)
+                    missing.Add("no GO enrichment (Utils → GO Database...)");
+                StatusText.Text = missing.Count > 0
+                    ? $"{loadSummary} — {string.Join("; ", missing)}"
+                    : loadSummary;
 
                 if (mainWindow != null)
                 {

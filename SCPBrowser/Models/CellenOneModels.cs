@@ -88,9 +88,12 @@ namespace SCPBrowser.Models
     }
 
     /// <summary>
-    /// A single isolated (printed) cell within a <see cref="CellenOneRun"/>. The stable per-cell key is
+    /// A single isolated (printed) cell within a <see cref="CellenOneRun"/>. The only unique per-cell key is
     /// <see cref="DropNo"/> (it also appears in the image filenames). <see cref="TargetWell"/> is NOT unique in
-    /// grid/slide layouts, so consumers should plot by <see cref="XPos"/>/<see cref="YPos"/>/<see cref="Field"/>.
+    /// grid/slide layouts, and neither is <see cref="XPos"/>/<see cref="YPos"/>/<see cref="Field"/> — those are a
+    /// per-imaging-field position that repeats across cells (a real 208-cell run has only 14 distinct (XPos,YPos)
+    /// pairs and 154 distinct Target/Field/XPos/YPos tuples). Consumers that need one visual element per cell must
+    /// therefore lay out in a sequential order keyed on <see cref="DropNo"/>, not by position.
     /// </summary>
     public class IsolatedCell
     {
@@ -104,6 +107,8 @@ namespace SCPBrowser.Models
         public string? TargetWell { get; set; }
         public int? Target { get; set; }
         public int? Field { get; set; }
+
+        /// <summary>Position of the imaging field this cell was picked from — NOT a per-cell coordinate; many cells share one (XPos,YPos). Never use as a layout/identity key.</summary>
         public int? XPos { get; set; }
         public int? YPos { get; set; }
 
@@ -127,7 +132,12 @@ namespace SCPBrowser.Models
         /// <summary>Cell-sized blobs found in the brightfield frame by image analysis; &gt;1 ⇒ likely doublet (catches ones the instrument missed).</summary>
         public int? BlobCount { get; set; }
 
-        /// <summary>User QC disposition set in the Cell Plate Viewer: null = unreviewed, "flag" = manually flagged for review, "keep", or "discard". Non-destructive — recorded only, does not alter the analysis.</summary>
+        /// <summary>
+        /// User QC disposition set in the Cell Plate Viewer: null = unreviewed, "flag" = manually flagged for
+        /// review, "keep", or "discard". Recording it does NOT by itself remove the cell from the analysis —
+        /// nothing downstream (filtering, classification, export) reads this column. The viewer's
+        /// "Apply discards" action is what converts a discard into a run exclusion, which the analysis does honour.
+        /// </summary>
         public string? ReviewStatus { get; set; }
 
         /// <summary>Optional free-text note explaining the review decision.</summary>

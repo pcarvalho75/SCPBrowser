@@ -124,6 +124,8 @@ namespace SCPBrowser.Services
             var summary = new PLPExportSummary();
             var classBreakdown = new Dictionary<string, int>();
             int skipped = 0;
+            int missingPrimary = 0;
+            int missingSecondary = 0;
 
             foreach (var run in selectedRuns)
             {
@@ -132,6 +134,9 @@ namespace SCPBrowser.Services
 
                 if (primary == null || secondary == null)
                 {
+                    // Track which side is missing so the UI can name the dropdown that has to change.
+                    if (primary == null) missingPrimary++;
+                    if (secondary == null) missingSecondary++;
                     skipped++;
                     continue;
                 }
@@ -170,9 +175,81 @@ namespace SCPBrowser.Services
             summary.TotalProteins = proteinIds.Count;
             summary.ClassBreakdown = classBreakdown;
             summary.SkippedRuns = skipped;
-            summary.SkipReason = skipped > 0 ? "No label available for the selected mode" : null;
+            summary.SkipReason = skipped > 0 ? BuildSkipReason(options, missingPrimary, missingSecondary) : null;
 
             return summary;
+        }
+
+        /// <summary>
+        /// Names the label mode that actually blocked the runs and what to do about it. The old
+        /// "No label available for the selected mode" left the user with a zero-run export and nothing
+        /// pointing at the dropdown responsible for it.
+        /// </summary>
+        private static string BuildSkipReason(PLPExportOptions options, int missingPrimary, int missingSecondary)
+        {
+            var parts = new List<string>();
+
+            if (missingPrimary > 0)
+                parts.Add($"{missingPrimary} have no {DescribeLabelMode(options.PrimaryLabelMode)} label — change Primary Label, or {RemedyForLabelMode(options.PrimaryLabelMode)}");
+
+            if (missingSecondary > 0)
+                parts.Add($"{missingSecondary} have no {DescribeLabelMode(options.SecondaryLabelMode)} label — change Secondary Label, or {RemedyForLabelMode(options.SecondaryLabelMode)}");
+
+            return parts.Count > 0
+                ? string.Join("; ", parts)
+                : "No label available for the selected mode";
+        }
+
+        /// <summary>Human-readable name of a label mode, matching the dropdown wording.</summary>
+        public static string DescribeLabelMode(PLPLabelMode mode)
+        {
+            return mode switch
+            {
+                PLPLabelMode.CellType => "Cell Type",
+                PLPLabelMode.Plate => "Plate",
+                PLPLabelMode.KMeans => "K-means cluster",
+                _ => "Biological Condition",
+            };
+        }
+
+        private static string RemedyForLabelMode(PLPLabelMode mode)
+        {
+            return mode switch
+            {
+                PLPLabelMode.CellType => "classify cells first",
+                PLPLabelMode.Plate => "assign the runs to a plate first",
+                PLPLabelMode.KMeans => "run k-means first",
+                _ => "set biological conditions first",
+            };
+        }
+
+        /// <summary>
+        /// Resolves the primary/secondary label pair for every selected run. Exposed so the analysis report
+        /// can record which run carried which class — with the lasso selection unpersisted, that list is the
+        /// only durable record of what actually went into an export.
+        /// </summary>
+        public static List<(string Run, string Primary, string Secondary)> GetRunLabelPairs(
+            List<string> selectedRuns,
+            ProteomicsData data,
+            PLPExportOptions options,
+            Dictionary<string, CellTypePredictionResult> cellTypePredictions,
+            Dictionary<string, int> rawFileToPlateId,
+            Dictionary<int, string> plateIdToName,
+            Dictionary<string, string> kmeansLabels = null)
+        {
+            var pairs = new List<(string Run, string Primary, string Secondary)>();
+            if (selectedRuns == null)
+                return pairs;
+
+            foreach (var run in selectedRuns)
+            {
+                pairs.Add((
+                    run,
+                    GetRunLabel(run, options.PrimaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap, kmeansLabels),
+                    GetRunLabel(run, options.SecondaryLabelMode, data, cellTypePredictions, rawFileToPlateId, plateIdToName, options.CellTypeMergeMap, kmeansLabels)));
+            }
+
+            return pairs;
         }
 
         /// <summary>

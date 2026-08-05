@@ -71,13 +71,16 @@ namespace SCPBrowser.Models
             if (db == null) return;
 
             await db.SetSettingAsync(KeyPrefix + "ZScoreScale", ZScoreScale.ToString());
-            await db.SetSettingAsync(KeyPrefix + "ClipMaxValue", ClipMaxValue.ToString("R"));
+            // ReadDoubleAsync parses with InvariantCulture, so the writer must use it too. Writing with the
+            // current culture stores "3,5" on a comma-decimal machine, which then fails to parse on reload and
+            // silently reverts the setting to its default - the saved figure stops being reproducible.
+            await db.SetSettingAsync(KeyPrefix + "ClipMaxValue", ClipMaxValue.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
             await db.SetSettingAsync(KeyPrefix + "NumPcaComponents", NumPcaComponents.ToString());
             await db.SetSettingAsync(KeyPrefix + "NumPcsForUmap", NumPcsForUmap.ToString());
             await db.SetSettingAsync(KeyPrefix + "UmapNeighbors", UmapNeighbors.ToString());
             await db.SetSettingAsync(KeyPrefix + "UmapSeed", UmapSeed.ToString());
             await db.SetSettingAsync(KeyPrefix + "UseGuidedEmbedding", UseGuidedEmbedding.ToString());
-            await db.SetSettingAsync(KeyPrefix + "GuidedWeight", GuidedWeight.ToString("R"));
+            await db.SetSettingAsync(KeyPrefix + "GuidedWeight", GuidedWeight.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
             await db.SetSettingAsync(KeyPrefix + "ShowPcaView", ShowPcaView.ToString());
             await db.SetSettingAsync(KeyPrefix + "UseHvpFilter", UseHvpFilter.ToString());
             await db.SetSettingAsync(KeyPrefix + "HvpCount", HvpCount.ToString());

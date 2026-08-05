@@ -274,7 +274,11 @@ namespace SCPBrowser
             ReclassifyRequested?.Invoke(this, new ReclassifyRequestedEventArgs
             {
                 ApplyKeyMarkers = true,
-                PriorWeights = priorWeights
+                PriorWeights = priorWeights,
+                // Carry the browser's current selector value. The event args default to "Quantitative" and
+                // MainWindow persists whatever arrives, so leaving this unset would silently switch a project
+                // the user had deliberately set to "Standard" onto the other classifier on a plain close.
+                ClassificationMethod = OmicBrowser.SelectedClassificationMethod
             });
 
             // Edits have been flushed via the reclassify; clear the flag so

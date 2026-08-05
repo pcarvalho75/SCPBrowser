@@ -39,6 +39,9 @@
                 <ComboBoxItem Content="Discarded"/>
             </ComboBox>
             <TextBlock x:Name="ReviewCountText" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#92400e" FontWeight="SemiBold"/>
+            <Button x:Name="ApplyDiscardsButton" Content="Apply discards ▸ exclusions" Margin="10,0,0,0" Padding="8,2" IsEnabled="False"
+                    Click="ApplyDiscardsButton_Click"
+                    ToolTip="Keep/discard is recorded as an annotation only. This turns the discarded cells that are linked to a DIA-NN run into run exclusions — the mechanism that actually removes them from the UMAP, the classification and the PLP export. Undoable from the excluded-runs grid."/>
             <TextBlock x:Name="InfoText" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="#64748b"/>
         </DockPanel>
 
@@ -151,6 +154,10 @@
                                 <TextBox x:Name="ReviewNoteBox" Padding="4" TextWrapping="Wrap" AcceptsReturn="True" Height="44"
                                          VerticalScrollBarVisibility="Auto" LostKeyboardFocus="ReviewNoteBox_LostFocus"/>
                                 <TextBlock Text="Keys: F flag · K keep · D discard · Backspace clear" Foreground="#94a3b8" FontSize="9" Margin="0,4,0,0"/>
+                                <!-- State the truth in the UI, not just in a code comment: review_status is an annotation
+                                     until it is turned into a run exclusion. -->
+                                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" Foreground="#92400e" FontSize="10"
+                                           Text="These decisions are recorded as annotations. On their own they do not filter the UMAP, the classification or the PLP export — use &quot;Apply discards ▸ exclusions&quot; in the toolbar to turn the discarded cells' runs into run exclusions."/>
                             </StackPanel>
                         </Border>
                     </StackPanel>

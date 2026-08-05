@@ -177,12 +177,50 @@ namespace SCPBrowser
 
             // Parse header to get cell names
             var headerParts = lines[0].Split('\t');
-            var cellIds = new int[headerParts.Length - 1];
 
-            for (int i = 1; i < headerParts.Length; i++)
+            // The header may or may not carry a leading label cell for the gene-name column. R's
+            // write.table() omits it by default, so the first header field is already a cell name.
+            // Without this check that header is read one column short, every expression value is bound
+            // to the NEXT cell and the last column is dropped - silently, with a plausible cell count.
+            // The first data row is what settles it.
+            int firstDataRow = -1;
+            for (int i = 1; i < lines.Length; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(lines[i]))
+                {
+                    firstDataRow = i;
+                    break;
+                }
+            }
+
+            if (firstDataRow < 0)
+                throw new InvalidDataException("File must have at least a header row and one data row");
+
+            var firstDataParts = lines[firstDataRow].Split('\t');
+
+            int headerOffset;
+            if (firstDataParts.Length == headerParts.Length)
+            {
+                headerOffset = 1; // Header leads with a label cell for the gene-name column
+            }
+            else if (firstDataParts.Length == headerParts.Length + 1)
+            {
+                headerOffset = 0; // R-style header: one name per data column, no label cell
+            }
+            else
+            {
+                throw new InvalidDataException(
+                    $"Expression matrix is malformed: the header has {headerParts.Length:N0} fields but the first " +
+                    $"data row has {firstDataParts.Length:N0}. Expected the data row to have the same number of " +
+                    "fields (header with a leading label cell) or exactly one more (R-style header without one).");
+            }
+
+            var cellIds = new int[headerParts.Length - headerOffset];
+
+            for (int i = headerOffset; i < headerParts.Length; i++)
             {
                 var cellName = headerParts[i].Trim('"');
-                cellIds[i - 1] = result.CellLookup.GetOrAddCellId(cellName);
+                cellIds[i - headerOffset] = result.CellLookup.GetOrAddCellId(cellName);
             }
 
             progress?.ReportProgress($"Found {cellIds.Length:N0} cells in matrix");

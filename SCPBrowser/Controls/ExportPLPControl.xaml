@@ -88,20 +88,20 @@ Location: SCPBrowser/Controls/ExportPLPControl.xaml
                 <TextBlock Style="{StaticResource SectionLabel}" Text="Primary Label (class assignment)"/>
                 <ComboBox x:Name="PrimaryLabelComboBox" Style="{StaticResource ExportComboBox}"
                           SelectionChanged="LabelMode_SelectionChanged">
-                    <ComboBoxItem Content="Biological Condition" Tag="BioCondition" IsSelected="True"/>
-                    <ComboBoxItem Content="Cell Type" Tag="CellType"/>
-                    <ComboBoxItem Content="Plate" Tag="Plate"/>
-                    <ComboBoxItem Content="K-means cluster" Tag="KMeans"/>
+                    <ComboBoxItem x:Name="PrimaryBioConditionItem" Content="Biological Condition" Tag="BioCondition" IsSelected="True"/>
+                    <ComboBoxItem x:Name="PrimaryCellTypeItem" Content="Cell Type" Tag="CellType"/>
+                    <ComboBoxItem x:Name="PrimaryPlateItem" Content="Plate" Tag="Plate"/>
+                    <ComboBoxItem x:Name="PrimaryKMeansItem" Content="K-means cluster" Tag="KMeans"/>
                 </ComboBox>
 
                 <!-- Secondary Label -->
                 <TextBlock Style="{StaticResource SectionLabel}" Text="Secondary Label"/>
                 <ComboBox x:Name="SecondaryLabelComboBox" Style="{StaticResource ExportComboBox}"
                           SelectionChanged="LabelMode_SelectionChanged">
-                    <ComboBoxItem Content="Cell Type" Tag="CellType" IsSelected="True"/>
-                    <ComboBoxItem Content="Biological Condition" Tag="BioCondition"/>
-                    <ComboBoxItem Content="Plate" Tag="Plate"/>
-                    <ComboBoxItem Content="K-means cluster" Tag="KMeans"/>
+                    <ComboBoxItem x:Name="SecondaryCellTypeItem" Content="Cell Type" Tag="CellType" IsSelected="True"/>
+                    <ComboBoxItem x:Name="SecondaryBioConditionItem" Content="Biological Condition" Tag="BioCondition"/>
+                    <ComboBoxItem x:Name="SecondaryPlateItem" Content="Plate" Tag="Plate"/>
+                    <ComboBoxItem x:Name="SecondaryKMeansItem" Content="K-means cluster" Tag="KMeans"/>
                 </ComboBox>
 
                 <!-- Merge Cell Types -->
@@ -201,6 +201,20 @@ Location: SCPBrowser/Controls/ExportPLPControl.xaml
                         Click="ExportButton_Click"
                         HorizontalAlignment="Stretch"
                         IsEnabled="False"/>
+
+                <!-- Provenance. A .plp (or a figure) carries no record of the filters, seed, classifier or
+                     selection that produced it, so offer that record as its own file. -->
+                <Button x:Name="ExportReportButton" Content="Export analysis report..."
+                        Click="ExportReportButton_Click"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,10,0,0" Padding="20,8"
+                        FontSize="13" FontWeight="SemiBold"
+                        Background="#f1f5f9" Foreground="#1e293b"
+                        BorderBrush="#cbd5e1" BorderThickness="1"
+                        Cursor="Hand"/>
+
+                <TextBlock Text="Records project, imported files, active filters, dimensionality-reduction settings, classifier, and the runs in this selection — the settings block a methods section or a reviewer asks for. Written automatically next to every exported PLP as well."
+                           FontSize="11" Foreground="#64748b" TextWrapping="Wrap" Margin="0,6,0,0"/>
 
             </StackPanel>
         </ScrollViewer>

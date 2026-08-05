@@ -33,9 +33,23 @@ namespace SCPBrowser.Services
 
         public Dictionary<int, string> PlateIdToName => _plateIdToName;
 
+        /// <summary>
+        /// Default minimum protein groups a run must identify to enter the analysis. Runs below it are dropped
+        /// before PCA, UMAP, classification and export, so this gate decides which cells reach every downstream
+        /// result. 800 is a high-sensitivity-platform value: it is exposed in Settings because a less sensitive
+        /// instrument needs a lower one, and a more sensitive one needs a higher one to keep empty wells out.
+        /// </summary>
+        public const int DefaultProteinCutoff = 800;
+
+        /// <summary>
+        /// Sentinel for "no upper bound". The Max. Proteins spinner reports this when it sits at its maximum,
+        /// and every comparison against the upper cutoff treats the value as filtering disabled.
+        /// </summary>
+        public const int NoUpperProteinCutoff = 99999;
+
         // Filter settings
-        private int _proteinCutoff = 800;
-        private int _upperProteinCutoff = 99999;
+        private int _proteinCutoff = DefaultProteinCutoff;
+        private int _upperProteinCutoff = NoUpperProteinCutoff;
         private double _contaminantRatioCutoff = 1.0; // 0.0–1.0 fraction; 1.0 = no filtering
         private List<int> _selectedPlateIds = new List<int>();
         private HashSet<string> _manuallyExcludedRuns = new HashSet<string>();
@@ -324,7 +338,7 @@ namespace SCPBrowser.Services
             // Get raw files that meet both lower and upper cutoffs and are not manually excluded
             var passingRawFiles = data.ProteinCountPerFile
                 .Where(kvp => kvp.Value >= cutoff
-                    && (_upperProteinCutoff >= 99999 || kvp.Value <= _upperProteinCutoff)
+                    && (_upperProteinCutoff >= NoUpperProteinCutoff || kvp.Value <= _upperProteinCutoff)
                     && !_manuallyExcludedRuns.Contains(kvp.Key))
                 .Select(kvp => kvp.Key)
                 .ToHashSet();
@@ -448,8 +462,8 @@ namespace SCPBrowser.Services
             _plateIdToName = null;
             _hvpResults = null;
             _selectedPlateIds = new List<int>();
-            _proteinCutoff = 800;
-            _upperProteinCutoff = 99999;
+            _proteinCutoff = DefaultProteinCutoff;
+            _upperProteinCutoff = NoUpperProteinCutoff;
             _contaminantRatioCutoff = 1.0;
             _manuallyExcludedRuns.Clear();
             ContaminantRatioExcludedRuns.Clear();

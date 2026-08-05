@@ -2,6 +2,7 @@ using SCPBrowser.Services;
 using System;
 using System.Diagnostics;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -684,18 +685,20 @@ namespace SCPBrowser
                 bool standard = string.Equals(result.ScorerMethod, "Standard", StringComparison.OrdinalIgnoreCase);
                 bool quant = !standard;
 
+                // Numbers go out with an invariant decimal point: this is a machine-readable export, and on a
+                // comma-decimal locale pandas/R would silently read every metric column as text or NaN.
                 var rowParts = new List<string>
                 {
                     runName,
                     result.TopCellType ?? "Unknown",
-                    result.Confidence.ToString("F4"),
-                    result.TopScore?.CompositeScore.ToString("F4") ?? "",
-                    result.TopScore?.SpearmanCorrelation.ToString("F4") ?? "",
-                    quant ? "" : (result.TopScore?.SpecificityScore.ToString("F4") ?? ""),
-                    quant ? "" : (result.TopScore?.HypergeometricPValue.ToString("E3") ?? ""),
-                    quant ? "" : (result.TopScore?.MarkerCoverage.ToString("F4") ?? ""),
-                    result.TopScore?.KeyMarkerAdjustment.ToString("F3") ?? "",
-                    result.TopScore?.PriorAdjustment.ToString("F3") ?? "",
+                    result.Confidence.ToString("F4", CultureInfo.InvariantCulture),
+                    result.TopScore?.CompositeScore.ToString("F4", CultureInfo.InvariantCulture) ?? "",
+                    result.TopScore?.SpearmanCorrelation.ToString("F4", CultureInfo.InvariantCulture) ?? "",
+                    quant ? "" : (result.TopScore?.SpecificityScore.ToString("F4", CultureInfo.InvariantCulture) ?? ""),
+                    quant ? "" : (result.TopScore?.HypergeometricPValue.ToString("E3", CultureInfo.InvariantCulture) ?? ""),
+                    quant ? "" : (result.TopScore?.MarkerCoverage.ToString("F4", CultureInfo.InvariantCulture) ?? ""),
+                    result.TopScore?.KeyMarkerAdjustment.ToString("F3", CultureInfo.InvariantCulture) ?? "",
+                    result.TopScore?.PriorAdjustment.ToString("F3", CultureInfo.InvariantCulture) ?? "",
                     proteinAbundances.Count.ToString(),
                     CountGenesMatchingDatabase(proteinAbundances).ToString()
                 };
@@ -705,7 +708,7 @@ namespace SCPBrowser
                 {
                     if (result.Scores != null && result.Scores.TryGetValue(ct, out var score))
                     {
-                        rowParts.Add(score.CompositeScore.ToString("F4"));
+                        rowParts.Add(score.CompositeScore.ToString("F4", CultureInfo.InvariantCulture));
                     }
                     else
                     {
@@ -831,7 +834,7 @@ namespace SCPBrowser
                         detected = geneDetectionCounts[gene][ct];
                     int totalRuns = runsByCellType[ct].Count;
                     double fraction = totalRuns > 0 ? (double)detected / totalRuns : 0;
-                    parts.Add(fraction.ToString("F4"));
+                    parts.Add(fraction.ToString("F4", CultureInfo.InvariantCulture));
                 }
 
                 // Transcriptomic median expression
@@ -841,7 +844,7 @@ namespace SCPBrowser
                     if (_database.CellTypeProfiles.TryGetValue(ct, out var profile) &&
                         profile.MedianExpression.TryGetValue(gene, out double val))
                         expr = val;
-                    parts.Add(expr.ToString("F4"));
+                    parts.Add(expr.ToString("F4", CultureInfo.InvariantCulture));
                 }
 
                 lines.Add(string.Join("\t", parts));

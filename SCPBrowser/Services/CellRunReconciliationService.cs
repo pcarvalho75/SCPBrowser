@@ -111,8 +111,13 @@ namespace SCPBrowser.Services
 
         // ----------------------------------------------------------------- persistence
 
-        /// <summary>Applies links in one transaction. Suggestions with a null RawFileId are skipped.</summary>
-        public async Task<int> ApplyLinksAsync(IEnumerable<CellLinkSuggestion> links)
+        /// <summary>
+        /// Applies links in one transaction. Suggestions with a null RawFileId are skipped.
+        /// When <paramref name="clearRunIdFirst"/> is given, that run's existing links are wiped inside the SAME
+        /// transaction, so a failure part-way can never leave the run stripped of the links it started with -
+        /// clearing and re-linking commit together or not at all.
+        /// </summary>
+        public async Task<int> ApplyLinksAsync(IEnumerable<CellLinkSuggestion> links, int? clearRunIdFirst = null)
         {
             return await WithConnectionAsync(async conn =>
             {
@@ -120,6 +125,15 @@ namespace SCPBrowser.Services
                 int n = 0;
                 try
                 {
+                    if (clearRunIdFirst != null)
+                    {
+                        using var clearCmd = conn.CreateCommand();
+                        clearCmd.Transaction = tx;
+                        clearCmd.CommandText = ClearLinksSql;
+                        clearCmd.Parameters.AddWithValue("@r", clearRunIdFirst.Value);
+                        await clearCmd.ExecuteNonQueryAsync();
+                    }
+
                     foreach (var link in links)
                     {
                         if (link.RawFileId == null) continue;
@@ -146,11 +160,22 @@ namespace SCPBrowser.Services
             });
         }
 
+        private const string ClearLinksSql =
+            "UPDATE isolated_cells SET raw_file_id = NULL, link_method = NULL, link_confidence = NULL WHERE cellenone_run_id = @r";
+
         /// <summary>Clears all links for a run (sets raw_file_id/link_method/link_confidence to NULL).</summary>
         public Task ClearLinksAsync(int cellenOneRunId)
         {
             return ExecuteNonQueryAsync(
-                "UPDATE isolated_cells SET raw_file_id = NULL, link_method = NULL, link_confidence = NULL WHERE cellenone_run_id = @r",
+                ClearLinksSql,
+                cmd => cmd.Parameters.AddWithValue("@r", cellenOneRunId));
+        }
+
+        /// <summary>How many cells in a run currently carry a raw-file link. Used to state what a clear would destroy.</summary>
+        public Task<int> CountLinkedCellsAsync(int cellenOneRunId)
+        {
+            return ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM isolated_cells WHERE cellenone_run_id = @r AND raw_file_id IS NOT NULL",
                 cmd => cmd.Parameters.AddWithValue("@r", cellenOneRunId));
         }
 

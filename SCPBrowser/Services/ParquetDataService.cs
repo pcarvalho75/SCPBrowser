@@ -173,6 +173,30 @@ namespace SCPBrowser.Services
                 "SELECT raw_file_id, raw_file_name FROM raw_files",
                 reader => (Id: reader.GetInt32(0), Name: reader.GetString(1)));
 
+            // A bare ToDictionary here throws "An item with the same key has already been added",
+            // which names nothing and aborts the caller's load pipeline halfway through. Nothing in
+            // the schema stops the same run being registered twice, so say exactly which runs are
+            // ambiguous - silently picking one of them would attribute counts and classifications
+            // to an arbitrary row.
+            var duplicates = list.GroupBy(r => r.Name, StringComparer.Ordinal)
+                                 .Where(g => g.Count() > 1)
+                                 .Select(g => g.Key)
+                                 .OrderBy(n => n, StringComparer.Ordinal)
+                                 .ToList();
+
+            if (duplicates.Count > 0)
+            {
+                string named = string.Join(", ", duplicates.Take(10));
+                if (duplicates.Count > 10)
+                    named += $", ... (+{duplicates.Count - 10} more)";
+
+                throw new InvalidOperationException(
+                    $"{duplicates.Count} run name(s) are registered more than once in this project: {named}. " +
+                    "This happens when the same DIA-NN report was imported twice. Remove the duplicate " +
+                    "import before continuing - while it exists, per-run counts and cell-type " +
+                    "classifications cannot be attributed to a single run unambiguously.");
+            }
+
             return list.ToDictionary(r => r.Name, r => r.Id);
         }
 
@@ -194,13 +218,57 @@ namespace SCPBrowser.Services
             if (filePaths == null || filePaths.Count == 0)
                 return new ProteomicsData();
 
+            // The same path listed twice (two parquet_imports rows pointing at one file on disk) is
+            // one dataset, not two: loading it twice would double every per-run count merged below.
+            var distinctPaths = filePaths
+                .Where(p => !string.IsNullOrEmpty(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (distinctPaths.Count == 0)
+                return new ProteomicsData();
+
+            // Which file each run was first seen in, so a run claimed by two different files can be
+            // named in the error below.
+            var runSourceFile = new Dictionary<string, string>(StringComparer.Ordinal);
+
             // Load the first file as the base
-            var mergedData = await LoadParquetFileAsync(filePaths[0], mapping);
+            var mergedData = await LoadParquetFileAsync(distinctPaths[0], mapping);
+
+            foreach (var rawFile in mergedData.RawFileNames)
+                runSourceFile[rawFile] = distinctPaths[0];
 
             // Merge additional files
-            for (int i = 1; i < filePaths.Count; i++)
+            for (int i = 1; i < distinctPaths.Count; i++)
             {
-                var additionalData = await LoadParquetFileAsync(filePaths[i], mapping);
+                var additionalData = await LoadParquetFileAsync(distinctPaths[i], mapping);
+
+                // Per-run protein/peptide counts are distinct-set cardinalities computed within one
+                // file, and the quant matrix below is last-write-wins. Accumulating counts for a run
+                // that also exists in another file would report roughly double its identifications
+                // while the intensities behind them stay single-file - a plausible wrong number that
+                // reaches the QC protein cutoff and the Explorer tooltips. Two files claiming the
+                // same run is a data-integrity error, so refuse it instead of reconciling it.
+                var collisions = additionalData.RawFileNames
+                    .Where(rf => runSourceFile.ContainsKey(rf))
+                    .ToList();
+
+                if (collisions.Count > 0)
+                {
+                    string named = string.Join(", ", collisions.Take(10));
+                    if (collisions.Count > 10)
+                        named += $", ... (+{collisions.Count - 10} more)";
+
+                    throw new InvalidOperationException(
+                        $"'{Path.GetFileName(distinctPaths[i])}' and " +
+                        $"'{Path.GetFileName(runSourceFile[collisions[0]])}' both contain " +
+                        $"{collisions.Count} of the same run(s): {named}. Per-run protein, peptide and " +
+                        "TIC counts cannot be merged across files that share a run. Remove one of the " +
+                        "two imports from the project.");
+                }
+
+                foreach (var rawFile in additionalData.RawFileNames)
+                    runSourceFile[rawFile] = distinctPaths[i];
 
                 // Merge RawFileNames
                 foreach (var rawFile in additionalData.RawFileNames)
@@ -209,7 +277,7 @@ namespace SCPBrowser.Services
                         mergedData.RawFileNames.Add(rawFile);
                 }
 
-                // Merge ProteinCountPerFile (accumulate if key exists)
+                // Merge ProteinCountPerFile (the guard above rules out a key collision)
                 foreach (var kvp in additionalData.ProteinCountPerFile)
                 {
                     if (mergedData.ProteinCountPerFile.ContainsKey(kvp.Key))
@@ -218,7 +286,7 @@ namespace SCPBrowser.Services
                         mergedData.ProteinCountPerFile[kvp.Key] = kvp.Value;
                 }
 
-                // Merge PeptideCountPerFile (accumulate if key exists)
+                // Merge PeptideCountPerFile (the guard above rules out a key collision)
                 foreach (var kvp in additionalData.PeptideCountPerFile)
                 {
                     if (mergedData.PeptideCountPerFile.ContainsKey(kvp.Key))
@@ -227,7 +295,7 @@ namespace SCPBrowser.Services
                         mergedData.PeptideCountPerFile[kvp.Key] = kvp.Value;
                 }
 
-                // Merge TotalIonCurrentPerFile (accumulate if key exists)
+                // Merge TotalIonCurrentPerFile (the guard above rules out a key collision)
                 foreach (var kvp in additionalData.TotalIonCurrentPerFile)
                 {
                     if (mergedData.TotalIonCurrentPerFile.ContainsKey(kvp.Key))
@@ -620,9 +688,53 @@ namespace SCPBrowser.Services
         }
 
         /// <summary>
+        /// Returns the file name a previous import registered for this content hash, or null when the
+        /// content is not in the project yet. Content is the only stable identity for an import: the
+        /// display name can differ between the file the user picks and the row that was written, so a
+        /// name-only check lets the same report in twice.
+        /// </summary>
+        public async Task<string> GetImportedFileNameByHashAsync(string fileHash)
+        {
+            if (string.IsNullOrEmpty(fileHash))
+                return null;
+
+            return await ExecuteScalarAsync<string>(
+                "SELECT file_name FROM parquet_imports WHERE file_hash = @fileHash LIMIT 1",
+                cmd => cmd.Parameters.AddWithValue("@fileHash", fileHash));
+        }
+
+        /// <summary>
+        /// Every run name currently registered in raw_files. The table has no uniqueness constraint on
+        /// raw_file_name, so an importer has to check for a clash before it writes.
+        /// </summary>
+        public async Task<HashSet<string>> GetAllRawFileNamesAsync()
+        {
+            var list = await QueryAsync(
+                "SELECT raw_file_name FROM raw_files",
+                reader => reader.GetString(0));
+
+            return new HashSet<string>(list, StringComparer.Ordinal);
+        }
+
+        /// <summary>
         /// Deletes an existing parquet import and all associated raw files
         /// </summary>
         public async Task DeleteParquetImportAsync(string fileName)
+        {
+            await DeleteParquetImportCoreAsync(fileName, null);
+        }
+
+        /// <summary>
+        /// Deletes one specific import by its id. An importer rolling back its own failed write must
+        /// target the row it just created: file_name is not unique in parquet_imports, so undoing by
+        /// name could take out an unrelated import that happens to share the name.
+        /// </summary>
+        public async Task DeleteParquetImportByIdAsync(int importId)
+        {
+            await DeleteParquetImportCoreAsync(null, importId);
+        }
+
+        private async Task DeleteParquetImportCoreAsync(string fileName, int? explicitImportId)
         {
             await WithConnectionAsync(async connection =>
             {
@@ -631,12 +743,19 @@ namespace SCPBrowser.Services
                     try
                     {
                         int importId;
-                        using (var command = connection.CreateCommand())
+                        if (explicitImportId.HasValue)
                         {
-                            command.CommandText = "SELECT import_id FROM parquet_imports WHERE file_name = @fileName";
-                            command.Parameters.AddWithValue("@fileName", fileName);
-                            var result = await command.ExecuteScalarAsync();
-                            if (result == null || !int.TryParse(result.ToString(), out importId)) return;
+                            importId = explicitImportId.Value;
+                        }
+                        else
+                        {
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandText = "SELECT import_id FROM parquet_imports WHERE file_name = @fileName";
+                                command.Parameters.AddWithValue("@fileName", fileName);
+                                var result = await command.ExecuteScalarAsync();
+                                if (result == null || !int.TryParse(result.ToString(), out importId)) return;
+                            }
                         }
 
                         // Clean child rows that reference raw_files of this import.

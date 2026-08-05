@@ -3,6 +3,7 @@ using SCPBrowser.Services;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -34,9 +35,56 @@ namespace SCPBrowser
         /// </summary>
         public HashSet<string> ContaminantIds => _contaminantIds;
 
+        // cRAP-style accessions bundled with the app so the contaminant-ratio QC can actually fire without a
+        // user hand-ticking rows in a 3000-protein matrix. Deliberately a conservative subset of cRAP: skin
+        // keratins but NOT the epithelial cytokeratins K7/K8/K18/K19, which are real biology in cell lines;
+        // digestion enzymes; affinity reagents; and the serum/milk proteins that dominate FBS culture.
+        // Applying it is opt-in, every match is listed for confirmation, and nothing is excluded from the
+        // analysis until Apply Contaminants is pressed.
+        private static readonly string[] BundledContaminantAccessions =
+        {
+            // Human skin/hair keratins (dust, handling)
+            "P04264", "P35908", "P19013", "P13647", "P02538", "P04259",
+            "P35527", "P13645", "P13646", "P02533", "P08779", "Q04695",
+            // Digestion enzymes
+            "P00761", "P00760", "P00766", "Q7M135",
+            // Serum albumin (bovine, human)
+            "P02769", "P02768",
+            // Other abundant human serum/plasma carry-over
+            "P02787", "P01857", "P01834",
+            // Bovine milk proteins (fetal bovine serum)
+            "P02662", "P02663", "P02666", "P02668", "P00711", "P02754",
+            // Other bovine carry-over
+            "P01966", "P02070", "P00921",
+            // Affinity reagents
+            "P22629", "P02701"
+        };
+
         public ProteinMatrixControl()
         {
             InitializeComponent();
+            AddBulkContaminantMenuItems();
+        }
+
+        /// <summary>
+        /// Appends the list-driven contaminant actions to the grid's context menu. Wired in code so the
+        /// shipped accession list lives next to the matching logic it drives.
+        /// </summary>
+        private void AddBulkContaminantMenuItems()
+        {
+            var menu = ProteinMatrixGrid?.ContextMenu;
+            if (menu == null)
+                return;
+
+            menu.Items.Add(new Separator());
+
+            var bundledItem = new MenuItem { Header = "Mark bundled contaminants (cRAP subset)..." };
+            bundledItem.Click += MarkBundledContaminants_Click;
+            menu.Items.Add(bundledItem);
+
+            var fileItem = new MenuItem { Header = "Load contaminant list from file..." };
+            fileItem.Click += LoadContaminantList_Click;
+            menu.Items.Add(fileItem);
         }
 
         /// <summary>
@@ -595,6 +643,167 @@ namespace SCPBrowser
             UpdateContaminantStatusText();
         }
 
+        private void MarkBundledContaminants_Click(object sender, RoutedEventArgs e)
+        {
+            MarkContaminantsByAccession(
+                new HashSet<string>(BundledContaminantAccessions, StringComparer.OrdinalIgnoreCase),
+                "bundled cRAP subset");
+        }
+
+        private void LoadContaminantList_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Filter = "Accession lists (*.txt;*.csv;*.tsv;*.fasta;*.fa)|*.txt;*.csv;*.tsv;*.fasta;*.fa|All files (*.*)|*.*",
+                Title = "Load Contaminant Accession List"
+            };
+
+            if (dialog.ShowDialog() != true)
+                return;
+
+            HashSet<string> accessions;
+            try
+            {
+                accessions = ParseAccessionList(File.ReadAllLines(dialog.FileName));
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not read the contaminant list: {ex.Message}", "Contaminant List",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            if (accessions.Count == 0)
+            {
+                MessageBox.Show("No accessions were found in that file.", "Contaminant List",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            string source = $"{accessions.Count} accessions from {Path.GetFileName(dialog.FileName)}";
+            MarkContaminantsByAccession(accessions, source);
+        }
+
+        /// <summary>
+        /// Reads accessions from a plain one-per-line list or from FASTA headers ('>sp|P02768|ALBU_HUMAN'),
+        /// so a user can feed the official cRAP FASTA straight in.
+        /// </summary>
+        private static HashSet<string> ParseAccessionList(IEnumerable<string> fileLines)
+        {
+            var accessions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var rawLine in fileLines)
+            {
+                var line = rawLine?.Trim();
+                if (string.IsNullOrEmpty(line) || line.StartsWith('#'))
+                    continue;
+
+                if (line.StartsWith('>'))
+                {
+                    var header = line.Substring(1)
+                        .Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                        .FirstOrDefault();
+                    if (string.IsNullOrEmpty(header))
+                        continue;
+
+                    var pipeParts = header.Split('|');
+                    accessions.Add(pipeParts.Length >= 2 ? pipeParts[1] : pipeParts[0]);
+                    continue;
+                }
+
+                var first = line.Split(new[] { ',', '\t', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                    .FirstOrDefault();
+                if (!string.IsNullOrEmpty(first))
+                    accessions.Add(first);
+            }
+
+            return accessions;
+        }
+
+        /// <summary>
+        /// Marks every protein group containing one of <paramref name="accessions"/>, after showing the user
+        /// exactly what will be marked. Matching runs over the whole table, not just the filtered view.
+        /// </summary>
+        private void MarkContaminantsByAccession(HashSet<string> accessions, string sourceDescription)
+        {
+            if (_fullDataTable == null || accessions == null || accessions.Count == 0)
+            {
+                MessageBox.Show("Load a protein matrix first.", "Mark Contaminants",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var matched = new List<DataRow>();
+            foreach (DataRow row in _fullDataTable.Rows)
+            {
+                if (row["Contaminant"] is bool alreadyMarked && alreadyMarked)
+                    continue;
+
+                string proteinGroup = row["Protein Group"]?.ToString();
+                if (string.IsNullOrEmpty(proteinGroup))
+                    continue;
+
+                if (AccessionTokens(proteinGroup).Any(accessions.Contains))
+                    matched.Add(row);
+            }
+
+            if (matched.Count == 0)
+            {
+                MessageBox.Show($"No unmarked protein group in this matrix matches the {sourceDescription}.",
+                    "Mark Contaminants", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Name what will be marked: a contaminant list that quietly removes a real protein is worse than
+            // one that removes nothing.
+            var previewLines = matched.Take(15).Select(matchedRow =>
+            {
+                string group = matchedRow["Protein Group"]?.ToString();
+                string gene = matchedRow["Gene"]?.ToString();
+                return string.IsNullOrEmpty(gene) ? "  " + group : "  " + group + "  (" + gene + ")";
+            }).ToList();
+            if (matched.Count > 15)
+                previewLines.Add("  ... and " + (matched.Count - 15) + " more");
+
+            var answer = MessageBox.Show(
+                $"Mark {matched.Count} protein group(s) as contaminants, from the {sourceDescription}?\n\n" +
+                string.Join("\n", previewLines) +
+                "\n\nNothing is excluded from the analysis until you press Apply Contaminants.",
+                "Mark Contaminants", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (answer != MessageBoxResult.Yes)
+                return;
+
+            foreach (var row in matched)
+            {
+                row["Contaminant"] = true;
+                _contaminantIds.Add(row["Protein Group"].ToString());
+            }
+
+            ProteinMatrixGrid.Items.Refresh();
+            UpdateContaminantStatusText();
+        }
+
+        /// <summary>
+        /// Yields the accession-like tokens of a protein group, plus the base form of any isoform suffix, so
+        /// that 'sp|P02768|ALBU_HUMAN' and 'P02768-2' both match a bare 'P02768'.
+        /// </summary>
+        private static IEnumerable<string> AccessionTokens(string proteinGroup)
+        {
+            foreach (var part in proteinGroup.Split(new[] { ';', '|', ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var token = part.Trim();
+                if (token.Length == 0)
+                    continue;
+
+                yield return token;
+
+                int dash = token.IndexOf('-');
+                if (dash > 0)
+                    yield return token.Substring(0, dash);
+            }
+        }
+
         private void ProteinMatrixGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
         {
             if (e.Column.Header?.ToString() != "☣" || e.EditAction == DataGridEditAction.Cancel)
@@ -641,7 +850,12 @@ namespace SCPBrowser
             int hvpCount = _hvpResults?.Count(h => h.IsHighlyVariable) ?? 0;
             bool hasHvpData = _hvpLookup != null && _hvpLookup.Count > 0;
             string hvpInfo = hasHvpData ? $" | {hvpCount} HVPs" : "";
-            string contaminantInfo = contaminantCount > 0 ? $" | {contaminantCount} contaminants marked" : "";
+            // Zero marked contaminants is not a clean result: the contaminant ratio is then 0 for every run and
+            // the ratio cutoff can never exclude anything. Say so, rather than letting an inactive QC step look
+            // like a passed one.
+            string contaminantInfo = contaminantCount > 0
+                ? $" | {contaminantCount} contaminants marked"
+                : " | no contaminants marked - contaminant-ratio QC inactive (right-click a row to mark a list)";
             StatusText.Text = $"Displaying {_fullDataTable?.DefaultView.Count ?? 0} proteins across {_currentData?.RawFileNames.Count ?? 0} raw files{hvpInfo}{contaminantInfo}";
         }
 
@@ -706,8 +920,12 @@ namespace SCPBrowser
                         {
                             if (field == DBNull.Value)
                                 return "";
+                            // The quant columns and Var_Std are typeof(double), and this is a COMMA-separated
+                            // file: on a comma-decimal locale a culture-formatted "1234,56" silently splits one
+                            // cell into two fields and shifts every column right of it. "R" round-trips the
+                            // stored value exactly, matching ClassifierEvaluationService.WritePerCellCsv.
                             if (field is double doubleValue)
-                                return doubleValue.ToString("G");
+                                return EscapeCsvField(doubleValue.ToString("R", CultureInfo.InvariantCulture));
                             return EscapeCsvField(field.ToString());
                         });
                         writer.WriteLine(string.Join(",", fields));

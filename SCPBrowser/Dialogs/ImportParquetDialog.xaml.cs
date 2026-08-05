@@ -21,6 +21,19 @@ namespace SCPBrowser
         private string _selectedParquetPath;
         private string _currentFilter = string.Empty;
 
+        // True only while Import_Click is writing to the database. Cancel/Esc/the close box must not
+        // fire during that window: they would set DialogResult on a window that is closing under a
+        // running import and report failure for an import that actually succeeded.
+        private bool _importing;
+
+        // Runs in the selected file that are already registered in raw_files. Importing them again
+        // duplicates the run under a second raw_file_id, which nothing downstream can disambiguate.
+        private readonly List<string> _conflictingRunNames = new List<string>();
+
+        // Set when a failed import could not be rolled back. Sticky: the dialog stays blocked until
+        // it is closed, because retrying on top of a half-written import would double-insert.
+        private string _blockedReason;
+
         private ObservableCollection<RawFileInfo> _rawFiles;
         private ObservableCollection<RawFileInfo> _filteredRawFiles;
         private ObservableCollection<PlateInfo> _plates;
@@ -110,6 +123,10 @@ namespace SCPBrowser
                     PlateComboBox.SelectedIndex = 0;
                 }
                 PlateEmptyHint.Visibility = Plates.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+                // With no plates the combo raises no SelectionChanged, so state the blocking reason
+                // here too - otherwise the Import button sits dead with nothing said about it.
+                ValidateImportButton();
 
                 // Load existing biological conditions from database
 
@@ -261,12 +278,28 @@ namespace SCPBrowser
                     }
                 }
 
-                // Check if already imported in database
-                bool alreadyImported = await _parquetService.IsParquetImportedAsync(fileName);
-                if (alreadyImported)
+                // Check if already imported in database. Identity is the file's CONTENT, not its
+                // display name: the same report copied or renamed slips straight past a name-only
+                // guard and lands a second time, which nothing downstream can disambiguate. The
+                // name check is kept as a fallback for rows written before hashes were recorded.
+                // Off the UI thread: a DIA-NN report is large enough that hashing it inline would
+                // freeze the dialog while the user is still just picking a file.
+                string fileHash = await System.Threading.Tasks.Task.Run(
+                    () => _parquetService.CalculateFileHash(filePath));
+                string existingImportName = await _parquetService.GetImportedFileNameByHashAsync(fileHash);
+                if (existingImportName == null && await _parquetService.IsParquetImportedAsync(fileName))
                 {
+                    existingImportName = fileName;
+                }
+
+                if (existingImportName != null)
+                {
+                    string sameName = existingImportName.Equals(fileName, StringComparison.OrdinalIgnoreCase)
+                        ? existingImportName
+                        : $"{existingImportName}  (imported under a different name; identical contents)";
+
                     var result = MessageBox.Show(
-                        $"This parquet file has already been imported to the database:\n\n{fileName}\n\n" +
+                        $"This parquet file has already been imported to the database:\n\n{sameName}\n\n" +
                         $"Do you want to delete the existing import and re-import?",
                         "File Already Imported",
                         MessageBoxButton.YesNo,
@@ -274,7 +307,7 @@ namespace SCPBrowser
 
                     if (result == MessageBoxResult.Yes)
                     {
-                        await _parquetService.DeleteParquetImportAsync(fileName);
+                        await _parquetService.DeleteParquetImportAsync(existingImportName);
                     }
                     else
                     {
@@ -288,6 +321,7 @@ namespace SCPBrowser
 
                 // Load parquet preview
                 await LoadParquetPreviewAsync(filePath);
+                await RefreshRunNameConflictsAsync();
                 ValidateImportButton();
             }
             catch (IOException ioEx) when (ioEx.Message.Contains("already exists"))
@@ -396,6 +430,7 @@ namespace SCPBrowser
                     {
                         RawFileName = rawFileName,
                         BiologicalCondition = "", // User will assign
+                        PlateId = SelectedPlate?.PlateId, // default; each row can be re-pointed in the grid
                         ProteinCount = data.ProteinCountPerFile.ContainsKey(rawFileName)
                             ? data.ProteinCountPerFile[rawFileName]
                             : 0,
@@ -427,7 +462,41 @@ namespace SCPBrowser
         private void PlateComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             SelectedPlate = PlateComboBox.SelectedItem as PlateInfo;
+
+            // This combo is the default for the run grid, not the plate of the whole import: a single
+            // DIA-NN report covers every plate in the study. Only fill rows the user has not pointed
+            // at a plate themselves, so changing the default never silently undoes per-row work.
+            if (SelectedPlate != null && RawFiles != null)
+            {
+                foreach (var rawFile in RawFiles)
+                {
+                    if (!rawFile.PlateId.HasValue)
+                        rawFile.PlateId = SelectedPlate.PlateId;
+                }
+            }
+
             ValidateImportButton();
+        }
+
+        /// <summary>
+        /// Refreshes the list of runs in the selected file that raw_files already holds. Re-importing
+        /// such a run creates a second row with the same name, which the project-load pipeline cannot
+        /// resolve to one cell.
+        /// </summary>
+        private async System.Threading.Tasks.Task RefreshRunNameConflictsAsync()
+        {
+            _conflictingRunNames.Clear();
+
+            if (RawFiles == null || RawFiles.Count == 0)
+                return;
+
+            var existingNames = await _parquetService.GetAllRawFileNamesAsync();
+
+            foreach (var rawFile in RawFiles)
+            {
+                if (existingNames.Contains(rawFile.RawFileName))
+                    _conflictingRunNames.Add(rawFile.RawFileName);
+            }
         }
 
         private void FilterTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -626,6 +695,57 @@ namespace SCPBrowser
 
         }
 
+        private void ApplyBatchPlate_Click(object sender, RoutedEventArgs e)
+        {
+            if (BatchPlateComboBox.SelectedItem is not PlateInfo selectedPlate)
+            {
+                MessageBox.Show(
+                    "Please select a plate to assign.",
+                    "No Plate Selected",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            var filteredList = FilteredRawFiles.ToList();
+
+            if (filteredList.Count == 0)
+            {
+                MessageBox.Show(
+                    "No runs match the current filter.",
+                    "No Runs to Assign",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            var confirm = MessageBox.Show(
+                $"Assign plate '{selectedPlate.PlateName}' to the {filteredList.Count} run(s) currently shown?",
+                "Preview Batch Assignment",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (confirm != MessageBoxResult.Yes)
+                return;
+
+            foreach (var rawFile in filteredList)
+            {
+                var originalRawFile = RawFiles.FirstOrDefault(rf => rf.RawFileName == rawFile.RawFileName);
+                if (originalRawFile != null)
+                    originalRawFile.PlateId = selectedPlate.PlateId;
+            }
+
+            RawFilesDataGrid.Items.Refresh();
+            ValidateImportButton();
+        }
+
+        private void RowPlateComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // The Plate column is IsReadOnly - its ComboBox lives in the cell template so the grid
+            // never opens an edit transaction, which means CellEditEnding never fires for it.
+            ValidateImportButton();
+        }
+
         private void RawFilesDataGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
         {
             // Schedule validation for after the edit completes
@@ -675,20 +795,68 @@ namespace SCPBrowser
 
         private void ValidateImportButton()
         {
+            // Grid virtualisation can raise SelectionChanged from a recycled row while the import is
+            // running. Re-enabling the button there would allow a second click mid-write, which is
+            // exactly the double-insert this dialog now guards against everywhere else.
+            if (_importing)
+            {
+                ImportButton.IsEnabled = false;
+                return;
+            }
+
             bool hasFile = !string.IsNullOrEmpty(_selectedParquetPath);
             bool hasPlate = SelectedPlate != null;
             bool hasRawFiles = RawFiles != null && RawFiles.Count > 0;
-            bool allConditionsAssigned = RawFiles != null &&
-                                         RawFiles.All(rf => !string.IsNullOrEmpty(rf.BiologicalCondition));
+            int unassignedConditions = RawFiles == null
+                ? 0
+                : RawFiles.Count(rf => string.IsNullOrEmpty(rf.BiologicalCondition));
+            int unassignedPlates = RawFiles == null
+                ? 0
+                : RawFiles.Count(rf => !rf.PlateId.HasValue);
 
-            ImportButton.IsEnabled = hasFile && hasPlate && hasRawFiles && allConditionsAssigned;
+            // Say WHY the button is dead. A new project has no plate, so the old silent-disable left
+            // the app's own "step 1" with no way forward and no explanation. The reason is derived
+            // from the same branches that gate IsEnabled below, so the two cannot drift apart.
+            string reason = null;
+            if (!string.IsNullOrEmpty(_blockedReason))
+                reason = _blockedReason;
+            else if (Plates == null || Plates.Count == 0)
+                reason = "No plate registered yet - use Import ▸ Import Plate Metadata... to register one first.";
+            else if (!hasFile)
+                reason = "Choose a DIA-NN parquet file with Browse...";
+            else if (!hasRawFiles)
+                reason = "No runs were found in this file.";
+            else if (!hasPlate)
+                reason = "Select the plate these runs belong to.";
+            else if (unassignedPlates > 0)
+                reason = $"{unassignedPlates} run(s) have no plate assigned.";
+            else if (unassignedConditions > 0)
+                reason = $"{unassignedConditions} run(s) have no biological condition assigned.";
+            else if (_conflictingRunNames.Count > 0)
+                reason = $"{_conflictingRunNames.Count} run(s) in this file are already in this project " +
+                         $"(e.g. {_conflictingRunNames[0]}). Delete that import first.";
 
-
+            ImportButton.IsEnabled = reason == null;
+            ImportBlockedText.Text = reason ?? string.Empty;
+            ImportBlockedText.Visibility = reason == null ? Visibility.Collapsed : Visibility.Visible;
         }
 
 
         private async void Import_Click(object sender, RoutedEventArgs e)
         {
+            // Hoisted above the try: several branches leave the method early from inside it, and the
+            // finally has to be able to put the title and cursor back on every one of those paths.
+            // Previously an early return left the window reading "Importing... Please wait" forever.
+            string originalTitle = this.Title;
+
+            // What this import has already committed, so a failure part-way through can be undone
+            // (mirrors ImportGeneMatrixDialog). Without it a throw in step 3 leaves an import row and
+            // a full set of raw_files behind with an empty protein_quant_summary: the Explorer still
+            // draws, because it re-reads the parquet from disk, while marker classification silently
+            // finds no genes for those cells and reports a truncated population as if it were whole.
+            int? committedImportId = null;
+            bool rolledBack = false;
+
             try
             {
                 // Validate all raw files have conditions assigned - BLOCK if not all assigned
@@ -723,6 +891,24 @@ namespace SCPBrowser
                     return; // Block the import
                 }
 
+                // Every raw_files row needs a plate: the column is declared NOT NULL, and the plate is
+                // the batch variable ComBat corrects on, so a run with no plate is not something to
+                // guess at.
+                var unplatedFiles = RawFiles.Where(rf => !rf.PlateId.HasValue).ToList();
+                if (unplatedFiles.Count > 0)
+                {
+                    MessageBox.Show(
+                        $"{unplatedFiles.Count} raw file(s) have no plate assigned, starting with " +
+                        $"'{unplatedFiles[0].RawFileName}'.\n\n" +
+                        "Set the Plate column for every run (the Batch Plate control assigns all " +
+                        "currently filtered runs at once) before importing.",
+                        "Missing Plate Assignment",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+
+                    return; // Block the import
+                }
+
                 // Get unique conditions
                 var uniqueConditions = RawFiles
                     .Where(rf => !string.IsNullOrEmpty(rf.BiologicalCondition))
@@ -740,45 +926,57 @@ namespace SCPBrowser
                 }
 
                 // Disable UI during import
+                _importing = true;
                 ImportButton.IsEnabled = false;
                 PlateComboBox.IsEnabled = false;
                 RawFilesDataGrid.IsEnabled = false;
                 this.Cursor = System.Windows.Input.Cursors.Wait;
 
                 // Show progress in status (we don't have LoadingOverlay in dialog, so we'll update window title)
-                string originalTitle = this.Title;
                 this.Title = "Importing... Please wait";
 
-                // Generate new filename based on plate name
-                string originalFileName = Path.GetFileName(_selectedParquetPath);
-                string newFileName = $"{SelectedPlate.PlateName}.parquet";
-                string importsPath = Path.Combine(_projectDirectory, "imports");
-                string newFilePath = Path.Combine(importsPath, newFileName);
+                // The file keeps the name it was copied into imports/ under. It used to be renamed to
+                // {PlateName}.parquet, which asserted one parquet belongs to exactly one plate - untrue
+                // for a single DIA-NN report covering several plates, and it also moved the file out
+                // from under the duplicate check. The plate now lives per run, in raw_files.plate_id.
+                string fileName = Path.GetFileName(_selectedParquetPath);
+                string fileHash = await System.Threading.Tasks.Task.Run(
+                    () => _parquetService.CalculateFileHash(_selectedParquetPath));
 
-                // Rename the file if the new name is different
-                if (!originalFileName.Equals(newFileName, StringComparison.OrdinalIgnoreCase))
+                // Re-check identity against the database immediately before writing. The checks in
+                // ValidateAndLoadParquetFile ran when the file was picked, and nothing in the schema
+                // stops a second insert of the same content or the same run names.
+                this.Title = "Importing... Checking for an existing import";
+
+                string alreadyImportedAs = await _parquetService.GetImportedFileNameByHashAsync(fileHash);
+                if (alreadyImportedAs != null)
                 {
-                    // Check if target filename already exists
-                    if (File.Exists(newFilePath))
-                    {
-                        MessageBox.Show(
-                            $"A file named '{newFileName}' already exists in the imports folder.\n\n" +
-                            $"This plate may have already been imported.",
-                            "File Already Exists",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Warning);
-                        return;
-                    }
+                    MessageBox.Show(
+                        $"This file's contents are already in the project, imported as " +
+                        $"'{alreadyImportedAs}'.\n\n" +
+                        "Delete that import first if you want to import this file again.",
+                        "File Already Imported",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
 
-                    // Rename the file
-                    File.Move(_selectedParquetPath, newFilePath);
-                    _selectedParquetPath = newFilePath;
-
+                    return;
                 }
 
-                // Calculate file hash from the (possibly renamed) file
-                string fileHash = _parquetService.CalculateFileHash(_selectedParquetPath);
-                string fileName = Path.GetFileName(_selectedParquetPath);
+                await RefreshRunNameConflictsAsync();
+                if (_conflictingRunNames.Count > 0)
+                {
+                    MessageBox.Show(
+                        $"{_conflictingRunNames.Count} run(s) in this file are already registered in " +
+                        $"this project, starting with '{_conflictingRunNames[0]}'.\n\n" +
+                        "Importing them again would store the same run twice, and per-run counts and " +
+                        "cell-type classifications could no longer be attributed to one cell. Delete " +
+                        "the earlier import first.",
+                        "Duplicate Run Names",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+
+                    return;
+                }
 
                 // Create column mapping JSON
                 var mapping = new ColumnMapping
@@ -807,18 +1005,14 @@ namespace SCPBrowser
                 };
 
                 int importId = await _parquetService.InsertParquetImportAsync(importInfo);
+                committedImportId = importId; // durable from here on - must be undone if a later step fails
 
 
                 // STEP 2: Insert raw file records
                 this.Title = "Importing... Saving raw file information";
 
-
-                // Assign plate_id to each raw file
-                foreach (var rawFile in RawFiles)
-                {
-                    rawFile.PlateId = SelectedPlate.PlateId;
-                }
-
+                // plate_id is whatever the grid holds per run - see the Plate column. Stamping every
+                // row with the dialog's plate would collapse a multi-plate study into one batch.
                 var insertedRawFiles = await _parquetService.InsertRawFilesAsync(importId, RawFiles.ToList());
 
 
@@ -843,39 +1037,86 @@ namespace SCPBrowser
 
 
 
-                // Restore UI
-                this.Title = originalTitle;
-                this.Cursor = System.Windows.Input.Cursors.Arrow;
-
                 ImportSuccessful = true;
+                _importing = false; // the write is done; closing is allowed again
                 DialogResult = true;
             }
             catch (Exception ex)
             {
-                // Restore cursor
-                this.Cursor = System.Windows.Input.Cursors.Arrow;
+                // The import commits in three separate units (import row, raw files, quant matrix).
+                // Undo the import row if it is already durable - that cascade takes the raw files and
+                // any quant rows with it - so a failed import leaves the project exactly as it was.
+                try
+                {
+                    if (committedImportId.HasValue)
+                    {
+                        await _parquetService.DeleteParquetImportByIdAsync(committedImportId.Value);
+                        rolledBack = true;
+                    }
+                }
+                catch { /* best-effort rollback; the original failure is reported below */ }
 
-
-
+                string outcome;
+                if (!committedImportId.HasValue)
+                {
+                    outcome = "Nothing was written to the project.";
+                }
+                else if (rolledBack)
+                {
+                    outcome = "The partially written import was rolled back - the project is unchanged.";
+                }
+                else
+                {
+                    // Importing again on top of a half-written import would insert the same runs a
+                    // second time, so keep the dialog blocked rather than re-arming it.
+                    _selectedParquetPath = null;
+                    _blockedReason = "A failed import could not be undone automatically. Close this " +
+                                     "dialog and remove the partial import before importing again.";
+                    outcome = "The partially written import could NOT be removed automatically. Close " +
+                              "this dialog and delete that import before trying again.";
+                }
 
                 MessageBox.Show(
-                    $"Error during import:\n\n{ex.Message}",
+                    $"Error during import:\n\n{ex.Message}\n\n{outcome}",
                     "Import Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
             finally
             {
-                // Re-enable UI
-                ImportButton.IsEnabled = true;
+                _importing = false;
+
+                // Restore UI. Title and cursor are restored here rather than on the success path only,
+                // so no exit route can leave the dialog stuck showing "Importing... Please wait".
+                this.Title = originalTitle;
+                this.Cursor = System.Windows.Input.Cursors.Arrow;
                 PlateComboBox.IsEnabled = true;
                 RawFilesDataGrid.IsEnabled = true;
+                ValidateImportButton();
             }
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
+            // IsCancel="True" means Esc lands here too. Closing mid-write would set DialogResult on a
+            // window disappearing under a running import and report failure for an import that in
+            // fact succeeded, so the button is inert until the write finishes.
+            if (_importing)
+                return;
+
             DialogResult = false;
+        }
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            // Same reason as Cancel_Click, for the title-bar close box and Alt+F4.
+            if (_importing)
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            base.OnClosing(e);
         }
 
         protected void OnPropertyChanged(string propertyName)

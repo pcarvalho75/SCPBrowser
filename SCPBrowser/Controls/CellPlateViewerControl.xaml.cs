@@ -18,7 +18,7 @@ using Image = System.Windows.Controls.Image;
 namespace SCPBrowser.Controls
 {
     /// <summary>
-    /// Phase 3 viewer: a position grid of isolated-cell thumbnails (laid out by x_pos/y_pos), a gating scatter
+    /// Phase 3 viewer: a grid of isolated-cell thumbnails (one tile per drop, in reading order), a gating scatter
     /// (diameter vs intensity), and a detail panel. Selecting a cell in either the grid or the scatter shows its
     /// full Trans/Blue images, morphology, and DIA-NN link state. Heavy image blobs are loaded lazily on click.
     /// </summary>
@@ -36,6 +36,13 @@ namespace SCPBrowser.Controls
         private BitmapSource? _lastTrans, _lastBlue; // raw detail images, kept so zone stripes toggle without a DB reload
 
         private double _zoom = 1.0; // tile-size multiplier from the Size slider (1.0 = fill width)
+
+        // Columns the grid fills the viewport with at zoom 1.0. The layout can no longer take its column count from
+        // the data (see RelayoutGrid) so it needs a fixed baseline; the Size slider scales tiles away from it.
+        private const int BaselineColumns = 12;
+
+        private int _cols = 1;      // columns in the current layout — arrow-key Up/Down steps by this
+        private int _shown;         // tiles currently drawn (the filter's survivors), for the honest "showing N of M"
 
         // User-selectable scatter axes.
         private static readonly (string Name, Func<IsolatedCell, double?> Get)[] Metrics = new (string, Func<IsolatedCell, double?>)[]
@@ -129,7 +136,10 @@ namespace SCPBrowser.Controls
                     Background = Brushes.Black,
                     Tag = cell,
                     Cursor = Cursors.Hand,
-                    ToolTip = BuildTileTooltip(cell)
+                    ToolTip = BuildTileTooltip(cell),
+                    // Seed from the active filter so a hidden tile never shows at a stale slot before the first
+                    // RefreshFilterAndCounts; the layout only assigns positions to the tiles it draws.
+                    Visibility = PassesFilter(cell) ? Visibility.Visible : Visibility.Collapsed
                 };
 
                 var content = new Grid();
@@ -151,31 +161,50 @@ namespace SCPBrowser.Controls
         }
 
         /// <summary>
+        /// The cells as they are drawn: the current filter's survivors in a stable reading order. Layout, the
+        /// "showing N of M" count and keyboard navigation all key off this one list, so what is on screen and what
+        /// the arrow keys can reach are by construction the same set.
+        /// </summary>
+        private List<IsolatedCell> DisplayOrder()
+            => _cells.Where(PassesFilter)
+                     .OrderBy(c => c.Field ?? 0)
+                     .ThenBy(c => c.XPos ?? 0)
+                     .ThenBy(c => c.YPos ?? 0)
+                     .ThenBy(c => c.DropNo)
+                     .ToList();
+
+        /// <summary>
         /// Sizes/positions the existing tiles to fill the viewport width (tiles grow as the window/panel widens),
-        /// keeping the cell-image aspect ratio. Called on run load and on every resize.
+        /// keeping the cell-image aspect ratio. Called on run load, on every resize, and whenever the filter changes.
         /// </summary>
         private void RelayoutGrid()
         {
-            if (_cells.Count == 0) return;
-            int maxX = _cells.Max(c => c.XPos ?? 1);
-            int maxY = _cells.Max(c => c.YPos ?? 1);
+            if (_cells.Count == 0) { _shown = 0; return; }
 
             double avail = GridScroll.ViewportWidth > 0 ? GridScroll.ViewportWidth : GridScroll.ActualWidth;
             if (avail <= 0) avail = 600;
-            // Square tiles. Baseline fills the width (maxX columns); the Size slider scales from there, and the
-            // baseline is recomputed on every resize so the grid grows/shrinks with the window.
-            double baseTile = (avail - 14) / maxX;
+            // (XPos,YPos) is the position of the imaging FIELD, not of the cell: many cells share one pair, so using
+            // it as the layout key stacked opaque tiles exactly on top of each other and made all but the last of
+            // each stack invisible and un-clickable (208 cells -> 14 reachable tiles on a real run). Lay out in
+            // reading order over the unique drop instead, and derive the column count from the tile size rather than
+            // from the data. Baseline fills the width; the Size slider scales from there, recomputed on every resize.
+            double baseTile = (avail - 14) / BaselineColumns;
             double tile = Math.Clamp(baseTile * _zoom, 24, 360);
+            _cols = Math.Max(1, (int)((avail - 14) / tile));
 
-            GridCanvas.Width = maxX * tile + 6;
-            GridCanvas.Height = maxY * tile + 6;
-            foreach (var cell in _cells)
+            var ordered = DisplayOrder();
+            _shown = ordered.Count;
+            int rows = Math.Max(1, (int)Math.Ceiling(ordered.Count / (double)_cols));
+
+            GridCanvas.Width = _cols * tile + 6;
+            GridCanvas.Height = rows * tile + 6;
+            for (int i = 0; i < ordered.Count; i++)
             {
-                if (!_tiles.TryGetValue(cell.CellId, out var b)) continue;
+                if (!_tiles.TryGetValue(ordered[i].CellId, out var b)) continue;
                 b.Width = tile - 2;
                 b.Height = tile - 2;
-                Canvas.SetLeft(b, ((cell.XPos ?? 1) - 1) * tile);
-                Canvas.SetTop(b, ((cell.YPos ?? 1) - 1) * tile);
+                Canvas.SetLeft(b, (i % _cols) * tile);
+                Canvas.SetTop(b, (i / _cols) * tile);
             }
         }
 
@@ -335,28 +364,25 @@ namespace SCPBrowser.Controls
             }
         }
 
-        /// <summary>Moves the selection to the nearest cell in the given grid direction (prefers staying in the same row/column).</summary>
+        /// <summary>
+        /// Moves the selection through the on-screen order: Left/Right step one tile, Up/Down one row. Navigating the
+        /// display order (rather than XPos/YPos deltas) is what makes every cell reachable — with the old position
+        /// comparison, co-located cells had a zero offset and were skipped outright, and a run whose YPos is constant
+        /// had no Up/Down candidate at all.
+        /// </summary>
         private void MoveSelection(int dx, int dy)
         {
-            if (_cells.Count == 0) return;
-            if (_selected == null) { SelectCell(_cells[0]); return; }
+            var ordered = DisplayOrder();
+            if (ordered.Count == 0) return;
+            var sel = _selected;
+            if (sel == null) { SelectCell(ordered[0]); return; }
 
-            int cx = _selected.XPos ?? 1, cy = _selected.YPos ?? 1;
-            IsolatedCell? best = null;
-            double bestScore = double.MaxValue;
-            foreach (var c in _cells)
-            {
-                if (c.CellId == _selected.CellId) continue;
-                if (!PassesFilter(c)) continue; // stay within the cells the current filter shows
-                int ox = (c.XPos ?? 1) - cx, oy = (c.YPos ?? 1) - cy;
-                if (dx != 0 && Math.Sign(ox) != dx) continue;
-                if (dy != 0 && Math.Sign(oy) != dy) continue;
-                double along = dx != 0 ? Math.Abs(ox) : Math.Abs(oy);
-                double cross = dx != 0 ? Math.Abs(oy) : Math.Abs(ox);
-                double score = along + cross * 3.0; // prefer the same row / column
-                if (score < bestScore) { bestScore = score; best = c; }
-            }
-            if (best != null) SelectCell(best);
+            int idx = ordered.FindIndex(c => c.CellId == sel.CellId);
+            if (idx < 0) { SelectCell(ordered[0]); return; } // the filter hid the selection — re-enter at the start
+
+            int next = idx + (dx != 0 ? dx : dy * Math.Max(1, _cols));
+            if (next < 0 || next >= ordered.Count) return;
+            SelectCell(ordered[next]);
         }
 
         /// <summary>Doublet count = the larger of the instrument's object count and the image blob count.</summary>
@@ -604,28 +630,86 @@ namespace SCPBrowser.Controls
             catch (Exception ex) { InfoText.Text = "Note save failed: " + ex.Message; }
         }
 
+        /// <summary>
+        /// Turns this run's discards into run exclusions. review_status on its own is an annotation — no filtering,
+        /// classification or export path reads it — so without this step a cell the operator discarded stays in the
+        /// UMAP, stays classified and stays in the PLP export. excluded_runs is the mechanism the rest of the app
+        /// honours, so that is what a discard has to become. Explicit, confirmed, and undoable from the excluded-runs
+        /// grid; nothing here changes a number on its own.
+        /// </summary>
+        private async void ApplyDiscardsButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_projectDbPath == null || _query == null || _currentRun == null) return;
+
+            ApplyDiscardsButton.IsEnabled = false;
+            try
+            {
+                var toExclude = await _query.GetDiscardedRawFileIdsAsync(_currentRun.CellenOneRunId);
+                if (toExclude.Count == 0)
+                {
+                    MessageBox.Show(
+                        "No discarded cell in this run is reconciled to a DIA-NN run, so there is nothing to exclude.\n\n" +
+                        "A discard can only reach the analysis through the run it is linked to — use \"Reconcile ↔ runs...\" first.",
+                        "Apply discards", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                var parquet = new ParquetDataService(_projectDbPath);
+                await new ProjectDatabaseService(_projectDbPath).EnsureExcludedRunsTableExistsAsync();
+                var already = await parquet.GetExcludedRunIdsAsync();
+                int fresh = toExclude.Count(id => !already.Contains(id));
+
+                if (MessageBox.Show(
+                        $"Exclude {toExclude.Count} DIA-NN run(s) linked to cells you discarded?\n\n" +
+                        $"{fresh} would be newly excluded ({toExclude.Count - fresh} already excluded).\n\n" +
+                        "Keep/discard is recorded as an annotation only; excluding the run is what actually removes it " +
+                        "from the analysis and the PLP export. You can undo this from the excluded-runs grid, and the " +
+                        "change takes effect the next time the project data is reloaded.",
+                        "Apply discards as run exclusions", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+                    return;
+
+                foreach (int id in toExclude)
+                    await parquet.ExcludeRunAsync(id);
+
+                InfoText.Text = $"Excluded {fresh} run(s) from discarded cells ({toExclude.Count - fresh} were already excluded). Reload the project data to apply.";
+            }
+            catch (Exception ex) { InfoText.Text = "Apply discards failed: " + ex.Message; }
+            finally { RefreshFilterAndCounts(); } // restores the button's enabled state from the current counts
+        }
+
         private void ReviewFilterCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!IsLoaded) return;
             RefreshFilterAndCounts();
         }
 
-        /// <summary>Updates the review counts and shows/hides tiles per the active "Show:" filter.</summary>
+        /// <summary>Updates the review counts and shows/hides tiles per the active "Show:" filter, then re-packs the grid.</summary>
         private void RefreshFilterAndCounts()
         {
-            int needs = 0, kept = 0, disc = 0;
+            int needs = 0, kept = 0, disc = 0, discLinked = 0;
             foreach (var c in _cells)
             {
                 switch (StateOf(c))
                 {
                     case ReviewState.NeedsReview: needs++; break;
                     case ReviewState.Kept: kept++; break;
-                    case ReviewState.Discarded: disc++; break;
+                    case ReviewState.Discarded:
+                        disc++;
+                        if (c.RawFileId != null) discLinked++;
+                        break;
                 }
                 if (_tiles.TryGetValue(c.CellId, out var t))
                     t.Visibility = PassesFilter(c) ? Visibility.Visible : Visibility.Collapsed;
             }
-            ReviewCountText.Text = $"⚑ {needs} review · ✓ {kept} kept · ✗ {disc} discarded";
+            RelayoutGrid(); // hidden tiles leave no hole: the grid packs only what it draws (and sets _shown)
+
+            ReviewCountText.Text = $"⚑ {needs} review · ✓ {kept} kept · ✗ {disc} discarded"
+                                 + (_shown < _cells.Count ? $" · showing {_shown} of {_cells.Count}" : "");
+
+            // The disposition is an annotation until it is applied, so say how many discards could actually be
+            // acted on rather than implying the review already changed the analysis.
+            ApplyDiscardsButton.Content = discLinked > 0 ? $"Apply {discLinked} discards ▸ exclusions" : "Apply discards ▸ exclusions";
+            ApplyDiscardsButton.IsEnabled = discLinked > 0;
         }
 
         private bool PassesFilter(IsolatedCell c)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -13,7 +13,7 @@ namespace SCPBrowser.Services
     /// </summary>
     public class MappedPeptide
     {
-        public string Sequence { get; set; }
+        public string Sequence { get; set; } = string.Empty;
         public int StartPosition { get; set; }
         public int EndPosition { get; set; }
         public double SummedIntensity { get; set; }
@@ -25,12 +25,12 @@ namespace SCPBrowser.Services
     /// </summary>
     public class ProteinCoverageResult
     {
-        public string Accession { get; set; }
-        public string ProteinSequence { get; set; }
+        public string Accession { get; set; } = string.Empty;
+        public string ProteinSequence { get; set; } = string.Empty;
         public int SequenceLength { get; set; }
         public List<MappedPeptide> MappedPeptides { get; set; } = new();
-        public int[] CoveragePerResidue { get; set; }
-        public double[] IntensityPerResidue { get; set; }
+        public int[] CoveragePerResidue { get; set; } = System.Array.Empty<int>();
+        public double[] IntensityPerResidue { get; set; } = System.Array.Empty<double>();
         public double CoveragePercent { get; set; }
         public int UniquePeptideCount { get; set; }
         public int TotalPeptideCount { get; set; }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -16,7 +16,7 @@ namespace SCPBrowser.Services
     public sealed class GeneMatrix
     {
         /// <summary>Header text of column 0 (e.g. "Genes").</summary>
-        public string RowLabelHeader { get; set; }
+        public string RowLabelHeader { get; set; } = string.Empty;
 
         /// <summary>Sample column headers (columns 1..N), typically full raw-file paths.</summary>
         public List<string> SampleHeaders { get; } = new();

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 
 namespace SCPBrowser.Models
@@ -213,13 +213,13 @@ namespace SCPBrowser.Models
     {
         public int ImportId { get; set; }
         public int PlateId { get; set; }
-        public string FileName { get; set; }
-        public string FileHash { get; set; }
+        public string FileName { get; set; } = string.Empty;
+        public string FileHash { get; set; } = string.Empty;
         public DateTime ImportTimestamp { get; set; }
         public int RowCount { get; set; }
         public int ProteinCount { get; set; }
         public int CellCount { get; set; }
-        public string ColumnMappingJson { get; set; }
+        public string ColumnMappingJson { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -227,9 +227,9 @@ namespace SCPBrowser.Models
     /// </summary>
     public class RecentProjectItem
     {
-        public string Path { get; set; }
-        public string Name { get; set; }
-        public string Description { get; set; }
+        public string Path { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -238,9 +238,9 @@ namespace SCPBrowser.Models
     public class ProjectInfo
     {
         public int ProjectId { get; set; }
-        public string ProjectName { get; set; }
+        public string ProjectName { get; set; } = string.Empty;
         public DateTime CreatedDate { get; set; }
         public DateTime LastModified { get; set; }
-        public string Description { get; set; }
+        public string Description { get; set; } = string.Empty;
     }
 }

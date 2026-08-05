@@ -1,4 +1,4 @@
-using PCANipals;
+﻿using PCANipals;
 using SCPBrowser.GOTools;
 using SCPBrowser.Models;
 using SCPBrowser.Services;
@@ -36,57 +36,60 @@ namespace SCPBrowser
         public int Next(int minValue, int maxValue) => _rng.Next(minValue, maxValue);
     }
 
+    /// <summary>
+    /// Inputs for one plot render. Every collection here is genuinely OPTIONAL — a caller supplies only the maps
+    /// for the colouring mode it wants, and the render path null-checks each one — so they are annotated nullable.
+    /// That is the accurate contract, not a suppression: declaring them non-nullable while every call site passes
+    /// null for most of them is what produced the warnings.
+    /// </summary>
     public class ScatterPlotOptions
     {
         // Plate coloring
         public bool UsePlateColoring { get; set; } = false;
-        public Dictionary<string, string> PlatePerFile { get; set; }
-        public Dictionary<string, Color> PlateColorMap { get; set; }
+        public Dictionary<string, string>? PlatePerFile { get; set; }
+        public Dictionary<string, Color>? PlateColorMap { get; set; }
         public bool UsePcaView { get; set; } = false;
         public bool UseUmapView { get; set; } = false;
         public bool UseLogLog { get; set; } = true;
         public bool UseCellTypeColoring { get; set; } = false;
-        public Dictionary<string, CellTypePredictionResult> CellTypePredictions { get; set; }
-        public Dictionary<string, Color> CellTypeColorMap { get; set; }
-        public Dictionary<string, RunGoEnrichmentResult> GoEnrichmentResults { get; set; }
-        public Dictionary<string, Color> GoTermColorMap { get; set; }
+        public Dictionary<string, CellTypePredictionResult>? CellTypePredictions { get; set; }
+        public Dictionary<string, Color>? CellTypeColorMap { get; set; }
+        public Dictionary<string, RunGoEnrichmentResult>? GoEnrichmentResults { get; set; }
+        public Dictionary<string, Color>? GoTermColorMap { get; set; }
 
         public bool UseBioConditionColoring { get; set; } = false;
-        public Dictionary<string, string> BioConditionPerFile { get; set; }
-        public Dictionary<string, Color> BioConditionColorMap { get; set; }
+        public Dictionary<string, string>? BioConditionPerFile { get; set; }
+        public Dictionary<string, Color>? BioConditionColorMap { get; set; }
 
         // Checkbox filter sets for persistent selection
-        public HashSet<string> CheckedCellTypes { get; set; }
-        public HashSet<string> CheckedBioConditions { get; set; }
-        public HashSet<string> CheckedPlates { get; set; }
-
-        // Add field near other private fields:
-        private bool _previousApplyBatchCorrection = false;
+        public HashSet<string>? CheckedCellTypes { get; set; }
+        public HashSet<string>? CheckedBioConditions { get; set; }
+        public HashSet<string>? CheckedPlates { get; set; }
 
         // HVP for dimensionality reduction
-        public List<HvpResult> HvpResults { get; set; }
+        public List<HvpResult>? HvpResults { get; set; }
 
         // Batch effect correction
         public bool ApplyBatchCorrection { get; set; } = false;
 
-            public Dictionary<string, int> BatchLabelPerFile { get; set; }
+        public Dictionary<string, int>? BatchLabelPerFile { get; set; }
 
-            // Dimensionality reduction settings
-            public DimensionReductionSettings? DimRedSettings { get; set; }
+        // Dimensionality reduction settings
+        public DimensionReductionSettings? DimRedSettings { get; set; }
 
-            // Runs excluded by contaminant ratio cutoff (greyed in Explorer, excluded from PCA/UMAP)
-            public HashSet<string> ContaminantRatioExcludedRuns { get; set; }
-            public double ContaminantRatioCutoff { get; set; } = 1.0;
-        }
+        // Runs excluded by contaminant ratio cutoff (greyed in Explorer, excluded from PCA/UMAP)
+        public HashSet<string>? ContaminantRatioExcludedRuns { get; set; }
+        public double ContaminantRatioCutoff { get; set; } = 1.0;
+    }
 
     public class PlotSelectionChangedEventArgs : EventArgs
     {
-        public List<DataPoint> SelectedPoints { get; set; }
+        public List<DataPoint> SelectedPoints { get; set; } = new();
     }
 
     public class PointInteractionEventArgs : EventArgs
     {
-        public DataPoint DataPoint { get; set; }
+        public DataPoint? DataPoint { get; set; }
     }
 
     public partial class ScatterPlotControl : UserControl
@@ -96,7 +99,6 @@ namespace SCPBrowser
         private List<DataPoint> _dataPoints;
         private PlotRenderer _plotRenderer;
         private PcaResult _pcaResult;
-        private double[] _pcaVarianceExplained;
         private List<string> _pcaProteinNames;
         private float[][] _umapResult;
         private double? _labelPurity;
@@ -857,7 +859,7 @@ namespace SCPBrowser
                                 _labelPurity = ComputeLabelPurity(rawFiles, nPcsToUse, neighbors);
                             }
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
 
                             _umapResult = null;
@@ -935,7 +937,7 @@ namespace SCPBrowser
 
                             return purity;
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
 
                             return null;
@@ -1202,7 +1204,7 @@ namespace SCPBrowser
 
                 _pcaProteinNames = proteins;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
 
                 _pcaResult = null;

@@ -1,4 +1,4 @@
-// OmicBrowserControl.xaml.cs
+﻿// OmicBrowserControl.xaml.cs
 // Child control for browsing transcriptomic data (cell type profiles)
 // Location: SCPBrowser/Controls/OmicBrowserControl.xaml.cs
 
@@ -203,7 +203,7 @@ namespace SCPBrowser
 
 
             }
-            catch (Exception ex)
+            catch (Exception)
             {
 
                 throw; // Let the parent handle the error display

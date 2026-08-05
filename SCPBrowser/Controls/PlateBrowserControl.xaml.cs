@@ -1,4 +1,4 @@
-// PlateBrowserControl.xaml.cs
+﻿// PlateBrowserControl.xaml.cs
 // Child control for browsing plate data and raw files
 // Location: SCPBrowser/Controls/PlateBrowserControl.xaml.cs
 
@@ -48,7 +48,7 @@ namespace SCPBrowser
 
 
             }
-            catch (Exception ex)
+            catch (Exception)
             {
 
                 throw; // Let the parent handle the error display

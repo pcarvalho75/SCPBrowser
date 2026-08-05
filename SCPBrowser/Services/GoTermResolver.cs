@@ -1,4 +1,4 @@
-using BioTessera.Core.Models;
+﻿using BioTessera.Core.Models;
 using BioTessera.GO;
 using BioTessera.Utilities;
 using System;
@@ -56,7 +56,7 @@ namespace SCPBrowser.Services
 
 
             }
-            catch (Exception ex)
+            catch (Exception)
             {
 
                 _geneAnnotations = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);

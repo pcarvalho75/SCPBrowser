@@ -1,4 +1,4 @@
-// PlateFilterControl.xaml.cs
+﻿// PlateFilterControl.xaml.cs
 // Global plate filter control - manages plate selection for filtering data
 // Location: SCPBrowser/Controls/PlateFilterControl.xaml.cs
 
@@ -170,7 +170,7 @@ namespace SCPBrowser
 
 
             }
-            catch (Exception ex)
+            catch (Exception)
             {
 
                 _isInitializing = false;

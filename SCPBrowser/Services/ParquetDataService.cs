@@ -1412,7 +1412,7 @@ namespace SCPBrowser.Services
         // Helper class for protein statistics
         private class ProteinQuantSummary
         {
-            public string ProteinId { get; set; }
+            public string ProteinId { get; set; } = string.Empty;
             public int RawFileId { get; set; }
             public double MedianIntensity { get; set; }
             public double MeanIntensity { get; set; }

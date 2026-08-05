@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -289,7 +289,7 @@ namespace SCPBrowser.Services
                 int hvpCount = _hvpResults?.Count(h => h.IsHighlyVariable) ?? 0;
 
             }
-            catch (Exception ex)
+            catch (Exception)
             {
 
                 _hvpResults = null;

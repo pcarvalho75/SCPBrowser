@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -23,16 +23,16 @@ namespace SCPBrowser.Services
         /// </summary>
         public class ProteinAnnotation
         {
-            public string Accession { get; set; }
-            public string EntryName { get; set; }
-            public string ProteinName { get; set; }
-            public string GeneName { get; set; }
-            public string Organism { get; set; }
-            public string FullHeader { get; set; }
+            public string Accession { get; set; } = string.Empty;
+            public string EntryName { get; set; } = string.Empty;
+            public string ProteinName { get; set; } = string.Empty;
+            public string GeneName { get; set; } = string.Empty;
+            public string Organism { get; set; } = string.Empty;
+            public string FullHeader { get; set; } = string.Empty;
             /// <summary>
             /// Source database: "sp" (SwissProt), "tr" (TrEMBL), or "other"
             /// </summary>
-            public string Source { get; set; }
+            public string Source { get; set; } = string.Empty;
         }
 
         /// <summary>

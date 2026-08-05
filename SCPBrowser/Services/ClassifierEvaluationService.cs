@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -27,7 +27,7 @@ namespace SCPBrowser.Services
         public sealed class Options
         {
             /// <summary>Conditions to benchmark. Null/empty = every condition present in the data.</summary>
-            public HashSet<string> IncludeConditions { get; set; }
+            public HashSet<string> IncludeConditions { get; set; } = new();
 
             public int Folds { get; set; } = 5;
             public int Repeats { get; set; } = 10;
@@ -69,9 +69,9 @@ namespace SCPBrowser.Services
 
         public sealed class CellPrediction
         {
-            public string RunName { get; set; }
-            public string TrueLabel { get; set; }
-            public string PredictedLabel { get; set; }
+            public string RunName { get; set; } = string.Empty;
+            public string TrueLabel { get; set; } = string.Empty;
+            public string PredictedLabel { get; set; } = string.Empty;
             public int Repeat { get; set; }
             public int Fold { get; set; }
             public double TopProbability { get; set; }
@@ -85,7 +85,7 @@ namespace SCPBrowser.Services
 
         public sealed class ClassMetrics
         {
-            public string Label { get; set; }
+            public string Label { get; set; } = string.Empty;
             public int Support { get; set; }
             public double Precision { get; set; }
             public double Recall { get; set; }
@@ -761,7 +761,7 @@ namespace SCPBrowser.Services
         /// </summary>
         public sealed class ChannelStat
         {
-            public string Name { get; set; }
+            public string Name { get; set; } = string.Empty;
             public double MeanSpread { get; set; }
             public double MaxSpread { get; set; }
             public int FlatCells { get; set; }
@@ -877,7 +877,7 @@ namespace SCPBrowser.Services
 
         public sealed class ComboStat
         {
-            public string Channels { get; set; }
+            public string Channels { get; set; } = string.Empty;
             public int ChannelCount { get; set; }
             public double Accuracy { get; set; }
             public int Correct { get; set; }

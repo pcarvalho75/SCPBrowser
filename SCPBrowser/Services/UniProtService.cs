@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -59,7 +59,7 @@ namespace SCPBrowser.Services
                 }
                 return entry;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
 
                 return null;
@@ -191,7 +191,7 @@ namespace SCPBrowser.Services
 
                 return entry;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
 
                 return null;
@@ -854,30 +854,30 @@ namespace SCPBrowser.Services
     public class UniProtEntry
     {
         // Identifiers
-        public string AccessionId { get; set; }
+        public string AccessionId { get; set; } = string.Empty;
         public List<string> SecondaryAccessions { get; set; } = new();
-        public string EntryName { get; set; }
+        public string EntryName { get; set; } = string.Empty;
 
         // Names
-        public string ProteinName { get; set; }
+        public string ProteinName { get; set; } = string.Empty;
         public List<string> AlternativeNames { get; set; } = new();
-        public string GeneName { get; set; }
+        public string GeneName { get; set; } = string.Empty;
         public List<string> GeneNameSynonyms { get; set; } = new();
 
         // Organism
-        public string Organism { get; set; }
+        public string Organism { get; set; } = string.Empty;
         public int? OrganismId { get; set; }
 
         // Function & Location
-        public string Function { get; set; }
+        public string Function { get; set; } = string.Empty;
         public List<string> SubcellularLocations { get; set; } = new();
-        public string TissueSpecificity { get; set; }
+        public string TissueSpecificity { get; set; } = string.Empty;
         public List<string> Involvement { get; set; } = new(); // Disease associations
 
         // Sequence info
         public int? SequenceLength { get; set; }
         public double? MolecularWeight { get; set; }
-        public string SequenceString { get; set; }
+        public string SequenceString { get; set; } = string.Empty;
 
         // Structural features (domains, regions, sites from UniProt)
         public List<ProteinFeature> Features { get; set; } = new();
@@ -893,7 +893,7 @@ namespace SCPBrowser.Services
         public List<string> PubMedIds { get; set; } = new();
 
         // Metadata
-        public string ProteinExistence { get; set; }
+        public string ProteinExistence { get; set; } = string.Empty;
         public DateTime? LastModified { get; set; }
 
         // Computed properties
@@ -971,26 +971,26 @@ namespace SCPBrowser.Services
 
     public class GoTermReference
     {
-        public string Id { get; set; }
-        public string Term { get; set; }
-        public string EvidenceType { get; set; }
+        public string Id { get; set; } = string.Empty;
+        public string Term { get; set; } = string.Empty;
+        public string EvidenceType { get; set; } = string.Empty;
 
         public string Url => $"https://www.ebi.ac.uk/QuickGO/term/{Id}";
     }
 
     public class DomainReference
     {
-        public string Id { get; set; }
-        public string Name { get; set; }
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
 
         public string Url => $"https://www.ebi.ac.uk/interpro/entry/InterPro/{Id}";
     }
 
     public class PathwayReference
     {
-        public string Database { get; set; }
-        public string Id { get; set; }
-        public string Name { get; set; }
+        public string Database { get; set; } = string.Empty;
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
 
         public string Url => Database switch
         {
@@ -1009,12 +1009,12 @@ namespace SCPBrowser.Services
         /// <summary>
         /// Feature type (Domain, Region, Transmembrane, Active site, Signal peptide, etc.)
         /// </summary>
-        public string Type { get; set; }
+        public string Type { get; set; } = string.Empty;
 
         /// <summary>
         /// Human-readable description (e.g. "Kinase domain", "ATP binding")
         /// </summary>
-        public string Description { get; set; }
+        public string Description { get; set; } = string.Empty;
 
         /// <summary>
         /// 1-based start position in the protein sequence

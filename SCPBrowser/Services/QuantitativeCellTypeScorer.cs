@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using MathNet.Numerics.Statistics;
@@ -202,7 +202,7 @@ namespace SCPBrowser.Services
 
         public sealed class Result
         {
-            public string TopClass { get; set; }
+            public string TopClass { get; set; } = string.Empty;
             public double Confidence { get; set; }
             public Dictionary<string, double> Probabilities { get; set; } = new(StringComparer.OrdinalIgnoreCase);
             /// <summary>class -> [spearman, signatureRank, auroc, detectionLL] raw channel values.</summary>

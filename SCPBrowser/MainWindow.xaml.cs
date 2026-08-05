@@ -2415,7 +2415,7 @@ namespace SCPBrowser
 
 
             }
-            catch (Exception ex)
+            catch (Exception)
             {
 
                 // Don't show error to user - this is a background operation

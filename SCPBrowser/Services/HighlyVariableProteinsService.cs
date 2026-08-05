@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -13,7 +13,7 @@ namespace SCPBrowser.Services
     public class HvpResult
     {
         /// <summary>Protein identifier</summary>
-        public string ProteinId { get; set; }
+        public string ProteinId { get; set; } = string.Empty;
 
         /// <summary>Mean abundance (calculated on observed values only)</summary>
         public double Mean { get; set; }

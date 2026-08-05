@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Windows.Media.Imaging;
 
@@ -28,7 +28,7 @@ namespace SCPBrowser
                 bitmap.EndInit();
                 return bitmap;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
 
                 return null;

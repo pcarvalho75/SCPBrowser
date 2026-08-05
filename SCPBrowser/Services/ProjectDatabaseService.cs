@@ -159,6 +159,23 @@ namespace SCPBrowser.Services
         /// <summary>
         /// Creates a new project database with all necessary tables
         /// </summary>
+        /// <summary>
+        /// Creates the schema WITHOUT inserting a project_info row.
+        ///
+        /// For standalone reference databases (the transcriptomic converter): they need the reference tables but
+        /// are not projects, and stamping a project_info row into one makes a reference file indistinguishable
+        /// from a real project - it can then be opened as one, and shows up as a project with no data.
+        /// </summary>
+        public async Task CreateSchemaOnlyAsync()
+        {
+            var connectionString = $"Data Source={_projectDbPath}";
+            using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync();
+                await CreateProjectSchemaAsync(connection);
+            }
+        }
+
         public async Task CreateProjectAsync(string projectName, string description)
         {
             var connectionString = $"Data Source={_projectDbPath}";
@@ -392,6 +409,10 @@ namespace SCPBrowser.Services
             CREATE TABLE IF NOT EXISTS excluded_runs (
                 raw_file_id INTEGER PRIMARY KEY,
                 excluded_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                -- WHY this run was excluded. Without it, a cell dropped by cellenONE image QC is
+                -- indistinguishable from one the user excluded by hand months later, and the reason a cell is
+                -- missing from a published figure cannot be reconstructed.
+                exclusion_reason TEXT,
                 FOREIGN KEY (raw_file_id) REFERENCES raw_files(raw_file_id)
             );
 
@@ -593,6 +614,63 @@ namespace SCPBrowser.Services
                     using var alter = connection.CreateCommand();
                     alter.CommandText = "ALTER TABLE cellenone_runs ADD COLUMN ejection_bound INTEGER; ALTER TABLE cellenone_runs ADD COLUMN sedimentation_bound INTEGER;";
                     await alter.ExecuteNonQueryAsync();
+                }
+
+                // ---- raw_file_name uniqueness -----------------------------------------------------------------
+                // The code treats raw_file_name as unique across the project - GetRawFileNameToIdMappingAsync and
+                // LoadCellTypeClassificationsAsync both build dictionaries keyed on it and THROW on a duplicate,
+                // aborting the project load - but nothing enforced it. A duplicate import used to be able to
+                // create one.
+                //
+                // The index cannot be created blindly: on a database that already contains duplicates
+                // CREATE UNIQUE INDEX fails, which would make an existing project unopenable. So detect first,
+                // and on an already-duplicated database leave the index off (the app-level guards prevent new
+                // duplicates) rather than refuse to open the project.
+                // exclusion_reason on pre-existing databases.
+                bool hasExclusionReason = false;
+                using (var check = connection.CreateCommand())
+                {
+                    check.CommandText = "PRAGMA table_info(excluded_runs)";
+                    using var reader = await check.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        if (reader.GetString(1).Equals("exclusion_reason", StringComparison.OrdinalIgnoreCase))
+                        { hasExclusionReason = true; break; }
+                    }
+                }
+                if (!hasExclusionReason)
+                {
+                    using var alter = connection.CreateCommand();
+                    alter.CommandText = "ALTER TABLE excluded_runs ADD COLUMN exclusion_reason TEXT";
+                    await alter.ExecuteNonQueryAsync();
+                }
+
+                long duplicateNames = 0;
+                using (var dupCheck = connection.CreateCommand())
+                {
+                    dupCheck.CommandText = @"
+                        SELECT COUNT(*) FROM (
+                            SELECT raw_file_name FROM raw_files
+                            GROUP BY raw_file_name HAVING COUNT(*) > 1
+                        )";
+                    var scalar = await dupCheck.ExecuteScalarAsync();
+                    duplicateNames = scalar == null || scalar == DBNull.Value ? 0 : Convert.ToInt64(scalar);
+                }
+
+                if (duplicateNames == 0)
+                {
+                    using var idx = connection.CreateCommand();
+                    idx.CommandText =
+                        "CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_files_name_unique ON raw_files(raw_file_name)";
+                    await idx.ExecuteNonQueryAsync();
+                }
+                else
+                {
+                    // Surface it rather than failing silently: these rows will still throw on project load until
+                    // they are cleaned up, and the user needs to know which project is affected.
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[Migration] raw_files contains {duplicateNames} duplicated raw_file_name value(s); " +
+                        "the uniqueness index was NOT created. Remove the duplicate import to enable it.");
                 }
             }
         }

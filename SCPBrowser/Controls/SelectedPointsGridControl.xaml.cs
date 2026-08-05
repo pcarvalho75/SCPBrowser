@@ -164,9 +164,19 @@ namespace SCPBrowser
             if (confirm != MessageBoxResult.Yes)
                 return;
 
-            // Raise first so the database delete is issued before the grid claims everything is included.
+            // Ask the host to perform the delete. The grid is NOT updated here: the handler is async, so ordering
+            // the raise first only means the delete was STARTED, not that it succeeded. If it failed, flipping the
+            // rows to "included" would show a state the database does not have. The host calls
+            // ConfirmExclusionsCleared() once the delete has actually completed.
             ClearAllExclusionsRequested?.Invoke(this, EventArgs.Empty);
+        }
 
+        /// <summary>
+        /// Marks every row included and hides the clear button. Called by the host AFTER the exclusions have really
+        /// been deleted, so the grid can never claim a state the database does not have.
+        /// </summary>
+        public void ConfirmExclusionsCleared()
+        {
             if (_currentGridData != null)
             {
                 foreach (var item in _currentGridData)

@@ -129,7 +129,14 @@ namespace SCPBrowser.Services
                     });
                 });
 
-            var predictions = rows.ToDictionary(r => r.RunName, r => r.Result);
+            // A bare ToDictionary throws on a duplicate run name, and this runs during project load - one duplicate
+            // row aborted the whole load with an opaque exception. Duplicates should not exist (the schema now has
+            // a uniqueness index where it can), but the load must not be the thing that dies if they do: keep the
+            // first row per run and carry on.
+            var predictions = new Dictionary<string, CellTypePredictionResult>();
+            foreach (var r in rows)
+                if (!predictions.ContainsKey(r.RunName))
+                    predictions[r.RunName] = r.Result;
 
             return predictions;
         }

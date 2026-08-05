@@ -669,7 +669,7 @@ namespace SCPBrowser.Controls
                     return;
 
                 foreach (int id in toExclude)
-                    await parquet.ExcludeRunAsync(id);
+                    await parquet.ExcludeRunAsync(id, "cellenONE QC: discarded");
 
                 InfoText.Text = $"Excluded {fresh} run(s) from discarded cells ({toExclude.Count - fresh} were already excluded). Reload the project data to apply.";
             }

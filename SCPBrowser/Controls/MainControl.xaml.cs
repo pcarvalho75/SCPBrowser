@@ -336,14 +336,20 @@ namespace SCPBrowser
                 TotalProteinsText.Text = "0";
                 TotalPeptidesText.Text = "0";
                 TotalPlatesText.Text = "0";
-                StatusText.Text = "Project open. Please import a Parquet file to see data.";
+                StatusText.Text = "Project open — no data yet. Start with Import ▸ Import Plate Metadata... "
+                                + "(a plate must exist before a parquet file can be imported).";
 
+                // Step 1 is registering a PLATE, not importing the parquet: the parquet dialog's Import button
+                // stays disabled until a plate exists, so the previous wording sent every new user into a dead
+                // end on their first action. The steps below are the order the app actually enforces.
                 MessageBox.Show(
-                    "No data found in this project.\n\n" +
+                    "This project has no data yet.\n\n" +
                     "To get started:\n" +
-                    "1. Go to Import → Parquet File...\n" +
-                    "2. Select your DIA-NN parquet file\n" +
-                    "3. Assign biological conditions\n" +
+                    "1. Import ▸ Import Plate Metadata...  — register a plate\n" +
+                    "     (you can attach a cellenONE isolation run here, or later via\n" +
+                    "      Import ▸ Import cellenONE Run into Existing Plate...)\n" +
+                    "2. Import ▸ Parquet File...  — select your DIA-NN parquet\n" +
+                    "3. Assign each run's plate and biological condition\n" +
                     "4. Click Import",
                     "No Data Available",
                     MessageBoxButton.OK,

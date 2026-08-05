@@ -1,4 +1,4 @@
-using Microsoft.Win32;
+﻿using Microsoft.Win32;
 using SCPBrowser.GOTools;
 using SCPBrowser.Models;
 using SCPBrowser.Services;
@@ -37,6 +37,8 @@ namespace SCPBrowser
         private const string SETTING_UPPER_PROTEIN_CUTOFF = "UpperProteinCutoff";
         private DataFilterService _dataFilterService;
         private int _pendingProteinCutoff;
+        private System.Windows.Threading.DispatcherTimer _maxProteinCutoffDebounceTimer;
+        private int _pendingMaxProteinCutoff;
 
         /// <summary>
         /// True while OpenProjectAsync is running. A project load yields to the dispatcher repeatedly
@@ -107,6 +109,18 @@ namespace SCPBrowser
             {
                 _proteinCutoffDebounceTimer.Stop();
                 await ApplyProteinCutoffAsync(_pendingProteinCutoff);
+            };
+
+            // The UPPER cutoff is the same control type driving the same full re-filter, so it needs the same
+            // treatment - without it, dragging that spinner fired a complete filter pass per tick.
+            _maxProteinCutoffDebounceTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(ProteinCutoffDebounceDelayMs)
+            };
+            _maxProteinCutoffDebounceTimer.Tick += async (s, e) =>
+            {
+                _maxProteinCutoffDebounceTimer.Stop();
+                await ApplyMaxProteinCutoffAsync(_pendingMaxProteinCutoff);
             };
 
             // CRITICAL: Ensure loading overlay is hidden on startup
@@ -344,6 +358,7 @@ namespace SCPBrowser
 
                 ProjectBrowserMenuItem.IsEnabled = true;
                 ExportPLPMenuItem.IsEnabled = true;
+                ExportAnalysisReportMenuItem.IsEnabled = true;
             }
             catch (Exception ex)
             {
@@ -645,9 +660,18 @@ namespace SCPBrowser
             }
         }
 
-        private async void MainControlTab_MaxProteinCutoffChanged(object sender, int newUpperCutoff)
+        private void MainControlTab_MaxProteinCutoffChanged(object sender, int newUpperCutoff)
         {
-            if (!_hasOpenProject) return;
+            // Debounced for the same reason as the lower cutoff: each change triggers a full re-filter.
+            _pendingMaxProteinCutoff = newUpperCutoff;
+            _maxProteinCutoffDebounceTimer?.Stop();
+            _maxProteinCutoffDebounceTimer?.Start();
+        }
+
+        private async Task ApplyMaxProteinCutoffAsync(int newUpperCutoff)
+        {
+            // A debounced pass can land after the project was closed, so re-check rather than assume.
+            if (!_hasOpenProject || _dataFilterService == null) return;
             try
             {
                 if (_projectDatabaseService != null)
@@ -660,7 +684,7 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[MainControlTab_MaxProteinCutoffChanged] {ex}");
+                System.Diagnostics.Debug.WriteLine($"[ApplyMaxProteinCutoffAsync] {ex}");
                 MessageBox.Show($"Error applying upper protein cutoff:\n\n{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -905,9 +929,9 @@ namespace SCPBrowser
         /// </summary>
         private void SetProteinCoveragePlaceholder(string message)
         {
-            var placeholder = PeptideTicTab?.ProteinCoveragePanel?.PlaceholderText;
-            if (placeholder != null)
-                placeholder.Text = message;
+            // Goes through the control's own public API rather than reaching into its XAML-generated field, so a
+            // rename or an x:FieldModifier change cannot silently break it.
+            PeptideTicTab?.ProteinCoveragePanel?.SetPlaceholderMessage(message);
         }
 
         private async void ClearCellTypeClassifications_Click(object sender, RoutedEventArgs e)
@@ -1039,6 +1063,7 @@ namespace SCPBrowser
 
             ProjectBrowserMenuItem.IsEnabled = false;
             ExportPLPMenuItem.IsEnabled = false;
+            ExportAnalysisReportMenuItem.IsEnabled = false;
             ExportPLPControl.Visibility = Visibility.Collapsed;
 
             PlateFilterControl.Visibility = Visibility.Collapsed;
@@ -1656,7 +1681,28 @@ namespace SCPBrowser
 
         private void Settings_Click(object sender, RoutedEventArgs e)
         {
+            // Subscribe once. Changing the QC gate in Settings must re-filter the session the user is looking at,
+            // not wait for the next project open.
+            if (!_settingsCutoffHooked)
+            {
+                SettingsDialog.ProteinCutoffSaved += Settings_ProteinCutoffSaved;
+                _settingsCutoffHooked = true;
+            }
             SettingsDialog.Visibility = Visibility.Visible;
+        }
+
+        private bool _settingsCutoffHooked;
+
+        /// <summary>
+        /// Applies a protein-cutoff change made in Settings to the open session by driving the Explorer's spinner,
+        /// which is the same control the debounced filter pipeline already listens to - so there is exactly one
+        /// code path that applies this value, and the two places that display it cannot disagree.
+        /// </summary>
+        private void Settings_ProteinCutoffSaved(object sender, int newCutoff)
+        {
+            if (!_hasOpenProject) return;
+            if (MainControlTab.ProteinCutoff == newCutoff) return;
+            MainControlTab.ProteinCutoff = newCutoff;
         }
 
         private async void ProjectBrowser_Click(object sender, RoutedEventArgs e)
@@ -1674,6 +1720,17 @@ namespace SCPBrowser
                 MessageBox.Show($"Error opening project browser:\n\n{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        /// <summary>
+        /// Utils ▸ Export Analysis Report. Same feature as the button on the PLP export panel; surfaced in the menu
+        /// because it is the reproducibility record (what settings produced these figures) and should be findable
+        /// without knowing it lives in the export tab.
+        /// </summary>
+        private void ExportAnalysisReport_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_hasOpenProject) return;
+            ExportPLPControl.ExportAnalysisReport();
         }
 
         private async void ExportPLP_Click(object sender, RoutedEventArgs e)
@@ -2799,13 +2856,18 @@ namespace SCPBrowser
             {
                 await _parquetService.ClearAllExclusionsAsync();
 
+                // Only now is it true that nothing is excluded. Telling the grid here - rather than letting it
+                // assume - means a failed delete can never leave the UI showing every run as included while the
+                // database still has exclusions.
+                PeptideTicTab.ConfirmExclusionsCleared();
             }
             catch (Exception ex)
             {
 
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    MessageBox.Show($"Error clearing exclusions:\n\n{ex.Message}", "Error",
+                    MessageBox.Show($"Error clearing exclusions:\n\n{ex.Message}\n\n" +
+                        "The exclusions were NOT cleared and are still in effect.", "Error",
                         MessageBoxButton.OK, MessageBoxImage.Error);
                 });
             }

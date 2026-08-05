@@ -15,6 +15,13 @@ namespace SCPBrowser
 
         public event EventHandler SettingsSaved;
 
+        /// <summary>
+        /// Raised with the new value when the minimum-proteins-per-cell QC gate is changed here, so the host can
+        /// re-filter the OPEN session. Without this the setting only took effect on the next project open, which
+        /// silently moved cell counts between sessions.
+        /// </summary>
+        public event EventHandler<int> ProteinCutoffSaved;
+
         private ProjectDatabaseService _databaseService;
 
         // The cutoff as it stood when the page was loaded, so Save can tell the user when it actually changed.
@@ -147,20 +154,14 @@ namespace SCPBrowser
             ShowStatusMessage("✓ Settings saved successfully!", true);
             SettingsSaved?.Invoke(this, EventArgs.Empty);
 
-            // Changing the QC gate here does not re-filter the open session - MainWindow reads it when a project
-            // is opened. Say so out loud rather than let the cell count change unannounced on the next open.
+            // The QC gate decides how many cells enter PCA, UMAP, classification and export, so a change made here
+            // must take effect NOW. Previously it was only read when a project was opened, which meant the user
+            // changed it, saw nothing happen, and found the cell count had moved on some later open - a silent
+            // change to a reported number. Hand it to the host so the live session re-filters immediately.
             if (_databaseService != null && proteinCutoff != _loadedProteinCutoff)
             {
-                MessageBox.Show(
-                    $"Min. Proteins per Cell saved as {proteinCutoff} (was {_loadedProteinCutoff}).\n\n" +
-                    "It will be applied the next time this project is opened, which will change how many cells " +
-                    "enter PCA, UMAP, classification and export.\n\n" +
-                    "To apply it to the session you are in now, set 'Min. Proteins G.' on the Explorer tab.",
-                    "Protein Cutoff Changed",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-
                 _loadedProteinCutoff = proteinCutoff;
+                ProteinCutoffSaved?.Invoke(this, proteinCutoff);
             }
         }
 

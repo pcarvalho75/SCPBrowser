@@ -514,6 +514,13 @@ namespace SCPBrowser
         // had no answer. This block gathers everything that can be stated truthfully and names the rest as
         // not captured rather than printing a default that was never actually used.
 
+        /// <summary>
+        /// Writes the analysis report (the settings behind the current figures). Public so the same feature is
+        /// reachable from the Utils menu, not only from this panel - reproducibility documentation that a reviewer
+        /// may ask for should not be hidden inside the PLP export tab.
+        /// </summary>
+        public void ExportAnalysisReport() => ExportReportButton_Click(this, new RoutedEventArgs());
+
         private async void ExportReportButton_Click(object sender, RoutedEventArgs e)
         {
             if (!_isInitialized || _data == null)

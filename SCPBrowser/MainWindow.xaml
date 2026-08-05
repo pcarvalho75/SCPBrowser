@@ -109,10 +109,15 @@
       Click="ProjectBrowser_Click"
       IsEnabled="False"/>
                 <Separator/>
-                <MenuItem Header="_Export to PatternLab (PLP)..." 
+                <MenuItem Header="_Export to PatternLab (PLP)..."
       x:Name="ExportPLPMenuItem"
       Click="ExportPLP_Click"
       IsEnabled="False"/>
+                <MenuItem Header="Export _Analysis Report..."
+      x:Name="ExportAnalysisReportMenuItem"
+      Click="ExportAnalysisReport_Click"
+      IsEnabled="False"
+      ToolTip="Record the settings behind the current figures (filters, normalisation, HVP state, batch correction, seeds, excluded runs) so an analysis can be reproduced and described"/>
                 <Separator/>
                 <MenuItem Header="_Clear Cell Type Classifications" 
       x:Name="ClearCellTypeClassificationsMenuItem"

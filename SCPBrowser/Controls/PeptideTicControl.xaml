@@ -256,7 +256,7 @@
                   <ComboBoxItem x:Name="ColorByPlateItem" Content="Plate" Tag="Plate"/>
                   <ComboBoxItem x:Name="ColorByCellTypeItem" Content="Cell Type" Tag="CellType" IsEnabled="False"
                                ToolTipService.ShowOnDisabled="True"
-                               ToolTip="Import a transcriptomic or proteomic reference via the Reference menu to enable cell type classification."
+                               ToolTip="Import a reference profile via Import &gt; Omic Profile (Transcriptomic / Proteomic)... to enable cell type classification."
                                Background="#FFECEC"/>
                   <ComboBoxItem x:Name="ColorByKMeansItem" Content="K-means" Tag="KMeans"
                                ToolTip="Cluster cells with k-means (k-means++ seeding) on the currently displayed axes."/>

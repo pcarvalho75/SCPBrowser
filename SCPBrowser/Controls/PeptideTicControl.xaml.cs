@@ -574,6 +574,12 @@ namespace SCPBrowser
             SelectionChangedForBioTessera?.Invoke(this, EventArgs.Empty);
         }
 
+        /// <summary>
+        /// Passthrough: tells the grid the exclusions really were deleted, so it can update. Kept as an explicit
+        /// confirmation rather than an optimistic update because the host's delete is async and can fail.
+        /// </summary>
+        public void ConfirmExclusionsCleared() => SelectedPointsGridPanel?.ConfirmExclusionsCleared();
+
         private void SelectedPointsGridPanel_ClearAllExclusionsRequested(object sender, EventArgs e)
         {
             // Bubble up to MainWindow for database persistence

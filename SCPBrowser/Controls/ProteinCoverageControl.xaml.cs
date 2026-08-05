@@ -17,6 +17,19 @@ namespace SCPBrowser.Controls
 {
     public partial class ProteinCoverageControl : UserControl
     {
+        /// <summary>
+        /// Sets the message shown when no coverage can be displayed (e.g. no FASTA loaded). A public entry point
+        /// so callers do not have to reach through the XAML-generated field of another control, which silently
+        /// breaks if that element is renamed or made private.
+        /// </summary>
+        public void SetPlaceholderMessage(string message)
+        {
+            if (PlaceholderText == null) return;
+            PlaceholderText.Text = message ?? string.Empty;
+            PlaceholderText.Visibility = Visibility.Visible;
+            if (CoveragePanel != null) CoveragePanel.Visibility = Visibility.Collapsed;
+        }
+
         private ProteinCoverageService _coverageService;
         private UniProtService _uniProtService;
         private ProteinCoverageResult _currentResult;
@@ -266,6 +279,7 @@ namespace SCPBrowser.Controls
 
                 // Draw everything
                 PlaceholderText.Visibility = Visibility.Collapsed;
+                // (placeholder hidden — coverage is being shown)
                 CoveragePanel.Visibility = Visibility.Visible;
                 RedrawAll();
 

@@ -1155,15 +1155,23 @@ namespace SCPBrowser.Services
         /// <summary>
         /// Excludes a run from BioTessera selection
         /// </summary>
-        public async Task ExcludeRunAsync(int rawFileId)
+        /// <param name="reason">
+        /// Why the run is being excluded (e.g. "cellenONE QC: discarded"). Recorded so an automated QC exclusion
+        /// can later be told apart from a manual one - otherwise the reason a cell is absent from a figure cannot
+        /// be reconstructed. Optional; existing callers keep their previous behaviour.
+        /// </param>
+        public async Task ExcludeRunAsync(int rawFileId, string reason = null)
         {
             await ExecuteNonQueryAsync(@"
-                INSERT OR IGNORE INTO excluded_runs (raw_file_id, excluded_at)
-                VALUES (@rawFileId, @excludedAt)",
+                INSERT INTO excluded_runs (raw_file_id, excluded_at, exclusion_reason)
+                VALUES (@rawFileId, @excludedAt, @reason)
+                ON CONFLICT(raw_file_id) DO UPDATE SET
+                    exclusion_reason = COALESCE(excluded.exclusion_reason, excluded_runs.exclusion_reason)",
                 cmd =>
                 {
                     cmd.Parameters.AddWithValue("@rawFileId", rawFileId);
                     cmd.Parameters.AddWithValue("@excludedAt", DateTime.Now.ToString("o"));
+                    cmd.Parameters.AddWithValue("@reason", (object)reason ?? DBNull.Value);
                 });
         }
 

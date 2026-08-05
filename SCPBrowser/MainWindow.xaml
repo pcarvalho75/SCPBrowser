@@ -1,4 +1,4 @@
-<Window x:Class="SCPBrowser.MainWindow"
+﻿<Window x:Class="SCPBrowser.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -87,10 +87,12 @@
                 <MenuItem Header="Cell Plate _Viewer..."
                           x:Name="CellViewerMenuItem"
                           Click="CellViewer_Click"
+                          IsEnabled="False"
                           ToolTip="View isolated cells: position grid, brightfield/fluorescence images, gating scatter"/>
                 <MenuItem Header="_Reconcile Cells ↔ Runs..."
                           x:Name="ReconcileCellsMenuItem"
                           Click="ReconcileCells_Click"
+                          IsEnabled="False"
                           ToolTip="Match isolated cells to DIA-NN raw files"/>
                 <Separator/>
                 <MenuItem Header="_Evaluate Classifier..."

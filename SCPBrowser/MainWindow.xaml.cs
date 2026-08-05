@@ -216,6 +216,9 @@ namespace SCPBrowser
                 UnsubscribeProjectEvents();
 
                 _currentProjectPath = projectDbPath;
+                // Let the global crash handler name and log beside the project that was actually open;
+                // without this a crash in an OPENED project logs to LocalAppData and reports "none open".
+                App.CurrentProjectPath = projectDbPath;
 
                 // Run service initialization and database work on background thread
                 ProjectInfo projectInfo = null;
@@ -358,6 +361,8 @@ namespace SCPBrowser
 
                 ProjectBrowserMenuItem.IsEnabled = true;
                 ExportPLPMenuItem.IsEnabled = true;
+                CellViewerMenuItem.IsEnabled = true;
+                ReconcileCellsMenuItem.IsEnabled = true;
                 ExportAnalysisReportMenuItem.IsEnabled = true;
             }
             catch (Exception ex)
@@ -573,14 +578,41 @@ namespace SCPBrowser
                     ? "FASTA ✓"
                     : "FASTA — (Import ▸ Search Database (FASTA)...)";
 
-                string text = string.Join("     ·     ", new[] { plates, runs, reference, classified, fasta });
-                if (!string.IsNullOrEmpty(_partialDataNote))
-                    text = _partialDataNote + "     ·     " + text;
+                // Build as inlines so an unmet step is CLICKABLE and runs the action it names - telling the user
+                // which menu to hunt for is second best when the strip can just do it.
+                var normal = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x47, 0x55, 0x69));
+                var alert = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB9, 0x1C, 0x1C));
 
-                PipelineStatusText.Text = text;
-                PipelineStatusText.Foreground = string.IsNullOrEmpty(_partialDataNote)
-                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x47, 0x55, 0x69))
-                    : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB9, 0x1C, 0x1C));
+                PipelineStatusText.Inlines.Clear();
+                PipelineStatusText.Foreground = string.IsNullOrEmpty(_partialDataNote) ? normal : alert;
+
+                if (!string.IsNullOrEmpty(_partialDataNote))
+                {
+                    PipelineStatusText.Inlines.Add(new System.Windows.Documents.Run(_partialDataNote) { Foreground = alert });
+                    PipelineStatusText.Inlines.Add(new System.Windows.Documents.Run("     ·     "));
+                }
+
+                void AddStep(string label, bool satisfied, RoutedEventHandler action, bool last = false)
+                {
+                    if (satisfied || action == null)
+                    {
+                        PipelineStatusText.Inlines.Add(new System.Windows.Documents.Run(label));
+                    }
+                    else
+                    {
+                        var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(label));
+                        link.Click += (s, ev) => action(s, ev);
+                        PipelineStatusText.Inlines.Add(link);
+                    }
+                    if (!last) PipelineStatusText.Inlines.Add(new System.Windows.Documents.Run("     ·     "));
+                }
+
+                AddStep(plates, plateCount > 0, ImportPlateMetadata_Click);
+                AddStep(runs, runCount > 0, ImportParquet_Click);
+                AddStep(reference, hasReference, ImportOmicProfile_Click);
+                AddStep(classified, classifiedCount > 0, null);
+                AddStep(fasta, hasFasta, ImportFasta_Click, last: true);
+
                 PipelineStatusStrip.Visibility = Visibility.Visible;
             }
             catch (Exception ex)
@@ -1038,6 +1070,7 @@ namespace SCPBrowser
             _dataFilterService?.Clear();
 
             _currentProjectPath = null;
+            App.CurrentProjectPath = null;
             SettingsDialog.SetDatabaseService(null);
             _projectDatabaseService = null;
             _parquetService = null;
@@ -1063,6 +1096,8 @@ namespace SCPBrowser
 
             ProjectBrowserMenuItem.IsEnabled = false;
             ExportPLPMenuItem.IsEnabled = false;
+            CellViewerMenuItem.IsEnabled = false;
+            ReconcileCellsMenuItem.IsEnabled = false;
             ExportAnalysisReportMenuItem.IsEnabled = false;
             ExportPLPControl.Visibility = Visibility.Collapsed;
 
@@ -1677,6 +1712,32 @@ namespace SCPBrowser
         private void Exit_Click(object sender, RoutedEventArgs e)
         {
             Close();
+        }
+
+        /// <summary>
+        /// Refuses to close silently while a cellenONE import is mid-write. That import writes one transaction
+        /// covering the run, every isolated cell and every image blob; killing the process during it leaves the
+        /// project without the cells the user believes were imported.
+        /// </summary>
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (_cellenOneImportRunning)
+            {
+                var answer = MessageBox.Show(
+                    "A cellenONE import is still writing to this project.\n\n" +
+                    "Closing now can leave the import incomplete — the run may be registered with only part of " +
+                    "its cells and images.\n\nClose anyway?",
+                    "Import in progress",
+                    MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+
+                if (answer != MessageBoxResult.Yes)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+            }
+
+            base.OnClosing(e);
         }
 
         private void Settings_Click(object sender, RoutedEventArgs e)

@@ -76,9 +76,17 @@ namespace SCPBrowser
             if (menu == null)
                 return;
 
+            // These actions now have toolbar buttons, which is where users actually look. Keep them on the context
+            // menu too - it is the natural place after right-clicking a row - but guard against adding them twice
+            // if this ever runs more than once.
+            const string bundledHeader = "Mark bundled contaminants (cRAP subset)...";
+            foreach (var existing in menu.Items)
+                if (existing is MenuItem mi && string.Equals(mi.Header as string, bundledHeader, StringComparison.Ordinal))
+                    return;
+
             menu.Items.Add(new Separator());
 
-            var bundledItem = new MenuItem { Header = "Mark bundled contaminants (cRAP subset)..." };
+            var bundledItem = new MenuItem { Header = bundledHeader };
             bundledItem.Click += MarkBundledContaminants_Click;
             menu.Items.Add(bundledItem);
 

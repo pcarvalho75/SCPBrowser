@@ -40,6 +40,24 @@
 
             <Rectangle Width="1" Fill="#cbd5e1" Margin="15,2,15,2"/>
 
+            <!-- Discoverable entry points for the list-driven marking. They were reachable only from the grid's
+                 right-click menu, which nobody finds unless they already know it is there. -->
+            <Button x:Name="MarkBundledContaminantsButton"
+                    Content="☣ Bundled cRAP..."
+                    Click="MarkBundledContaminants_Click"
+                    Padding="10,5"
+                    Margin="0,0,5,0"
+                    ToolTip="Mark the bundled cRAP subset (keratins, proteases, serum/milk proteins). Every match is listed for confirmation first, and nothing is excluded until you press Apply Contaminants."/>
+
+            <Button x:Name="LoadContaminantListButton"
+                    Content="Load list..."
+                    Click="LoadContaminantList_Click"
+                    Padding="10,5"
+                    Margin="0,0,0,0"
+                    ToolTip="Load accessions from a plain one-per-line list or a FASTA (e.g. the official cRAP FASTA)"/>
+
+            <Rectangle Width="1" Fill="#cbd5e1" Margin="15,2,15,2"/>
+
             <Button x:Name="SelectAllVisibleButton"
                     Content="☣ Select All Visible"
                     Click="SelectAllVisibleButton_Click"

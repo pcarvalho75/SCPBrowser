@@ -44,6 +44,13 @@ namespace SCPBrowser
         private bool _isLassoActive = false;
         private List<HvpResult> _hvpResults;
         private int _hvpCount = 500;
+
+        /// <summary>
+        /// Set when the HVP filter was requested but no protein could be scored (VST did not run), so the filter
+        /// was bypassed and ALL proteins were used. Surfaced in the plot header — otherwise the plot would claim a
+        /// highly-variable selection that is really just the full protein set.
+        /// </summary>
+        private bool _hvpUnscored;
         private Dictionary<string, int> _plateMappingPerFile;
         private HashSet<string> _checkedPlates = new HashSet<string>();
         private ProjectDatabaseService _databaseService;
@@ -1737,8 +1744,20 @@ namespace SCPBrowser
 
             if (_dimRedSettings != null && _dimRedSettings.UseHvpFilter)
             {
+                // If VST never ran (too few proteins cleared the detection filter — e.g. a filtered view with under
+                // ~20 cells), every VarianceStandardized is 0.0 and this ordering degenerates to "alphabetically
+                // first N" while still being labelled "top N highly variable". Fall back to ALL proteins instead of
+                // silently handing PCA/UMAP an arbitrary protein set; UpdatePlotHeader flags it to the user.
+                if (!_hvpResults.Any(h => h.IsScored))
+                {
+                    _hvpUnscored = true;
+                    return _hvpResults;
+                }
+                _hvpUnscored = false;
+
                 // Return only top N proteins by VarianceStandardized
                 return _hvpResults
+                    .Where(h => h.IsScored)
                     .OrderByDescending(h => h.VarianceStandardized)
                     .Take(_hvpCount)
                     .Select(h => new HvpResult
@@ -1751,6 +1770,7 @@ namespace SCPBrowser
                         DetectionCount = h.DetectionCount,
                         DetectionRate = h.DetectionRate,
                         Rank = h.Rank,
+                        IsScored = h.IsScored,
                         IsHighlyVariable = true  // Mark all selected as HVP
                     })
                     .ToList();
@@ -1795,6 +1815,11 @@ namespace SCPBrowser
             {
                 baseHeader = $"{XyAxisLabel()} ({fileCount} files)";
             }
+
+            // The HVP filter was asked for but nothing could be scored, so it was bypassed. Say so — a silent
+            // fallback would present an embedding computed on ALL proteins as a highly-variable-protein embedding.
+            if (_hvpUnscored && options.DimRedSettings?.UseHvpFilter == true)
+                baseHeader += "  |  HVP filter inactive: too few cells to score variability — using all proteins";
 
             PlotGroupBoxHeader.Text = baseHeader;
         }

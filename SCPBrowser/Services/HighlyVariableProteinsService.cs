@@ -30,6 +30,14 @@ namespace SCPBrowser.Services
         /// <summary>Rank by standardized variance (1 = most variable)</summary>
         public int Rank { get; set; }
 
+        /// <summary>
+        /// True only when VST actually ran and VarianceStandardized is a measured quantity. False when too few
+        /// proteins passed the detection filter to fit the mean-variance trend — in that state every protein
+        /// carries VarianceStandardized = 0, so any ranking by it is arbitrary (it degenerates to alphabetical)
+        /// and callers must NOT present the result as "top N highly variable".
+        /// </summary>
+        public bool IsScored { get; set; }
+
         /// <summary>Whether this protein is selected as highly variable</summary>
         public bool IsHighlyVariable { get; set; }
 
@@ -171,11 +179,16 @@ namespace SCPBrowser.Services
 
             if (validResults.Count < 10)
             {
-
+                // Too few proteins clear the detection filter to fit the mean-variance trend, so VST never runs and
+                // VarianceStandardized stays 0.0 for EVERY protein. Leave IsScored false: ranking by an all-zero key
+                // is arbitrary and, because the sort is stable over a ProteinId-ordered input, silently degenerates
+                // to "alphabetically first N". Callers must fall back rather than label that selection "top N
+                // highly variable".
                 foreach (var r in results)
                 {
                     r.Rank = int.MaxValue;
                     r.IsHighlyVariable = false;
+                    r.IsScored = false;
                 }
                 ReportProgress(100);
                 return results.OrderBy(r => r.ProteinId).ToList();
@@ -364,6 +377,9 @@ namespace SCPBrowser.Services
             {
                 var result = validResults[i];
                 var abundances = proteinMatrix[result.ProteinId].Values.ToList(); // Observed only
+
+                // VST is running for this protein, so its VarianceStandardized below is a measured quantity.
+                result.IsScored = true;
 
                 // Expected variance from LOESS fit
                 result.VarianceExpected = Math.Pow(10, fittedLogVariance[i]);

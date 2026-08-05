@@ -136,7 +136,16 @@ namespace SCPBrowser
                 string stored = null; bool storedKnown = false;
                 try { stored = await new CellTypeClassificationService(projectDatabasePath).GetStoredScorerMethodAsync(); storedKnown = true; }
                 catch { /* stored method unreadable — leave the current method unchanged (conservative) */ }
-                if (storedKnown) SetClassificationMethod(stored ?? "Quantitative");
+
+                // Marker-based assignments are NOT a profile-classifier result: they are produced by
+                // MarkerClassificationService from user-defined gene panels and carry none of the metrics this
+                // classifier computes. Adopting that tag here would make methodMatches true below and serve the
+                // marker rows as CellTypePredictor output (and export fabricated metric columns for them), so it
+                // is treated as "no profile method stored" and the intended default applies instead.
+                bool storedIsProfileMethod = !string.Equals(stored, Services.MarkerClassificationService.MarkerScorerMethod,
+                                                            StringComparison.OrdinalIgnoreCase);
+
+                if (storedKnown) SetClassificationMethod(storedIsProfileMethod ? (stored ?? "Quantitative") : "Quantitative");
             }
 
             // 1. Check if already in memory cache — but ONLY if it was computed for THIS import and the active method.
@@ -641,10 +650,13 @@ namespace SCPBrowser
                 // Extract protein abundances for this run to check marker presence
                 var proteinAbundances = ExtractProteinAbundances(proteomicsData, runName);
 
-                // Specificity / hypergeometric p / coverage exist only in the Standard scorer. For the Quantitative
-                // method they are left blank (N/A) rather than written as their neutral defaults, so the diagnostics
-                // TSV never records fake 0.00 / 1.0 values as if they were measured.
-                bool quant = string.Equals(result.ScorerMethod, "Quantitative", StringComparison.OrdinalIgnoreCase);
+                // Specificity / hypergeometric p / coverage exist ONLY in the Standard scorer. Every other method
+                // (Quantitative, Marker, or anything added later) leaves them at their neutral defaults, which must
+                // be written blank rather than as 0.0000 / 0.000E+000 - otherwise the TSV records a never-measured
+                // quantity as if it had been measured. Gate on "is Standard" rather than listing the exceptions, so
+                // a new scorer cannot silently start exporting fabricated metrics.
+                bool standard = string.Equals(result.ScorerMethod, "Standard", StringComparison.OrdinalIgnoreCase);
+                bool quant = !standard;
 
                 var rowParts = new List<string>
                 {

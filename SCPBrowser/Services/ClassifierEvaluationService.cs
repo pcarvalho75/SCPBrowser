@@ -597,6 +597,15 @@ namespace SCPBrowser.Services
 
                 var stdPredictor = useQuant ? null : new CellTypePredictor(db, -1, options.MinPercentExpressing);
                 var quantScorer = useQuant ? new QuantitativeCellTypeScorer(db) : null;
+
+                // Calibrate exactly as ScoreCells does, from this fold's TRAINING cells only. Without this the
+                // stability pass ran the scorer at equal channel weights while every other number in the report was
+                // calibrated - so the figure presented as the report's uncertainty measured a different classifier.
+                // The gap is not academic: equal-weight log-pooling lets a weak channel veto a strong one (see the
+                // note in QuantitativeCellTypeScorer), which is precisely this configuration.
+                if (useQuant && options.CalibrateQuantWeights)
+                    quantScorer.SetChannelWeights(CalibrateQuantViaInnerCv(data, trainMap, options, f));
+
                 Func<Dictionary<string, double>, string> topClass = subset =>
                     useQuant ? quantScorer.Score(subset)?.TopClass : stdPredictor.PredictCellType(subset)?.TopCellType;
 
@@ -845,14 +854,7 @@ namespace SCPBrowser.Services
                 int correct = 0;
                 foreach (var (classes, probs, trueLabel) in cache)
                 {
-                    var agg = new double[classes.Length];
-                    for (int m = 0; m < 4; m++)
-                    {
-                        if ((mask & (1 << m)) == 0) continue;
-                        for (int i = 0; i < classes.Length; i++) agg[i] += probs[m][i];
-                    }
-                    int argmax = 0;
-                    for (int i = 1; i < agg.Length; i++) if (agg[i] > agg[argmax]) argmax = i;
+                    int argmax = FuseArgmax(probs, mask, classes.Length, report.IsQuantitativeScorer);
                     if (string.Equals(classes[argmax], trueLabel, StringComparison.OrdinalIgnoreCase)) correct++;
                 }
                 rows.Add((string.Join("+", Enumerable.Range(0, 4).Where(m => (mask & (1 << m)) != 0).Select(m => names[m])),
@@ -865,7 +867,11 @@ namespace SCPBrowser.Services
             foreach (var r in rows.OrderByDescending(r => r.acc))
                 sb.AppendLine($"  {r.combo,-46}{r.acc,10:P2}{r.n,10}");
             sb.AppendLine();
-            sb.AppendLine($"  (full set = the scorer being evaluated: {report.ScorerName})");
+            sb.AppendLine(report.IsQuantitativeScorer
+                ? $"  (full set = all four channels fused as {report.ScorerName} does — log-pooled — at EQUAL channel"
+                  + " weights. The headline accuracy above may use per-fold calibrated weights, so the two need not"
+                  + " match exactly.)"
+                : $"  (full set = the scorer being evaluated: {report.ScorerName})");
             return sb.ToString();
         }
 
@@ -899,14 +905,7 @@ namespace SCPBrowser.Services
                 int correct = 0;
                 foreach (var (classes, probs, trueLabel) in cache)
                 {
-                    var agg = new double[classes.Length];
-                    for (int m = 0; m < 4; m++)
-                    {
-                        if ((mask & (1 << m)) == 0) continue;
-                        for (int i = 0; i < classes.Length; i++) agg[i] += probs[m][i];
-                    }
-                    int argmax = 0;
-                    for (int i = 1; i < agg.Length; i++) if (agg[i] > agg[argmax]) argmax = i;
+                    int argmax = FuseArgmax(probs, mask, classes.Length, report.IsQuantitativeScorer);
                     if (string.Equals(classes[argmax], trueLabel, StringComparison.OrdinalIgnoreCase)) correct++;
                 }
                 int bits = Enumerable.Range(0, 4).Count(m => (mask & (1 << m)) != 0);
@@ -1424,6 +1423,34 @@ namespace SCPBrowser.Services
         /// uses -log10(p) for enrichment; the redesign standardises each channel by its SPREAD and softmaxes at T=1.
         /// Diagnosing one with the other's algebra would misreport every channel.
         /// </summary>
+        /// <summary>
+        /// Fuses the selected channels the way the SCORER BEING EVALUATED fuses them, and returns the winning class
+        /// index. The shipped engine averages the per-channel softmaxes (an arithmetic mean, so a uniform channel
+        /// dilutes the decision toward 1/N); the quantitative engine LOG-POOLS them (a product of experts, so a
+        /// uniform channel contributes a constant that cancels on renormalisation).
+        ///
+        /// Aggregating both with an arithmetic sum made the "full set" bar of the ablation figure a different
+        /// classifier from the one the report is branded with - and the caption invited the reader to conclude a
+        /// channel was "diluting rather than helping" from that mismatch.
+        ///
+        /// Note on weights: the quantitative scorer can additionally weight each channel by a per-fold calibration.
+        /// Those weights are not carried on the report, so this reproduces the EQUAL-WEIGHT fusion. That is stated
+        /// in the caption rather than papered over.
+        /// </summary>
+        private static int FuseArgmax(double[][] probs, int mask, int classCount, bool quant)
+        {
+            var agg = new double[classCount];
+            for (int m = 0; m < 4; m++)
+            {
+                if ((mask & (1 << m)) == 0) continue;
+                for (int i = 0; i < classCount; i++)
+                    agg[i] += quant ? Math.Log(Math.Max(probs[m][i], 1e-12)) : probs[m][i];
+            }
+            int argmax = 0;
+            for (int i = 1; i < agg.Length; i++) if (agg[i] > agg[argmax]) argmax = i;
+            return argmax;
+        }
+
         private static double[][] ChannelProbabilities(CellPrediction p, string[] classes, bool quant)
         {
             var probs = new double[4][];

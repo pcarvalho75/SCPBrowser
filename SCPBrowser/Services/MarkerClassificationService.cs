@@ -16,6 +16,13 @@ namespace SCPBrowser.Services
     {
         public const string Unassigned = "Unassigned";
 
+        /// <summary>
+        /// scorer_method tag written for marker-based assignments. Distinct from "Standard"/"Quantitative" so the
+        /// classification manager cannot serve these rows as profile-classifier output, and so the diagnostics
+        /// export can blank the metrics this scorer never computes.
+        /// </summary>
+        public const string MarkerScorerMethod = "Marker";
+
         public MarkerClassificationService(string projectDbPath) : base(projectDbPath) { }
 
         // ------------------------------------------------------------------ CRUD
@@ -169,6 +176,7 @@ namespace SCPBrowser.Services
             {
                 MarkerClass? best = null;
                 double bestScore = 0;
+                double bestConfidence = 0;
                 int bestK = 0;
                 foreach (var (cls, panel) in panels)
                 {
@@ -177,9 +185,27 @@ namespace SCPBrowser.Services
                     int k = detected.Count;
                     if (k < floor) continue;
                     double score = detected.Sum(Weight) * ((double)k / panel.Count);
-                    if (score > bestScore) { bestScore = score; best = cls; bestK = k; }
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        best = cls;
+                        bestK = k;
+                        // Ranking stays on the raw score (unchanged behaviour). Confidence is the same score
+                        // expressed against the most this panel could possibly award - every marker detected -
+                        // which bounds it to [0,1]. The raw score is unbounded (it grows with panel size and
+                        // marker specificity), and downstream it is compared against a 0-1 threshold slider, so
+                        // an unnormalised value there silently relabels assigned cells "Undetermined".
+                        double maxAttainable = panel.Sum(Weight);
+                        bestConfidence = maxAttainable > 0 ? Math.Min(1.0, score / maxAttainable) : 0.0;
+                    }
                 }
-                result[cell] = new MarkerAssignment { ClassName = best?.Name ?? Unassigned, Score = bestScore, MarkersFound = bestK };
+                result[cell] = new MarkerAssignment
+                {
+                    ClassName = best?.Name ?? Unassigned,
+                    Score = bestScore,
+                    Confidence = bestConfidence,
+                    MarkersFound = bestK
+                };
             }
             return result;
         }
@@ -207,19 +233,38 @@ namespace SCPBrowser.Services
             var predictions = new Dictionary<string, CellTypePredictionResult>();
             foreach (var kv in assignments)
             {
-                var score = new CellTypeScore { CompositeScore = kv.Value.Score };
+                // HypergeometricPValue is left at its default 0.0 by this scorer, which reads as "infinitely
+                // significant" downstream. Set it to 1.0 (no evidence) so an unmeasured quantity cannot be
+                // mistaken for a measured one; the diagnostics export blanks it for this method regardless.
+                var score = new CellTypeScore
+                {
+                    CompositeScore = kv.Value.Score,
+                    HypergeometricPValue = 1.0
+                };
                 predictions[kv.Key] = new CellTypePredictionResult
                 {
                     TopCellType = kv.Value.ClassName,
                     TopScore = score,
-                    Confidence = kv.Value.Score,
+                    // Bounded [0,1] - see MarkerAssignment.Confidence. The raw score stays in CompositeScore.
+                    Confidence = kv.Value.Confidence,
+                    ScorerMethod = MarkerScorerMethod,
                     Scores = new Dictionary<string, CellTypeScore> { { kv.Value.ClassName, score } }
                 };
             }
 
             int? importId = await new ParquetDataService(_projectDbPath).GetMostRecentImportIdAsync();
             if (importId.HasValue && predictions.Count > 0)
-                await new CellTypeClassificationService(_projectDbPath).SaveCellTypeClassificationsAsync(importId.Value, predictions);
+            {
+                var svc = new CellTypeClassificationService(_projectDbPath);
+                // Clear first, exactly as the profile-classifier path does. Without this, a marker run covering a
+                // different raw-file set than a previous run leaves the other method's rows behind (raw_file_id is
+                // UNIQUE, so INSERT OR REPLACE only overwrites the overlap) and the table ends up mixing methods.
+                await svc.DeleteAllCellTypeClassificationsAsync(importId.Value);
+                // Tag explicitly. The parameter defaults to "Standard", which made these rows indistinguishable
+                // from CellTypePredictor output - so on the next project open the manager adopted "Standard",
+                // served the marker rows as profile-classifier results, and exported fabricated metric columns.
+                await svc.SaveCellTypeClassificationsAsync(importId.Value, predictions, MarkerScorerMethod);
+            }
 
             progress?.Report("Done.");
             return assignments.Values.GroupBy(a => a.ClassName).ToDictionary(g => g.Key, g => g.Count());

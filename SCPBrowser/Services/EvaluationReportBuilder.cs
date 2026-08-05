@@ -348,7 +348,10 @@ and how stable each call is to the proteins measured.</div>
                 y += rowH;
             }
             sb.Append("</svg></div>");
-            sb.Append($@"<p class=""reads"">Bars above the full-set (gold) bar are subsets that do at least as well as the whole scorer — evidence that a channel is diluting rather than helping. Bars far below show which metrics can't stand alone.</p>");
+            // The full-set bar reproduces the evaluated scorer's FUSION FORM (log-pooled for the quantitative
+            // engine, arithmetic mean for the shipped one) at equal channel weights. It is not necessarily the
+            // headline accuracy, which may use per-fold calibrated weights, so the caption must not equate them.
+            sb.Append($@"<p class=""reads"">Bars above the full-set (gold) bar are subsets that do at least as well as all four channels together — a hint that a channel may be diluting rather than helping. Bars far below show which metrics can't stand alone. All bars fuse channels the same way the evaluated scorer does, at equal channel weights; the full-set bar therefore need not equal the headline accuracy, which may use calibrated weights. This is a post-hoc diagnostic — subsets are compared after seeing the labels, so treat any winner as a hypothesis, not a result.</p>");
             sb.Append("</div>");
             return sb.ToString();
         }

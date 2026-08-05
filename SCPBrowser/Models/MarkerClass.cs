@@ -28,7 +28,17 @@ namespace SCPBrowser.Models
     public class MarkerAssignment
     {
         public string ClassName { get; set; } = "Unassigned";
+
+        /// <summary>Raw additive marker score. Unbounded - used to rank classes, never as a probability.</summary>
         public double Score { get; set; }
+
+        /// <summary>
+        /// Score expressed as a fraction of the maximum attainable for the winning class's panel, so it lies in
+        /// [0,1] and can be compared against the confidence threshold slider (whose axis is a probability).
+        /// 1.0 means every marker in that panel was detected.
+        /// </summary>
+        public double Confidence { get; set; }
+
         public int MarkersFound { get; set; }
     }
 

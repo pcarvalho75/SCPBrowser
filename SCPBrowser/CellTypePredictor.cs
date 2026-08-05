@@ -509,10 +509,15 @@ namespace SCPBrowser
             // K = number of markers for this cell type
             int K = _cellTypeMarkers[cellType].Count;
 
-            // n = number of detected proteins
-            int n = detectedProteins.Count;
+            // n = detected proteins THAT LIE IN THE UNIVERSE. The sample must be drawn from the population the
+            // test is defined over: counting detected proteins absent from the reference inflates n, which
+            // inflates E[X] = nK/N above what k can attain and pushes the right-tailed p toward 1 - silently
+            // flattening this channel's softmax so it contributes a constant to the composite. Intersecting here
+            // also makes n <= N true by construction, which is the degenerate case MathNet throws on.
+            int n = detectedProteins.Count(p => _geneSpecificity.ContainsKey(p));
 
-            // k = overlap (how many detected proteins are markers for this cell type)
+            // k = overlap (how many detected proteins are markers for this cell type); already a subset of the
+            // universe, since markers are drawn from the reference profiles.
             int k = detectedProteins.Count(p => _cellTypeMarkers[cellType].Contains(p));
 
             //Console.WriteLine($"[DEBUG-HYPER] CellType: {cellType}, N={N}, K={K}, n={n}, k={k}");
@@ -535,6 +540,18 @@ namespace SCPBrowser
         /// </summary>
         private double CalculateHypergeometricPValueExact(int N, int K, int n, int k)
         {
+            // Defensive guard. MathNet's Hypergeometric validates draws <= population and successes <= population
+            // and THROWS otherwise, and there is no try/catch between here and the UI - a single degenerate cell
+            // would abort the whole classification run and save nothing. Callers now intersect the sample with the
+            // universe so n <= N holds by construction, but a malformed or tiny reference can still violate these,
+            // and "no evidence of enrichment" (p = 1) is the correct answer for a degenerate test, not a crash.
+            if (N <= 0 || K <= 0 || n <= 0 || K > N || n > N || k <= 0)
+                return 1.0;
+
+            // k cannot exceed what is drawable; if it does, the inputs are inconsistent.
+            if (k > K || k > n)
+                return 1.0;
+
             // Create the distribution object with your parameters
             // N = population, K = successes, n = draws
             var hypergeometric = new Hypergeometric(N, K, n);

@@ -59,6 +59,36 @@ namespace SCPBrowser.Models
         /// </summary>
         public MissingValueMode MissingValues { get; set; } = MissingValueMode.ProteinMean;
 
+        /// <summary>
+        /// Minimum fraction of cells in which a protein must be quantified for it to enter the embedding.
+        /// 0 = no floor (the historical behaviour).
+        ///
+        /// This is the single strongest lever against a "detection map": a protein seen in a small minority of
+        /// cells contributes mostly imputed values, so its column encodes WHICH cells detected it - that is,
+        /// their depth - rather than how much protein they contained. On a 74%-missing dataset the binary
+        /// detection pattern alone can reproduce nearly all of the apparent population structure. Raising this
+        /// floor removes those columns, at the cost of a smaller feature set.
+        /// </summary>
+        public double MinDetectionRate { get; set; } = 0.0;
+
+        /// <summary>
+        /// Regress the per-cell number of quantified proteins (sequencing depth) out of every protein before
+        /// batch correction. Depth is the dominant nuisance axis in single-cell proteomics and routinely
+        /// becomes a leading principal component; removing it linearly is the standard, conservative fix.
+        /// </summary>
+        public bool RegressDepth { get; set; } = false;
+
+        /// <summary>
+        /// k for optional kNN-graph smoothing (0 = off). Each cell is replaced by a distance-weighted average
+        /// of itself and its k nearest neighbours, which suppresses per-cell sampling noise. Standard practice
+        /// in single-cell analysis, but it makes clusters look more discrete than the data supports and MUST be
+        /// disclosed in any figure legend that uses it.
+        /// </summary>
+        public int SmoothingNeighbors { get; set; } = 0;
+
+        /// <summary>Number of diffusion steps for kNN smoothing (ignored when SmoothingNeighbors is 0).</summary>
+        public int SmoothingSteps { get; set; } = 1;
+
         // PCA
         public int NumPcaComponents { get; set; } = 30;
         public int NumPcsForUmap { get; set; } = 20;
@@ -104,6 +134,10 @@ namespace SCPBrowser.Models
             s.ApplyBatchCorrection = await ReadBoolAsync(db, "ApplyBatchCorrection", s.ApplyBatchCorrection);
             s.Normalization = (CellNormalization)await ReadIntAsync(db, "Normalization", (int)s.Normalization);
             s.MissingValues = (MissingValueMode)await ReadIntAsync(db, "MissingValues", (int)s.MissingValues);
+            s.MinDetectionRate = await ReadDoubleAsync(db, "MinDetectionRate", s.MinDetectionRate);
+            s.RegressDepth = await ReadBoolAsync(db, "RegressDepth", s.RegressDepth);
+            s.SmoothingNeighbors = await ReadIntAsync(db, "SmoothingNeighbors", s.SmoothingNeighbors);
+            s.SmoothingSteps = await ReadIntAsync(db, "SmoothingSteps", s.SmoothingSteps);
 
             return s;
         }
@@ -132,6 +166,10 @@ namespace SCPBrowser.Models
             await db.SetSettingAsync(KeyPrefix + "ApplyBatchCorrection", ApplyBatchCorrection.ToString());
             await db.SetSettingAsync(KeyPrefix + "Normalization", ((int)Normalization).ToString());
             await db.SetSettingAsync(KeyPrefix + "MissingValues", ((int)MissingValues).ToString());
+            await db.SetSettingAsync(KeyPrefix + "MinDetectionRate", MinDetectionRate.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+            await db.SetSettingAsync(KeyPrefix + "RegressDepth", RegressDepth.ToString());
+            await db.SetSettingAsync(KeyPrefix + "SmoothingNeighbors", SmoothingNeighbors.ToString());
+            await db.SetSettingAsync(KeyPrefix + "SmoothingSteps", SmoothingSteps.ToString());
         }
 
         /// <summary>
@@ -153,7 +191,11 @@ namespace SCPBrowser.Models
                 || HvpCount != other.HvpCount
                 // Both change the matrix that PCA/UMAP consumes, so the embedding must be recomputed.
                 || Normalization != other.Normalization
-                || MissingValues != other.MissingValues;
+                || MissingValues != other.MissingValues
+                || Math.Abs(MinDetectionRate - other.MinDetectionRate) > 1e-9
+                || RegressDepth != other.RegressDepth
+                || SmoothingNeighbors != other.SmoothingNeighbors
+                || SmoothingSteps != other.SmoothingSteps;
         }
 
         /// <summary>
@@ -176,7 +218,11 @@ namespace SCPBrowser.Models
                 HvpCount = HvpCount,
                 ApplyBatchCorrection = ApplyBatchCorrection,
                 Normalization = Normalization,
-                MissingValues = MissingValues
+                MissingValues = MissingValues,
+                MinDetectionRate = MinDetectionRate,
+                RegressDepth = RegressDepth,
+                SmoothingNeighbors = SmoothingNeighbors,
+                SmoothingSteps = SmoothingSteps
             };
         }
 

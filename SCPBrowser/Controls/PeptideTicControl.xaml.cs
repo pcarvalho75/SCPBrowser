@@ -1,4 +1,4 @@
-﻿using SCPBrowser.GOTools;
+using SCPBrowser.GOTools;
 using SCPBrowser.Models;
 using SCPBrowser.Services;
 using SCPBrowser.Controls;
@@ -191,6 +191,49 @@ namespace SCPBrowser
         /// because the caller restores this during project load and the chart is drawn afterwards anyway -
         /// letting the handler run here would kick off a redundant embedding recompute mid-load.
         /// </summary>
+        /// <summary>
+        /// Restores the view mode (Peptides vs TIC / PCA / UMAP) and the Color-by mode saved with the project.
+        ///
+        /// Without this the Explorer always reopened on Peptides vs TIC coloured by biological condition, so a
+        /// project saved showing a UMAP came back looking like a completely different analysis and the user had
+        /// to rebuild the view by hand every session.
+        /// </summary>
+        public void RestoreViewState(string viewMode, string colorMode)
+        {
+            _suppressCheckboxEvents = true;
+            try
+            {
+                if (!string.IsNullOrEmpty(viewMode))
+                    SelectComboByTag(ViewModeComboBox, viewMode);
+                if (!string.IsNullOrEmpty(colorMode))
+                {
+                    // Only adopt a mode whose item is actually usable; cell-type colouring stays disabled until
+                    // classifications exist, and silently selecting a disabled item would strand the Explorer.
+                    foreach (var obj in ColorModeComboBox.Items)
+                        if (obj is ComboBoxItem it && string.Equals(it.Tag?.ToString(), colorMode,
+                                StringComparison.OrdinalIgnoreCase) && it.IsEnabled)
+                        {
+                            ColorModeComboBox.SelectedItem = it;
+                            break;
+                        }
+                }
+            }
+            finally
+            {
+                _suppressCheckboxEvents = false;
+            }
+        }
+
+        /// <summary>Writes the current view and colour mode to the project so the session can be resumed.</summary>
+        public async Task PersistViewStateAsync()
+        {
+            if (_databaseService == null) return;
+            string vm = (ViewModeComboBox?.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+            string cm = CurrentColoringMode();
+            if (!string.IsNullOrEmpty(vm)) await _databaseService.SetSettingAsync("ViewMode", vm);
+            if (!string.IsNullOrEmpty(cm)) await _databaseService.SetSettingAsync("ColorMode", cm);
+        }
+
         public void RestoreHideGreyDots(bool hide)
         {
             _suppressCheckboxEvents = true;
@@ -292,6 +335,7 @@ namespace SCPBrowser
 
         private void ViewModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (!_suppressCheckboxEvents) _ = PersistViewStateAsync();
             if (!_isInitialized)
                 return;
 
@@ -467,6 +511,10 @@ namespace SCPBrowser
             GuidedWeightLabel.Text = s.GuidedWeight.ToString("F2");
             ShowPcaViewCheckBox.IsChecked = s.ShowPcaView;
             UseHvpCheckBox.IsChecked = s.UseHvpFilter;
+            MinDetectionTextBox.Text = (s.MinDetectionRate * 100).ToString("0.#", CultureInfo.InvariantCulture);
+            RegressDepthCheckBox.IsChecked = s.RegressDepth;
+            SmoothingKTextBox.Text = s.SmoothingNeighbors.ToString();
+            SmoothingStepsTextBox.Text = s.SmoothingSteps.ToString();
             HvpCountTextBox.Text = s.HvpCount.ToString();
             _hvpCount = s.HvpCount;
             SelectComboByTag(NormalizationComboBox, ((int)s.Normalization).ToString());
@@ -508,7 +556,12 @@ namespace SCPBrowser
 
         private DimensionReductionSettings ReadSettingsFromUI()
         {
-            var s = DimensionReductionSettings.CreateDefaults();
+            // Start from the settings currently in force, NOT from factory defaults. Every field below is read
+            // with TryParse and left untouched when parsing fails, so a box that is empty or mid-edit keeps its
+            // existing value instead of silently reverting. Starting from defaults meant one blank field could
+            // quietly switch off the detection floor or the smoothing on the next Apply, and the only visible
+            // symptom was a plot that no longer matched the saved analysis.
+            var s = _dimRedSettings?.Clone() ?? DimensionReductionSettings.CreateDefaults();
             s.ZScoreScale = ZScaleCheckBox.IsChecked == true;
             s.Normalization = (Models.CellNormalization)ReadComboTag(NormalizationComboBox, (int)s.Normalization);
             s.MissingValues = (Models.MissingValueMode)ReadComboTag(MissingValuesComboBox, (int)s.MissingValues);
@@ -529,6 +582,16 @@ namespace SCPBrowser
             s.ApplyBatchCorrection = BatchCorrectionCheckBox.IsChecked == true;
             if (int.TryParse(HvpCountTextBox.Text, out int hvpCount))
                 s.HvpCount = Math.Clamp(hvpCount, 10, 5000);
+
+            // Embedding-only preprocessing. None of these reach the classifier, which reads raw per-run
+            // abundances straight from ProteomicsData.
+            if (double.TryParse(MinDetectionTextBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double minDet))
+                s.MinDetectionRate = Math.Clamp(minDet, 0, 99) / 100.0;
+            s.RegressDepth = RegressDepthCheckBox.IsChecked == true;
+            if (int.TryParse(SmoothingKTextBox.Text, out int smK))
+                s.SmoothingNeighbors = Math.Clamp(smK, 0, 200);
+            if (int.TryParse(SmoothingStepsTextBox.Text, out int smSteps))
+                s.SmoothingSteps = Math.Clamp(smSteps, 1, 5);
 
             // Ensure PCs for UMAP doesn't exceed total PCA components
             if (s.NumPcsForUmap > s.NumPcaComponents)
@@ -830,6 +893,7 @@ namespace SCPBrowser
 
         private void ColorModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (!_suppressCheckboxEvents) _ = PersistViewStateAsync();
             if (!_isInitialized || ColorModeComboBox == null)
                 return;
 
@@ -1672,6 +1736,7 @@ namespace SCPBrowser
                 BioConditionPerFile = _currentData.BiologicalConditionPerFile,
                 BioConditionColorMap = GenerateBioConditionColorMap(),
                 UsePlateColoring = colorMode == "Plate",
+                UseKMeansColoring = colorMode == "KMeans",
                 PlatePerFile = GeneratePlatePerFile(),
                 PlateColorMap = GeneratePlateColorMap(),
                 CheckedCellTypes = _checkedCellTypes,
@@ -1916,6 +1981,29 @@ namespace SCPBrowser
                 double missing = ScatterPlot.LastMissingRate;
                 if (missing > 0)
                     baseHeader += $"  |  {missing:P0} missing";
+
+                // Preprocessing that changes what the picture means has to be visible on the picture. A reader
+                // cannot tell a depth-regressed, smoothed embedding from a raw one by looking at it.
+                int cohortN = ScatterPlot.EmbeddingCohortSize;
+                if (cohortN > 0)
+                    baseHeader += $"  |  {cohortN:N0} cells in embedding";
+
+                int floorDropped = ScatterPlot.CoverageFloorDropped;
+                if (floorDropped > 0)
+                    baseHeader += $"  |  -{floorDropped:N0} below detection floor";
+                if (ScatterPlot.DepthRegressed)
+                    baseHeader += "  |  depth regressed";
+                int smoothK = ScatterPlot.SmoothingApplied;
+                if (smoothK > 0)
+                    baseHeader += $"  |  kNN-smoothed (k={smoothK})";
+
+                // The depth diagnostic. Above roughly 0.5 the leading components are tracking how deeply each
+                // cell was measured, and the populations on screen may be depth strata rather than biology.
+                double depthRho = ScatterPlot.DepthPcCorrelation;
+                if (!double.IsNaN(depthRho))
+                    baseHeader += depthRho >= 0.5
+                        ? $"  |  DEPTH-DRIVEN (PC vs depth {depthRho:F2})"
+                        : $"  |  depth {depthRho:F2}";
 
                 // Say when the embedding was rebuilt on a subset. Two identical-looking UMAPs computed on
                 // different cohorts are not comparable, so the cohort has to be visible on the figure itself.

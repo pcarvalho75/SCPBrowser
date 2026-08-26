@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using SCPBrowser.GOTools;
 using SCPBrowser.Models;
 using SCPBrowser.Services;
@@ -2357,6 +2357,14 @@ namespace SCPBrowser
             var hideGrey = await _projectDatabaseService.GetSettingAsync("HideGreyDots");
             if (!string.IsNullOrEmpty(hideGrey) && bool.TryParse(hideGrey, out bool hideGreyValue))
                 PeptideTicTab.RestoreHideGreyDots(hideGreyValue);
+
+            // The view mode and Color-by mode decide what the Explorer is actually showing. Restoring the
+            // dimensionality-reduction settings without them meant a project saved on a UMAP reopened on the
+            // Peptides-vs-TIC scatter, looking nothing like the analysis that was saved.
+            var savedView = await _projectDatabaseService.GetSettingAsync("ViewMode");
+            var savedColor = await _projectDatabaseService.GetSettingAsync("ColorMode");
+            if (!string.IsNullOrEmpty(savedView) || !string.IsNullOrEmpty(savedColor))
+                PeptideTicTab.RestoreViewState(savedView, savedColor);
 
             // Restore color maps
             if (cellTypeColors != null || bioConditionColors != null || plateColors != null)

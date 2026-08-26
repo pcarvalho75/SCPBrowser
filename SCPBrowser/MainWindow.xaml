@@ -1,4 +1,4 @@
-﻿<Window x:Class="SCPBrowser.MainWindow"
+<Window x:Class="SCPBrowser.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -7,7 +7,7 @@
         xmlns:biotessera="clr-namespace:BioTessera;assembly=BioTessera"
         xmlns:converters="clr-namespace:SCPBrowser.Converters"
         mc:Ignorable="d"
-        Title="SCP Browser" Height="700" Width="950">
+        Title="SCP Browser" Height="900" Width="1400" MinHeight="640" MinWidth="900">
     <Window.Resources>
         <converters:FileNameConverter x:Key="FileNameConverter"/>
         <converters:DirectoryConverter x:Key="DirectoryConverter"/>

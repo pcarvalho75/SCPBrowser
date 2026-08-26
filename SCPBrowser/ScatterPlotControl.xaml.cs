@@ -1,4 +1,4 @@
-﻿using PCANipals;
+using PCANipals;
 using SCPBrowser.GOTools;
 using SCPBrowser.Models;
 using SCPBrowser.Services;
@@ -69,6 +69,22 @@ namespace SCPBrowser
         // HVP for dimensionality reduction
         public List<HvpResult>? HvpResults { get; set; }
 
+        /// <summary>
+        /// Protein groups the detection-completeness floor must keep regardless of how sparsely they were
+        /// quantified. Cell-type markers are exactly the proteins a coverage floor is most likely to delete -
+        /// they are expressed by a minority of cells by definition - and removing them leaves an embedding with
+        /// no marker of any lineage in it. Populated from the key-marker table.
+        /// </summary>
+        public HashSet<string>? AlwaysKeepProteins { get; set; }
+
+        /// <summary>
+        /// True when the Explorer is colouring by k-means cluster. Without this the renderer has no way to know,
+        /// so it falls through to its default branch - the contaminant-ratio gradient - and any redraw that does
+        /// not come from RefreshChart (a window resize, for instance) silently replaces the cluster colours with
+        /// a gradient.
+        /// </summary>
+        public bool UseKMeansColoring { get; set; }
+
         // Batch effect correction
         public bool ApplyBatchCorrection { get; set; } = false;
 
@@ -108,6 +124,15 @@ namespace SCPBrowser
         private DimensionReductionSettings? _previousDimRedSettings;
         private const double HoverTolerance = 12;
         private bool _suppressSelectionEvents = false;
+        private IReadOnlyDictionary<string, int> _lastRunToCluster;
+        private IReadOnlyDictionary<int, Color> _lastClusterColors;
+
+        /// <summary>Forgets the cached k-means colouring; call when the cohort or the colour mode changes.</summary>
+        public void ClearClusterColors()
+        {
+            _lastRunToCluster = null;
+            _lastClusterColors = null;
+        }
 
         // Generation counter for deferred SelectionChanged events.
         // Incremented at the start of each UpdatePlot call. Deferred closures capture
@@ -292,6 +317,10 @@ namespace SCPBrowser
             IReadOnlyDictionary<int, Color> clusterColors)
         {
             if (_dataPoints == null) return;
+
+            // Cached so that a redraw which bypasses RefreshChart can restore these colours itself.
+            _lastRunToCluster = runToCluster;
+            _lastClusterColors = clusterColors;
 
             foreach (var point in _dataPoints)
             {
@@ -539,6 +568,12 @@ namespace SCPBrowser
 
                 }
 
+                // Restore k-means colours. UpdatePlot has just repainted every point from its base colour, so a
+                // redraw triggered by anything other than RefreshChart (PlotCanvas_SizeChanged calls UpdatePlot
+                // directly) would otherwise leave the points showing the default contaminant-ratio gradient.
+                if (options?.UseKMeansColoring == true && _lastRunToCluster != null)
+                    ApplyClusterColors(_lastRunToCluster, _lastClusterColors);
+
                 // Schedule a deferred SelectionChanged event AFTER the finally block
                 // has cleared _suppressSelectionEvents. This ensures every caller of
                 // UpdatePlot (RefreshChart, SizeChanged, etc.) gets a single clean event
@@ -593,6 +628,37 @@ namespace SCPBrowser
             }
 
             private string _batchCorrectionWarning;
+            private int _coverageFloorDropped;
+            private int _markersRescued;
+            private int _embeddingCohortSize;
+            private string _coverageFloorWarning;
+            private bool _depthRegressed;
+            private int _smoothingApplied;
+            private double _depthPcCorrelation = double.NaN;
+
+            /// <summary>Proteins removed by the detection-completeness floor in the last embedding.</summary>
+            public int CoverageFloorDropped => _coverageFloorDropped;
+            /// <summary>Set when the floor was ignored because it left too few proteins.</summary>
+            public string CoverageFloorWarning => _coverageFloorWarning;
+            /// <summary>Marker proteins kept despite falling below the detection floor.</summary>
+            public int MarkersRescued => _markersRescued;
+            /// <summary>
+            /// Number of cells the last embedding was actually computed on. This is not always the number of
+            /// points highlighted in the grid: population filters and Hide Grey Dots change the cohort the
+            /// axes are built from, and two embeddings on different cohorts are not comparable.
+            /// </summary>
+            public int EmbeddingCohortSize => _embeddingCohortSize;
+            /// <summary>True when sequencing depth was regressed out of the last embedding.</summary>
+            public bool DepthRegressed => _depthRegressed;
+            /// <summary>k actually used for kNN smoothing in the last embedding (0 = not smoothed).</summary>
+            public int SmoothingApplied => _smoothingApplied;
+            /// <summary>
+            /// Largest |Spearman| between any of the leading principal components and the per-cell count of
+            /// quantified proteins. This is the number that says whether the picture is a proteome or a map of
+            /// how deeply each cell was measured; above roughly 0.5 the embedding should not be trusted as
+            /// biology. NaN until an embedding has been computed.
+            /// </summary>
+            public double DepthPcCorrelation => _depthPcCorrelation;
             /// <summary>Non-null after the last preprocessing when batch correction was skipped, fell back to
             /// plate-only, or failed — surfaced to the user by the host control. Null = clean correction (or none).</summary>
             public string BatchCorrectionWarning => _batchCorrectionWarning;
@@ -669,8 +735,48 @@ namespace SCPBrowser
 
                 }
 
+                // Detection-completeness floor. Applied HERE, on the protein list this embedding uses, rather
+                // than in DataFilterService.ComputeHvpResults - those HVP results are shared with the protein
+                // matrix tab, and classification must stay untouched. A protein quantified in only a handful of
+                // cells contributes mostly imputed values, so its column encodes which cells detected it (their
+                // depth) instead of how much protein they held.
+                _coverageFloorDropped = 0;
+                _coverageFloorWarning = null;
+                if (settings != null && settings.MinDetectionRate > 0 && rawFiles.Count > 0)
+                {
+                    var fileSet = new HashSet<string>(rawFiles);
+                    int need = (int)Math.Ceiling(settings.MinDetectionRate * rawFiles.Count);
+                    var keepAlways = _currentOptions?.AlwaysKeepProteins;
+                    _markersRescued = 0;
+                    var surviving = proteins.Where(pr =>
+                    {
+                        if (!data.ProteinQuantMatrix.TryGetValue(pr, out var perFile)) return false;
+                        int seen = 0;
+                        foreach (var kv in perFile)
+                            if (kv.Value > 0 && fileSet.Contains(kv.Key)) seen++;
+                        if (seen >= need) return true;
+                        // Below the floor, but a declared marker: keep it and count it, so the header can say so.
+                        if (seen > 0 && keepAlways != null && keepAlways.Contains(pr)) { _markersRescued++; return true; }
+                        return false;
+                    }).ToList();
+
+                    // Never hand PCA a near-empty matrix because the floor was set too high; fall back to the
+                    // unfiltered list and say so rather than silently producing a meaningless embedding.
+                    if (surviving.Count >= 20)
+                    {
+                        _coverageFloorDropped = proteins.Count - surviving.Count;
+                        proteins = surviving;
+                    }
+                    else
+                    {
+                        _coverageFloorWarning = "Detection floor " + settings.MinDetectionRate.ToString("P0") +
+                            " left only " + surviving.Count + " proteins - floor ignored for this view.";
+                    }
+                }
+
                 int nSamples = rawFiles.Count;
                 int nProteins = proteins.Count;
+                _embeddingCohortSize = nSamples;
 
                 // Build matrix: rows = samples, columns = proteins (log2 transformed).
                 // `observed` tracks which entries are real measurements, because in log2 space a written 0 is
@@ -754,6 +860,39 @@ namespace SCPBrowser
                     }
                 }
 
+                // Regress out sequencing depth (proteins quantified per cell). Depth is the dominant nuisance
+                // axis in single-cell proteomics: it routinely lands in the leading principal components, and
+                // when it also differs between experimental groups it produces a "difference" that is really a
+                // difference in how deeply each group was measured. Removing it linearly is the conservative
+                // standard fix, and costs almost nothing when depth carries no biology.
+                _depthRegressed = false;
+                if (settings != null && settings.RegressDepth && nSamples > 2 && nProteins > 0)
+                {
+                    var depth = new double[nSamples];
+                    for (int i = 0; i < nSamples; i++)
+                    {
+                        int seen = 0;
+                        for (int j = 0; j < nProteins; j++) if (observed[i, j]) seen++;
+                        depth[i] = seen;
+                    }
+                    double dMean = depth.Average();
+                    double dSs = 0;
+                    for (int i = 0; i < nSamples; i++) dSs += (depth[i] - dMean) * (depth[i] - dMean);
+                    if (dSs > 1e-12)
+                    {
+                        var x = new double[nSamples];
+                        for (int i = 0; i < nSamples; i++) x[i] = depth[i] - dMean;
+                        for (int j = 0; j < nProteins; j++)
+                        {
+                            double dot = 0;
+                            for (int i = 0; i < nSamples; i++) dot += x[i] * matrix[i, j];
+                            double beta = dot / dSs;
+                            for (int i = 0; i < nSamples; i++) matrix[i, j] -= beta * x[i];
+                        }
+                        _depthRegressed = true;
+                    }
+                }
+
                 // Apply batch correction if enabled. ComBat removes plate (batch) effects; we pass the biological
                 // condition as a covariate so real condition differences are preserved, and fall back to plate-only
                 // (with a warning) when condition can't be separated from plate.
@@ -797,6 +936,64 @@ namespace SCPBrowser
                             _batchCorrectionWarning = "Batch correction failed (" + result.ErrorMessage + ") — showing uncorrected data.";
                         }
                     }
+                }
+
+                // Optional kNN-graph smoothing (MAGIC-style diffusion), placed after batch correction so that
+                // neighbours are found in corrected space. Each cell becomes a distance-weighted average of
+                // itself and its k nearest neighbours, which suppresses per-cell sampling noise. It also makes
+                // clusters look more discrete than the underlying data supports, which is why it defaults to off
+                // and is surfaced in the plot header: a figure that used it has to say so.
+                _smoothingApplied = 0;
+                if (settings != null && settings.SmoothingNeighbors > 0 && nSamples > 3 && nProteins > 0)
+                {
+                    int k = Math.Min(settings.SmoothingNeighbors, nSamples - 1);
+                    int steps = Math.Max(1, settings.SmoothingSteps);
+
+                    // Neighbours are taken in the current feature space. With a few hundred cells the direct
+                    // O(n^2) distance computation is cheaper than building an index.
+                    var dist = new double[nSamples, nSamples];
+                    for (int i = 0; i < nSamples; i++)
+                        for (int j = i + 1; j < nSamples; j++)
+                        {
+                            double s2 = 0;
+                            for (int c = 0; c < nProteins; c++)
+                            {
+                                double d = matrix[i, c] - matrix[j, c];
+                                s2 += d * d;
+                            }
+                            double dd = Math.Sqrt(s2);
+                            dist[i, j] = dd; dist[j, i] = dd;
+                        }
+
+                    var w = new double[nSamples, nSamples];
+                    for (int i = 0; i < nSamples; i++)
+                    {
+                        var order = Enumerable.Range(0, nSamples).Where(j => j != i)
+                            .OrderBy(j => dist[i, j]).Take(k).ToList();
+                        double sigma = Math.Max(dist[i, order[order.Count - 1]], 1e-9);
+                        double sum = 1.0;               // the cell keeps weight 1 on itself
+                        w[i, i] = 1.0;
+                        foreach (int j in order)
+                        {
+                            double ww = Math.Exp(-Math.Pow(dist[i, j] / sigma, 2));
+                            w[i, j] = ww; sum += ww;
+                        }
+                        for (int j = 0; j < nSamples; j++) w[i, j] /= sum;
+                    }
+
+                    for (int s = 0; s < steps; s++)
+                    {
+                        var next = new double[nSamples, nProteins];
+                        for (int i = 0; i < nSamples; i++)
+                            for (int j = 0; j < nSamples; j++)
+                            {
+                                double wij = w[i, j];
+                                if (wij == 0) continue;
+                                for (int c = 0; c < nProteins; c++) next[i, c] += wij * matrix[j, c];
+                            }
+                        matrix = next;
+                    }
+                    _smoothingApplied = k;
                 }
 
                 // Z-score scaling per protein column (if enabled)
@@ -1153,8 +1350,12 @@ namespace SCPBrowser
                 double xNorm = (umap1[i] - umap1Min) / (umap1Max - umap1Min);
                 double yNorm = (umap2[i] - umap2Min) / (umap2Max - umap2Min);
 
-                double screenX = MarginLeft + xNorm * plotWidth;
-                double screenY = canvasHeight - MarginBottom - yNorm * plotHeight;
+                // Inset the data area by half a marker so the extreme points sit fully INSIDE the axes frame.
+                // Mapping the data range onto the full rectangle puts the outermost marker's centre exactly on
+                // the frame line, leaving half the marker hanging outside it on the right and at the top.
+                double pad = MarkerSize / 2.0 + 1;
+                double screenX = MarginLeft + pad + xNorm * Math.Max(1, plotWidth - 2 * pad);
+                double screenY = canvasHeight - MarginBottom - pad - yNorm * Math.Max(1, plotHeight - 2 * pad);
 
                 // Determine color
                 Color markerColor = Color.FromRgb(100, 149, 237); // Default: cornflower blue
@@ -1272,6 +1473,43 @@ namespace SCPBrowser
             }
         }
 
+        /// <summary>
+        /// Spearman rank correlation. Rank-based rather than Pearson because the relationship between a
+        /// principal component and sequencing depth is reliably monotonic but rarely linear.
+        /// </summary>
+        private static double SpearmanAbs(double[] a, double[] b)
+        {
+            int n = a.Length;
+            if (n < 3 || b.Length != n) return 0;
+            double[] ra = RankOf(a), rb = RankOf(b);
+            double ma = ra.Average(), mb = rb.Average();
+            double num = 0, da = 0, db = 0;
+            for (int i = 0; i < n; i++)
+            {
+                double x = ra[i] - ma, y = rb[i] - mb;
+                num += x * y; da += x * x; db += y * y;
+            }
+            return (da <= 1e-12 || db <= 1e-12) ? 0 : num / Math.Sqrt(da * db);
+        }
+
+        /// <summary>Fractional ranks with ties averaged, as Spearman requires.</summary>
+        private static double[] RankOf(double[] v)
+        {
+            int n = v.Length;
+            var idx = Enumerable.Range(0, n).OrderBy(i => v[i]).ToArray();
+            var r = new double[n];
+            int i0 = 0;
+            while (i0 < n)
+            {
+                int i1 = i0;
+                while (i1 + 1 < n && v[idx[i1 + 1]] == v[idx[i0]]) i1++;
+                double avg = (i0 + i1) / 2.0 + 1;
+                for (int k = i0; k <= i1; k++) r[idx[k]] = avg;
+                i0 = i1 + 1;
+            }
+            return r;
+        }
+
         private void ComputePca(ProteomicsData data)
         {
             if (data == null || data.ProteinQuantMatrix.Count == 0)
@@ -1315,6 +1553,35 @@ namespace SCPBrowser
                     scale: false);
 
                 _pcaProteinNames = proteins;
+
+                // Depth diagnostic. The single most useful check on a single-cell embedding is whether its
+                // leading axes track how many proteins each cell yielded. When they do, the picture is a map of
+                // measurement depth wearing the clothes of biology, and no amount of colouring will fix it.
+                // Computed here because the scores are already in hand; surfaced in the plot header.
+                _depthPcCorrelation = double.NaN;
+                if (_pcaResult?.Scores != null)
+                {
+                    var depth = new double[nSamples];
+                    for (int i = 0; i < nSamples; i++)
+                    {
+                        string rf = rawFiles[i];
+                        int seen = 0;
+                        foreach (var pr in proteins)
+                            if (data.ProteinQuantMatrix.TryGetValue(pr, out var perFile)
+                                && perFile.TryGetValue(rf, out double v) && v > 0) seen++;
+                        depth[i] = seen;
+                    }
+                    int pcs = Math.Min(5, _pcaResult.Scores.GetLength(1));
+                    double worst = 0;
+                    for (int c = 0; c < pcs; c++)
+                    {
+                        var score = new double[nSamples];
+                        for (int i = 0; i < nSamples; i++) score[i] = _pcaResult.Scores[i, c];
+                        double rho = Math.Abs(SpearmanAbs(depth, score));
+                        if (rho > worst) worst = rho;
+                    }
+                    _depthPcCorrelation = worst;
+                }
             }
             catch (Exception)
             {
@@ -1656,8 +1923,12 @@ namespace SCPBrowser
                 double xNorm = (pc1Scores[i] - pc1Min) / (pc1Max - pc1Min);
                 double yNorm = (pc2Scores[i] - pc2Min) / (pc2Max - pc2Min);
 
-                double screenX = MarginLeft + xNorm * plotWidth;
-                double screenY = canvasHeight - MarginBottom - yNorm * plotHeight;
+                // Inset the data area by half a marker so the extreme points sit fully INSIDE the axes frame.
+                // Mapping the data range onto the full rectangle puts the outermost marker's centre exactly on
+                // the frame line, leaving half the marker hanging outside it on the right and at the top.
+                double pad = MarkerSize / 2.0 + 1;
+                double screenX = MarginLeft + pad + xNorm * Math.Max(1, plotWidth - 2 * pad);
+                double screenY = canvasHeight - MarginBottom - pad - yNorm * Math.Max(1, plotHeight - 2 * pad);
 
                 // Determine color
                 Color markerColor = Color.FromRgb(100, 149, 237); // Default: cornflower blue

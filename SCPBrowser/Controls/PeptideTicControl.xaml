@@ -15,7 +15,11 @@
             <RowDefinition Height="*" MinHeight="150"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,10">
+        <!-- A horizontal StackPanel reports the full width of its children and never wraps, so this toolbar
+             (view mode, batch correction, colour mode, the k selector, settings and Hide Grey Dots) forced the
+             whole Explorer wider than the window and the plot ended up clipped off-screen until the user
+             enlarged the window by hand. WrapPanel lets the controls flow onto a second row instead. -->
+        <WrapPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,10">
             <TextBlock Text="View:" 
            VerticalAlignment="Center"
            Margin="0,0,5,0"
@@ -82,6 +86,44 @@
                                 <ComboBoxItem Content="Zero" Tag="0"/>
                                 <ComboBoxItem Content="Protein mean" Tag="1" IsSelected="True"/>
                             </ComboBox>
+                        </StackPanel>
+
+                        <!-- Detection-completeness floor. A protein seen in few cells contributes mostly imputed
+                             values, so its column encodes which cells detected it rather than how much they held. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <TextBlock Text="Min detection:" Foreground="#9090A0" VerticalAlignment="Center" Margin="0,0,6,0"
+                                       ToolTip="Keep only proteins quantified in at least this fraction of cells.&#x0a;The strongest single guard against an embedding that is really a map of&#x0a;detection depth. 0% = no floor (historical behaviour).&#x0a;On very sparse data try 50-90%."/>
+                            <TextBox x:Name="MinDetectionTextBox" Text="0" Width="45" Height="22" FontSize="11"
+                                     Background="#2A2A40" Foreground="#E0E0E0" BorderBrush="#4A4A60"
+                                     BorderThickness="1" Padding="4,2" VerticalContentAlignment="Center"
+                                     PreviewTextInput="NumericTextBox_PreviewTextInput"
+                                     ToolTip="Percentage of cells in which a protein must be quantified.&#x0a;0 = no floor. Range 0-99."/>
+                            <TextBlock Text="% of cells" Foreground="#9090A0" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        </StackPanel>
+
+                        <!-- Depth regression. Depth is the dominant nuisance axis in single-cell proteomics. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <CheckBox x:Name="RegressDepthCheckBox" VerticalAlignment="Center" Margin="0,0,6,0"
+                                      ToolTip="Remove the linear trend of per-cell protein count from every protein,&#x0a;before batch correction. Depth routinely becomes a leading principal&#x0a;component and, when it differs between groups, manufactures a difference&#x0a;that is really a difference in measurement depth.&#x0a;The plot header reports how strongly the components track depth."/>
+                            <TextBlock Text="Regress out depth" Foreground="#C0C0D0" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <!-- kNN smoothing. Off by default: it makes clusters look more discrete than the data supports. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <TextBlock Text="kNN smoothing:" Foreground="#9090A0" VerticalAlignment="Center" Margin="0,0,6,0"
+                                       ToolTip="Replace each cell by a distance-weighted average of itself and its k nearest&#x0a;neighbours, suppressing per-cell sampling noise (MAGIC-style diffusion).&#x0a;0 = off. This makes clusters look MORE discrete than the underlying data&#x0a;supports, so any figure using it must say so in the legend."/>
+                            <TextBox x:Name="SmoothingKTextBox" Text="0" Width="40" Height="22" FontSize="11"
+                                     Background="#2A2A40" Foreground="#E0E0E0" BorderBrush="#4A4A60"
+                                     BorderThickness="1" Padding="4,2" VerticalContentAlignment="Center"
+                                     PreviewTextInput="NumericTextBox_PreviewTextInput"
+                                     ToolTip="Neighbours averaged per cell. 0 = off."/>
+                            <TextBlock Text="k," Foreground="#9090A0" VerticalAlignment="Center" Margin="4,0,4,0"/>
+                            <TextBox x:Name="SmoothingStepsTextBox" Text="1" Width="30" Height="22" FontSize="11"
+                                     Background="#2A2A40" Foreground="#E0E0E0" BorderBrush="#4A4A60"
+                                     BorderThickness="1" Padding="4,2" VerticalContentAlignment="Center"
+                                     PreviewTextInput="NumericTextBox_PreviewTextInput"
+                                     ToolTip="Diffusion steps. Range 1-5."/>
+                            <TextBlock Text="steps" Foreground="#9090A0" VerticalAlignment="Center" Margin="4,0,0,0"/>
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
@@ -301,11 +343,11 @@
                                 Checked="HideGreyDotsCheckBox_Changed"
                                 Unchecked="HideGreyDotsCheckBox_Changed"/>
 
-            </StackPanel>
+            </WrapPanel>
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="400"/>
+                <ColumnDefinition Width="*" MinWidth="260"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 

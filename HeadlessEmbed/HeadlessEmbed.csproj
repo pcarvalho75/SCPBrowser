@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows7.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>HeadlessEmbed</AssemblyName>
+    <RootNamespace>HeadlessEmbed</RootNamespace>
+    <NoWarn>$(NoWarn);CS8618;CS8600;CS8602;CS8604</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    Runs SCPBrowser's own embedding pipeline outside the GUI so a figure can be generated reproducibly and
+    checked against the application. It calls the real methods on ScatterPlotControl by reflection rather than
+    reimplementing them: any divergence between this harness and what the user sees on screen would defeat the
+    purpose. Nothing here touches classification.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\SCPBrowser\SCPBrowser.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="UMAPuwotSharp" Version="3.42.3" />
+  </ItemGroup>
+
+  <!--
+    UMAPuwotSharp ships its native uwot.dll at the PACKAGE ROOT rather than under runtimes/win-x64/native/,
+    so NuGet never copies it and the managed wrapper fails at first use with DllNotFoundException. Copy it
+    explicitly. Note for any future adoption in SCPBrowser itself: this is a native dependency, which is what
+    makes this package more awkward to deploy than the pure-managed UMAP package.
+  -->
+  <ItemGroup>
+    <None Include="$(NuGetPackageRoot)umapuwotsharp/3.42.3/uwot.dll"
+          Condition="Exists('$(NuGetPackageRoot)umapuwotsharp/3.42.3/uwot.dll')">
+      <Link>uwot.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

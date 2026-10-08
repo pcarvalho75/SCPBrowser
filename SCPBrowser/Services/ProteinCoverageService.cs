@@ -133,7 +133,7 @@ namespace SCPBrowser.Services
         {
             using (Stream fileStream = File.OpenRead(parquetPath))
             {
-                using (var parquetReader = await ParquetReader.CreateAsync(fileStream))
+                await using (var parquetReader = await ParquetReader.CreateAsync(fileStream))
                 {
                     var dataFields = parquetReader.Schema.GetDataFields();
 
@@ -145,24 +145,25 @@ namespace SCPBrowser.Services
                     if (runField == null || proteinGroupField == null || strippedSeqField == null)
                         return;
 
+                    var stringPool = new StringPool();   // one string per distinct text value in this file
                     for (int i = 0; i < parquetReader.RowGroupCount; i++)
                     {
                         using (var groupReader = parquetReader.OpenRowGroupReader(i))
                         {
-                            var runColumn = await groupReader.ReadColumnAsync(runField);
-                            var proteinColumn = await groupReader.ReadColumnAsync(proteinGroupField);
-                            var peptideColumn = await groupReader.ReadColumnAsync(strippedSeqField);
+                            var runColumn = await ParquetColumnReader.ReadAsync(groupReader, runField, stringPool);
+                            var proteinColumn = await ParquetColumnReader.ReadAsync(groupReader, proteinGroupField, stringPool);
+                            var peptideColumn = await ParquetColumnReader.ReadAsync(groupReader, strippedSeqField, stringPool);
 
                             Array quantData = null;
                             if (quantField != null)
                             {
-                                var quantColumn = await groupReader.ReadColumnAsync(quantField);
-                                quantData = quantColumn.Data as Array;
+                                var quantColumn = await ParquetColumnReader.ReadAsync(groupReader, quantField, stringPool);
+                                quantData = quantColumn;
                             }
 
-                            var runData = runColumn.Data as Array;
-                            var proteinData = proteinColumn.Data as Array;
-                            var seqData = peptideColumn.Data as Array;
+                            var runData = runColumn;
+                            var proteinData = proteinColumn;
+                            var seqData = peptideColumn;
 
                             for (int row = 0; row < runData.Length; row++)
                             {

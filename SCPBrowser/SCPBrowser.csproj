@@ -35,12 +35,12 @@
   <ItemGroup>
     <PackageReference Include="Extended.Wpf.Toolkit" Version="5.1.2" />
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.10" />
-    <!-- Pinned to 5.x deliberately. Parquet.Net 6.0 is a breaking change for this code: ParquetReader no longer
-         implements IDisposable and the row-group column reads moved, so ParquetDataService does not compile
-         against it. Upgrading needs that reader ported and a full re-import test, because every downstream number
-         comes through this path. -->
-    <PackageReference Include="Parquet.Net" Version="5.4.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.12" />
+    <!-- Parquet.Net 6: columns are read through Services/ParquetColumnReader, which returns the 5.x array shapes.
+         The 5.4 -> 6.1 upgrade was checked by a byte-for-byte comparison of everything the loader produces on
+         SpaceProjectV3; any later major version needs the same check, because every downstream number comes through
+         this path. -->
+    <PackageReference Include="Parquet.Net" Version="6.1.0" />
     <PackageReference Include="ScottPlot.WPF" Version="5.1.59" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
     <PackageReference Include="UMAP" Version="1.0.62830" />

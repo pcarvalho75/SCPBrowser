@@ -271,7 +271,7 @@ namespace SCPBrowser.Services
 
             using (Stream fileStream = File.OpenRead(filePath))
             {
-                using (var parquetReader = await ParquetReader.CreateAsync(fileStream))
+                await using (var parquetReader = await ParquetReader.CreateAsync(fileStream))
                 {
                     return parquetReader.Schema.GetDataFields()
                         .Select(f => f.Name)
@@ -505,7 +505,7 @@ namespace SCPBrowser.Services
 
             using (Stream fileStream = File.OpenRead(filePath))
             {
-                using (var parquetReader = await ParquetReader.CreateAsync(fileStream))
+                await using (var parquetReader = await ParquetReader.CreateAsync(fileStream))
                 {
                     var dataFields = parquetReader.Schema.GetDataFields();
 
@@ -541,55 +541,56 @@ namespace SCPBrowser.Services
                     if (ticField == null)
                         throw new InvalidOperationException($"Column '{mapping.TotalIonCurrentColumn}' not found");
 
+                    var stringPool = new StringPool();   // one string per distinct text value in this file
                     for (int i = 0; i < parquetReader.RowGroupCount; i++)
                     {
                         using (var groupReader = parquetReader.OpenRowGroupReader(i))
                         {
-                            var rawFileColumn = await groupReader.ReadColumnAsync(rawFileField);
-                            var proteinColumn = await groupReader.ReadColumnAsync(proteinField);
-                            var peptideColumn = await groupReader.ReadColumnAsync(peptideField);
-                            var ticColumn = await groupReader.ReadColumnAsync(ticField);
+                            var rawFileColumn = await ParquetColumnReader.ReadAsync(groupReader, rawFileField, stringPool);
+                            var proteinColumn = await ParquetColumnReader.ReadAsync(groupReader, proteinField, stringPool);
+                            var peptideColumn = await ParquetColumnReader.ReadAsync(groupReader, peptideField, stringPool);
+                            var ticColumn = await ParquetColumnReader.ReadAsync(groupReader, ticField, stringPool);
 
                             // Protein.Ids feeds only the target-protein ratio; without targets it is never read.
                             Array proteinIdsData = null;
                             if (proteinIdsField != null && mapping.TargetProteinIdentifiers != null &&
                                 mapping.TargetProteinIdentifiers.Count > 0)
                             {
-                                var proteinIdsColumn = await groupReader.ReadColumnAsync(proteinIdsField);
-                                proteinIdsData = proteinIdsColumn.Data as Array;
+                                var proteinIdsColumn = await ParquetColumnReader.ReadAsync(groupReader, proteinIdsField, stringPool);
+                                proteinIdsData = proteinIdsColumn;
                             }
 
                             Array genesData = null;
                             if (genesField != null)
                             {
-                                var genesColumn = await groupReader.ReadColumnAsync(genesField);
-                                genesData = genesColumn.Data as Array;
+                                var genesColumn = await ParquetColumnReader.ReadAsync(groupReader, genesField, stringPool);
+                                genesData = genesColumn;
                             }
 
                             Array qValueData = null;
                             if (qValueField != null && QValueThreshold > 0)
                             {
-                                var qCol = await groupReader.ReadColumnAsync(qValueField);
-                                qValueData = qCol.Data as Array;
+                                var qCol = await ParquetColumnReader.ReadAsync(groupReader, qValueField, stringPool);
+                                qValueData = qCol;
                             }
 
                             Array pgQValueData = null;
                             if (pgQValueField != null && ProteinQValueThreshold > 0)
                             {
-                                var pgQCol = await groupReader.ReadColumnAsync(pgQValueField);
-                                pgQValueData = pgQCol.Data as Array;
+                                var pgQCol = await ParquetColumnReader.ReadAsync(groupReader, pgQValueField, stringPool);
+                                pgQValueData = pgQCol;
                             }
 
                             // Columns as typed arrays, converted once per row group. The loop used to box every cell
                             // through Array.GetValue and to turn each quantity into a string and parse it back, twice
                             // per row; the conversions below give the same values without allocating (see
                             // ToQuantities), and the loop body keeps the original order of every insertion and sum.
-                            var rawFileData = AsStrings(rawFileColumn.Data as Array);
-                            var proteinData = AsStrings(proteinColumn.Data as Array);
-                            var peptideData = AsStrings(peptideColumn.Data as Array);
+                            var rawFileData = AsStrings(rawFileColumn);
+                            var proteinData = AsStrings(proteinColumn);
+                            var peptideData = AsStrings(peptideColumn);
                             var proteinIdsStrings = proteinIdsData != null ? AsStrings(proteinIdsData) : null;
                             var genesStrings = genesData != null ? AsStrings(genesData) : null;
-                            ToQuantities(ticColumn.Data as Array, out double[] ticValues, out bool[] ticParsed);
+                            ToQuantities(ticColumn, out double[] ticValues, out bool[] ticParsed);
                             bool[] qPass = qValueData != null ? PassFlags(qValueData, QValueThreshold) : null;
                             bool[] pgQPass = pgQValueData != null ? PassFlags(pgQValueData, ProteinQValueThreshold) : null;
                             bool hasTargets = mapping.TargetProteinIdentifiers != null && mapping.TargetProteinIdentifiers.Count > 0;

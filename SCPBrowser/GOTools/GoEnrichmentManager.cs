@@ -142,14 +142,12 @@ namespace SCPBrowser.GOTools
                 if (!runAbundances.TryGetValue(runName, out var abundance) || abundance <= 0)
                     continue;
 
-                // Extract gene name(s) from protein group
-                var proteinParts = proteinId.Split(';', ',');
-                foreach (var part in proteinParts)
-                {
-                    var geneName = GeneNameExtractor.Extract(part.Trim());
-                    if (!string.IsNullOrEmpty(geneName))
-                        geneNames.Add(geneName);
-                }
+                // Gene symbols for the group: the search engine's gene column when the import has one (the GO
+                // database is keyed by symbol), else whatever the identifier itself yields. Parsing the identifier
+                // alone returned bare UniProt accessions for DIA-NN groups, which match no GO annotation, so every
+                // run of such a project came back with no enrichment at all.
+                foreach (var geneName in GeneNameUtility.ExtractGeneNames(proteomicsData, proteinId))
+                    geneNames.Add(geneName);
             }
 
             return geneNames.ToList();

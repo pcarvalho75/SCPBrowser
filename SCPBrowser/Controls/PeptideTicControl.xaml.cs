@@ -234,6 +234,17 @@ namespace SCPBrowser
             if (!string.IsNullOrEmpty(cm)) await _databaseService.SetSettingAsync("ColorMode", cm);
         }
 
+        /// <summary>
+        /// Restores the contaminant-ratio cutoff saved with the project by moving the slider, so it is applied by the
+        /// same debounced filter pass a user drag triggers. 1.0 (100%) means no cutoff.
+        /// </summary>
+        public void RestoreContaminantCutoff(double cutoff)
+        {
+            double percent = Math.Clamp(cutoff, 0.0, 1.0) * 100.0;
+            if (Math.Abs(ContaminantCutoffSlider.Value - percent) > 0.01)
+                ContaminantCutoffSlider.Value = percent;
+        }
+
         public void RestoreHideGreyDots(bool hide)
         {
             _suppressCheckboxEvents = true;

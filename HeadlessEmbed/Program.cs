@@ -100,19 +100,29 @@ internal static class Program
             var conditions = ReadCsvSetting(dbPath, "CheckedBioConditions");
             var cellTypes = ReadCsvSetting(dbPath, "CheckedCellTypes");
             bool hideGrey = bool.TryParse(ReadSetting(dbPath, "HideGreyDots"), out bool hg) && hg;
+            double contaminantCutoff = double.TryParse(ReadSetting(dbPath, "ContaminantRatioCutoff"), NumberStyles.Float, Inv,
+                                                       out double cc) ? cc : 1.0;
 
             var stage = data.RawFileNames.Where(rf =>
             {
                 if (!meta.TryGetValue(rf, out var m)) return false;
                 if (plates.Count > 0 && (m.Plate == null || !plates.Contains(m.Plate))) return false;
                 int pc = data.ProteinCountPerFile.TryGetValue(rf, out int v) ? v : 0;
-                return pc >= cutoff && pc <= upper;
+                if (pc < cutoff || pc > upper) return false;
+                // Contaminant-ratio stage, as DataFilterService.FilterByContaminantRatio: keep ratio <= cutoff.
+                if (contaminantCutoff < 1.0)
+                {
+                    double ratio = data.TargetProteinRatioPerFile.TryGetValue(rf, out double rr) ? rr : 0;
+                    if (ratio > contaminantCutoff) return false;
+                }
+                return true;
             }).ToList();
 
             var staged = Trim(data, stage.OrderBy(x => x, StringComparer.Ordinal).ToList());
             foreach (var rf in staged.RawFileNames) staged.BiologicalConditionPerFile[rf] = meta[rf].Condition;
             Console.WriteLine($"filter stages  : {staged.RawFileNames.Count} runs after plate + cutoff {cutoff}-" +
-                              $"{(upper == int.MaxValue ? "inf" : upper.ToString(Inv))}; hide grey dots = {hideGrey}");
+                              $"{(upper == int.MaxValue ? "inf" : upper.ToString(Inv))}; contaminant cutoff = {contaminantCutoff:P0}; " +
+                              $"hide grey dots = {hideGrey}");
 
             var options = new ScatterPlotOptions
             {

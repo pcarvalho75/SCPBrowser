@@ -2361,6 +2361,11 @@ namespace SCPBrowser
             // The view mode and Color-by mode decide what the Explorer is actually showing. Restoring the
             // dimensionality-reduction settings without them meant a project saved on a UMAP reopened on the
             // Peptides-vs-TIC scatter, looking nothing like the analysis that was saved.
+            var savedCutoff = await _projectDatabaseService.GetSettingAsync("ContaminantRatioCutoff");
+            if (double.TryParse(savedCutoff, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double cutoffValue))
+                PeptideTicTab.RestoreContaminantCutoff(cutoffValue);
+
             var savedView = await _projectDatabaseService.GetSettingAsync("ViewMode");
             var savedColor = await _projectDatabaseService.GetSettingAsync("ColorMode");
             if (!string.IsNullOrEmpty(savedView) || !string.IsNullOrEmpty(savedColor))
@@ -2681,6 +2686,11 @@ namespace SCPBrowser
             {
                 if (!_hasOpenProject || _dataFilterService == null) return;
                 _dataFilterService.ContaminantRatioCutoff = cutoff;
+                // Saved with the project: the cutoff removes cells from the embedding, so a figure made with it
+                // has to reopen with the same cohort (as Hide Grey Dots and the checked populations already do).
+                if (_projectDatabaseService != null)
+                    await _projectDatabaseService.SetSettingAsync("ContaminantRatioCutoff",
+                        cutoff.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
                 await _dataFilterService.ApplyFiltersAsync(_parquetService);
             }
             catch (Exception ex)

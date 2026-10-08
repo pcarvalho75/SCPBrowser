@@ -631,6 +631,9 @@ namespace SCPBrowser
             private int _coverageFloorDropped;
             private int _markersRescued;
             private int _embeddingCohortSize;
+            private int _embeddingProteinCount;
+            private string _umapEngineUsed;
+            private string _umapEngineWarning;
             private string _coverageFloorWarning;
             private bool _depthRegressed;
             private int _smoothingApplied;
@@ -648,6 +651,15 @@ namespace SCPBrowser
             /// axes are built from, and two embeddings on different cohorts are not comparable.
             /// </summary>
             public int EmbeddingCohortSize => _embeddingCohortSize;
+
+            /// <summary>Proteins that actually entered the last embedding, after HVP selection and the detection floor.</summary>
+            public int EmbeddingProteinCount => _embeddingProteinCount;
+
+            /// <summary>Human-readable UMAP engine actually used for the last layout (after any fallback).</summary>
+            public string UmapEngineUsed => _umapEngineUsed;
+
+            /// <summary>Set when uwot was requested but could not run, and the legacy engine was used instead.</summary>
+            public string UmapEngineWarning => _umapEngineWarning;
             /// <summary>True when sequencing depth was regressed out of the last embedding.</summary>
             public bool DepthRegressed => _depthRegressed;
             /// <summary>k actually used for kNN smoothing in the last embedding (0 = not smoothed).</summary>
@@ -777,6 +789,7 @@ namespace SCPBrowser
                 int nSamples = rawFiles.Count;
                 int nProteins = proteins.Count;
                 _embeddingCohortSize = nSamples;
+                _embeddingProteinCount = nProteins;
 
                 // Build matrix: rows = samples, columns = proteins (log2 transformed).
                 // `observed` tracks which entries are real measurements, because in log2 space a written 0 is
@@ -868,12 +881,29 @@ namespace SCPBrowser
                 _depthRegressed = false;
                 if (settings != null && settings.RegressDepth && nSamples > 2 && nProteins > 0)
                 {
+                    // Depth is the cell's WHOLE-proteome protein count. Counting only within this embedding's
+                    // own protein list is nearly constant once a detection floor is on (every surviving protein is
+                    // seen in most cells), so it would regress out almost nothing while claiming to remove depth.
                     var depth = new double[nSamples];
                     for (int i = 0; i < nSamples; i++)
+                        depth[i] = CellDepth(data, rawFiles[i]);
+
+                    // When batch correction will run, regress only the WITHIN-plate part of depth. Plates usually
+                    // differ in depth, so one global slope also absorbs part of the plate effect; ComBat then removes
+                    // the plate means again and the two corrections fight, re-creating a depth axis. Centring depth
+                    // inside each plate leaves between-plate differences to ComBat, which is built for them.
+                    var plateOf = _currentOptions?.BatchLabelPerFile;
+                    if (_currentOptions?.ApplyBatchCorrection == true && plateOf != null)
                     {
-                        int seen = 0;
-                        for (int j = 0; j < nProteins; j++) if (observed[i, j]) seen++;
-                        depth[i] = seen;
+                        var labels = rawFiles.Select(rf => plateOf.TryGetValue(rf, out int pid) ? pid : 0).ToArray();
+                        if (labels.Distinct().Count() >= 2)
+                        {
+                            foreach (var grp in Enumerable.Range(0, nSamples).GroupBy(i => labels[i]))
+                            {
+                                double m = grp.Average(i => depth[i]);
+                                foreach (int i in grp) depth[i] -= m;
+                            }
+                        }
                     }
                     double dMean = depth.Average();
                     double dSs = 0;
@@ -1039,6 +1069,35 @@ namespace SCPBrowser
                 return matrix;
             }
 
+            /// <summary>
+            /// Lays out the UMAP input with uwot, using its default (HNSW) neighbour search, which is deterministic for
+            /// a fixed seed. Do NOT set forceExactKnn: in UMAPuwotSharp 3.42.3 the exact path collapses the layout (220
+            /// cells landed on 15 distinct points), and it bought no reproducibility the default path lacks.
+            /// </summary>
+            private static float[][] RunUwot(float[][] x, int nNeighbors, DimensionReductionSettings s, out string label)
+            {
+                int n = x.Length, d = x[0].Length;
+                var input = new float[n, d];
+                for (int i = 0; i < n; i++)
+                    for (int j = 0; j < d; j++) input[i, j] = x[i][j];
+
+                float spread = (float)Math.Clamp(s.UmapSpread, 0.1, 10.0);
+                // min_dist above spread leaves the layout curve undefined; keep it just below.
+                float minDist = (float)Math.Clamp(s.UmapMinDist, 0.0, spread * 0.99);
+
+                using var model = new UMAPuwotSharp.UMapModel();
+                var e = model.Fit(input, embeddingDimension: 2, nNeighbors: nNeighbors,
+                                  minDist: minDist, spread: spread, nEpochs: 500,
+                                  metric: UMAPuwotSharp.DistanceMetric.Euclidean,
+                                  randomSeed: s.UmapSeed > 0 ? s.UmapSeed : -1);
+
+                var outp = new float[n][];
+                for (int i = 0; i < n; i++) outp[i] = new[] { e[i, 0], e[i, 1] };
+                label = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "uwot, min_dist {0:0.###}, spread {1:0.###}", minDist, spread);
+                return outp;
+            }
+
             private void ComputeUmap(ProteomicsData data)
             {
                 if (data == null || data.ProteinQuantMatrix.Count == 0)
@@ -1064,6 +1123,9 @@ namespace SCPBrowser
                         _umapResult = null;
                         return;
                     }
+
+                    _umapEngineUsed = null;
+                    _umapEngineWarning = null;
 
                     int nSamples = _pcaResult.Scores.GetLength(0);
                     int availablePCs = _pcaResult.Scores.GetLength(1);
@@ -1142,18 +1204,44 @@ namespace SCPBrowser
 
                     // Run UMAP
                     int neighbors = Math.Min(settings.UmapNeighbors, nSamples - 1);
-                    var umap = new Umap(
-                        distance: Umap.DistanceFunctions.Euclidean,
-                        dimensions: 2,
-                        numberOfNeighbors: neighbors,
-                        random: settings.UmapSeed > 0 ? new SeededRandom(settings.UmapSeed) : new SeededRandom()
-                    );
+                    float[][] layout = null;
 
-                    int epochs = umap.InitializeFit(umapMatrix);
-                    for (int i = 0; i < epochs; i++)
-                        umap.Step();
+                    if (settings.UmapEngine == UmapEngineKind.Uwot)
+                    {
+                        try
+                        {
+                            layout = RunUwot(umapMatrix, neighbors, settings, out string usedLabel);
+                            _umapEngineUsed = usedLabel;
+                        }
+                        catch (Exception ex)
+                        {
+                            // uwot is a native library. On a machine where it cannot load (a non-x64 runtime, a
+                            // missing C++ runtime) fall back rather than leave the user with no plot - and say so,
+                            // because the two engines do not produce the same picture.
+                            _umapEngineWarning = "uwot UMAP could not run here (" + ex.GetBaseException().Message +
+                                                 "); the legacy UMAP engine was used instead.";
+                            layout = null;
+                        }
+                    }
 
-                        _umapResult = umap.GetEmbedding();
+                    if (layout == null)
+                    {
+                        var umap = new Umap(
+                            distance: Umap.DistanceFunctions.Euclidean,
+                            dimensions: 2,
+                            numberOfNeighbors: neighbors,
+                            random: settings.UmapSeed > 0 ? new SeededRandom(settings.UmapSeed) : new SeededRandom()
+                        );
+
+                        int epochs = umap.InitializeFit(umapMatrix);
+                        for (int i = 0; i < epochs; i++)
+                            umap.Step();
+
+                        layout = umap.GetEmbedding();
+                        _umapEngineUsed = "legacy engine";
+                    }
+
+                        _umapResult = layout;
 
                             // Compute label purity in unsupervised PCA space
                             _labelPurity = null;
@@ -1398,6 +1486,12 @@ namespace SCPBrowser
                         }
                     }
                 }
+                else if (options.UseKMeansColoring)
+                {
+                    // Neutral until ApplyClusterColors stamps the cluster colours. Painting the contaminant
+                    // gradient here showed k-means points in the wrong colour scheme until clustering finished.
+                    markerColor = Color.FromRgb(150, 150, 160);
+                }
                 else
                 {
                     // Default: Color by Contaminant Ratio (Viridis gradient)
@@ -1471,6 +1565,21 @@ namespace SCPBrowser
 
                 _dataPoints.Add(dataPoint);
             }
+        }
+
+        /// <summary>
+        /// A cell's sequencing depth: the number of proteins quantified in it across the whole dataset. Uses the
+        /// count the Explorer filters and displays when available, so the header and the protein-count cutoff agree.
+        /// </summary>
+        private static double CellDepth(ProteomicsData data, string rawFile)
+        {
+            if (data?.ProteinCountPerFile != null && data.ProteinCountPerFile.TryGetValue(rawFile, out int c) && c > 0)
+                return c;
+            int seen = 0;
+            if (data?.ProteinQuantMatrix != null)
+                foreach (var kv in data.ProteinQuantMatrix)
+                    if (kv.Value.TryGetValue(rawFile, out double v) && v > 0) seen++;
+            return seen;
         }
 
         /// <summary>
@@ -1561,16 +1670,11 @@ namespace SCPBrowser
                 _depthPcCorrelation = double.NaN;
                 if (_pcaResult?.Scores != null)
                 {
+                    // Same definition of depth as the regression: the whole-proteome count, so the number in the
+                    // header measures what a reader means by sequencing depth even when a detection floor is on.
                     var depth = new double[nSamples];
                     for (int i = 0; i < nSamples; i++)
-                    {
-                        string rf = rawFiles[i];
-                        int seen = 0;
-                        foreach (var pr in proteins)
-                            if (data.ProteinQuantMatrix.TryGetValue(pr, out var perFile)
-                                && perFile.TryGetValue(rf, out double v) && v > 0) seen++;
-                        depth[i] = seen;
-                    }
+                        depth[i] = CellDepth(data, rawFiles[i]);
                     int pcs = Math.Min(5, _pcaResult.Scores.GetLength(1));
                     double worst = 0;
                     for (int c = 0; c < pcs; c++)
@@ -1970,6 +2074,12 @@ namespace SCPBrowser
                             markerColor = color;
                         }
                     }
+                }
+                else if (options.UseKMeansColoring)
+                {
+                    // Neutral until ApplyClusterColors stamps the cluster colours. Painting the contaminant
+                    // gradient here showed k-means points in the wrong colour scheme until clustering finished.
+                    markerColor = Color.FromRgb(150, 150, 160);
                 }
                 else
                 {

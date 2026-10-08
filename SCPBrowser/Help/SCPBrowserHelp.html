@@ -396,8 +396,9 @@ overlaid separately, and cells that could not be evaluated are marked rather tha
 preprocessing pipeline; every parameter has a tooltip stating its default and effect.</p>
 
 <h3>Preprocessing order</h3>
-<p>select proteins → log₂ → <b>per-cell normalisation</b> → optional batch correction → optional z-score →
-clip.</p>
+<p>select proteins (HVPs or all) → <b>detection floor</b> → log₂ → <b>per-cell normalisation</b> → fill missing
+values → <b>regress out depth</b> → optional batch correction → optional <b>kNN smoothing</b> → optional z-score →
+clip → PCA → UMAP.</p>
 
 <table>
   <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
@@ -408,20 +409,56 @@ clip.</p>
   <tr><td>Missing values</td><td>Protein mean</td>
       <td>How unquantified proteins are filled in. <code>Zero</code> treats "not measured" as a measured zero,
       which with 40–70% missingness drags each protein's centre down and inflates its variance.</td></tr>
+  <tr><td>Min detection</td><td>0% (off)</td>
+      <td>Keeps only proteins quantified in at least this share of the cells being embedded. A protein seen in a
+      few cells is mostly filled-in values, so its column records <i>which</i> cells detected it (their depth)
+      rather than how much protein they held. On very sparse data, 50–90% is the strongest guard against an
+      embedding that is really a detection map.</td></tr>
+  <tr><td>Regress out depth</td><td>Off</td>
+      <td>Removes the linear trend of each cell's protein count (its whole-proteome depth) from every protein.
+      With batch correction on, only the depth variation <i>within</i> each plate is removed and differences
+      between plates are left to ComBat; otherwise the two corrections fight and re-create a depth axis.</td></tr>
+  <tr><td>kNN smoothing</td><td>0 (off)</td>
+      <td>Averages each cell with its <i>k</i> nearest neighbours to suppress sampling noise. It makes groups look
+      more discrete than the data supports and can re-introduce depth structure, so any figure that uses it must
+      say so.</td></tr>
   <tr><td>Z-score scaling</td><td>On</td><td>Standardises each protein so abundant ones do not dominate.</td></tr>
   <tr><td>Clip max</td><td>10</td><td>Clamps z-scores to ±clip, limiting outlier influence.</td></tr>
   <tr><td>Top HVPs only</td><td>Off</td>
       <td>Restricts the embedding to the most variable proteins. <b>Off means all quantified proteins are
       used.</b></td></tr>
   <tr><td>Batch correction</td><td>Off</td>
-      <td>ComBat with plate as batch and biological condition preserved as a covariate.</td></tr>
+      <td>ComBat with plate as batch and biological condition preserved as a covariate. If condition and plate
+      are the same variable the covariate cannot be kept; the plate is then corrected alone and the header warns
+      that condition differences aligned with plates may have been removed.</td></tr>
+  <tr><td>UMAP engine</td><td>uwot</td>
+      <td><b>uwot</b> (the C++ core behind R's uwot) exposes <b>Min dist</b> and <b>Spread</b> and is
+      deterministic for a fixed seed. <b>Legacy</b> is the managed engine used before; it has no such controls
+      and can split one continuous population into separate-looking lobes that correspond to nothing. It is kept
+      to reproduce earlier figures, and is used automatically (with a warning) if uwot cannot load.</td></tr>
+  <tr><td>Min dist / Spread</td><td>0.1 / 1</td>
+      <td>uwot only. Low min dist packs cells into tight clumps and filaments; high min dist spreads them into
+      an even continuum. Min dist is kept below Spread.</td></tr>
   <tr><td>UMAP neighbours / seed</td><td>15 / 42</td><td>Neighbourhood size and the seed that makes the embedding reproducible.</td></tr>
+  <tr><td>Guided embedding</td><td>Off</td>
+      <td>Appends the predicted cell types to the PCA coordinates, pulling cells with the same label together.
+      Even a small weight measurably improves the apparent separation of the labels it was given, so <b>never
+      use it for a figure that argues cell types separate on their own</b>.</td></tr>
 </table>
 
 <div class="note"><b>Read the plot header</b>
-It states how many proteins the embedding actually used, the realised missingness, whether the embedding was
-recomputed on a subset of cells, whether the HVP filter was bypassed because too few cells were available to
-score variability, and — for batch correction — if the correction was skipped or fell back to plate-only.</div>
+It names the UMAP engine actually used, states how many cells and how many proteins entered the embedding, how
+many proteins the detection floor removed, the realised missingness, whether depth was regressed and whether
+smoothing was applied, and whether the embedding was recomputed on a subset of cells. A second line in amber
+lists anything that did not go as configured: batch correction skipped or reduced to plate-only, a detection
+floor ignored because it left too few proteins, or uwot unavailable.</div>
+
+<h3 id="depthcheck">Is the picture biology or depth?</h3>
+<p>Single-cell proteomes differ enormously in how many proteins each cell yields, and that depth easily becomes
+the dominant axis of an embedding. The header reports <code>depth 0.xx</code>: the strongest rank correlation
+between any of the first five principal components and each cell's protein count. Below about 0.3 the leading
+axes are not tracking depth. Above 0.5 the header reads <code>DEPTH-DRIVEN</code>: the populations on screen may be
+depth strata rather than biology, and the detection floor and depth regression are the first things to try.</p>
 
 <h3 id="excluding">Excluding a population from the embedding</h3>
 <p>Unchecking a cell type, biological condition or plate in the legend <b>greys</b> those cells. The embedding
@@ -452,8 +489,9 @@ rather than a shared decomposition, so hiding cells there is purely cosmetic and
 
 <div class="ok"><b>The choice is remembered</b>
 <b>Hide Grey Dots</b> is saved with the project alongside the legend's checked sets, because together they define
-which cells the embedding is built from. Reopening the project restores the same cohort — so a figure you come
-back to is the one you left.</div>
+which cells the embedding is built from. The view mode (Peptide vs TIC, PCA or UMAP) and the Color-by mode are
+saved too. Reopening the project restores the same cohort and the same view, so a figure you come back to is the
+one you left.</div>
 
 <h3>K-means</h3>
 <p>Colour by <b>K-means</b> to cluster on the currently displayed axes. The basis (for example

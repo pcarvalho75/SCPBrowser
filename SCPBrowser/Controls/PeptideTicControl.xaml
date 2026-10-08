@@ -216,6 +216,32 @@
                                                              ToolTip="UMAP random seed. 0 = random each run. Default: 42."/>
                                      </StackPanel>
 
+                        <!-- UMAP engine. uwot exposes min_dist and spread; the legacy managed package hardcodes them
+                             and can split one continuous population into separate-looking lobes. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="Engine:" Foreground="#9090A0" VerticalAlignment="Center" Width="90"
+                                       ToolTip="uwot: the C++ core behind R's uwot; exposes min_dist and spread. Default.&#x0a;Legacy: the managed UMAP used before; no min_dist control.&#x0a;Kept to reproduce earlier figures, and used automatically if uwot cannot load."/>
+                            <ComboBox x:Name="UmapEngineComboBox" Width="130" Height="22" FontSize="11"
+                                      SelectionChanged="UmapEngineComboBox_SelectionChanged">
+                                <ComboBoxItem Content="uwot" Tag="0" IsSelected="True"/>
+                                <ComboBoxItem Content="Legacy" Tag="1"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="Min dist:" Foreground="#9090A0" VerticalAlignment="Center" Width="90"
+                                       ToolTip="How tightly points may pack (uwot only).&#x0a;Low (0.05-0.1): tight clumps and filaments.&#x0a;High (0.5-0.8): an even continuum.&#x0a;Must be below Spread. Default: 0.1."/>
+                            <TextBox x:Name="UmapMinDistTextBox" Text="0.1" Width="45" Height="22" FontSize="11"
+                                     Background="#2A2A40" Foreground="#E0E0E0" BorderBrush="#4A4A60"
+                                     BorderThickness="1" Padding="4,2" VerticalContentAlignment="Center"
+                                     PreviewTextInput="NumericTextBox_PreviewTextInput"/>
+                            <TextBlock Text="Spread:" Foreground="#9090A0" VerticalAlignment="Center" Margin="12,0,6,0"
+                                       ToolTip="Overall scale of the layout (uwot only). Default: 1."/>
+                            <TextBox x:Name="UmapSpreadTextBox" Text="1" Width="45" Height="22" FontSize="11"
+                                     Background="#2A2A40" Foreground="#E0E0E0" BorderBrush="#4A4A60"
+                                     BorderThickness="1" Padding="4,2" VerticalContentAlignment="Center"
+                                     PreviewTextInput="NumericTextBox_PreviewTextInput"/>
+                        </StackPanel>
+
                         <!-- Guided Embedding Section -->
                         <TextBlock Text="GUIDED EMBEDDING" FontSize="10" Foreground="#8888AA" FontWeight="SemiBold" Margin="0,0,0,6"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
@@ -351,19 +377,21 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <GroupBox Grid.Column="0">
+            <!-- The header carries the methods-level facts about the embedding (engine, cohort, proteins, floor,
+                 depth) and can be long. It wraps to the width of the plot instead of running off the right edge;
+                 the width is set from code because a GroupBox header is measured with unlimited width. -->
+            <GroupBox Grid.Column="0" x:Name="PlotGroupBox">
                 <GroupBox.Header>
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel x:Name="PlotHeaderPanel" Orientation="Vertical">
                         <TextBlock x:Name="PlotGroupBoxHeader"
                            Text="Peptides vs TIC"
+                           TextWrapping="Wrap"
                            FontWeight="SemiBold"/>
                         <TextBlock x:Name="BatchCorrectionWarningText"
-                           Margin="12,0,0,0"
+                           Margin="0,2,0,0"
                            Foreground="#B45309"
                            FontWeight="SemiBold"
-                           TextTrimming="CharacterEllipsis"
-                           MaxWidth="640"
-                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"
                            Visibility="Collapsed"/>
                     </StackPanel>
                 </GroupBox.Header>

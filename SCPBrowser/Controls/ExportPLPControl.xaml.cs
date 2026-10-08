@@ -698,6 +698,18 @@ namespace SCPBrowser
                 sb.AppendLine(ReportLine("Guided embedding", $"{dimRed.UseGuidedEmbedding} (weight {dimRed.GuidedWeight.ToString("R", inv)})"));
                 sb.AppendLine(ReportLine("HVP filter", $"{dimRed.UseHvpFilter} (top {dimRed.HvpCount.ToString(inv)})"));
                 sb.AppendLine(ReportLine("Batch correction", dimRed.ApplyBatchCorrection.ToString()));
+                // Everything below changes what the embedding shows, so a methods section written from this report
+                // is incomplete without it.
+                sb.AppendLine(ReportLine("Per-cell normalisation", dimRed.Normalization.ToString()));
+                sb.AppendLine(ReportLine("Missing values", dimRed.MissingValues.ToString()));
+                sb.AppendLine(ReportLine("Detection floor", dimRed.MinDetectionRate > 0
+                    ? dimRed.MinDetectionRate.ToString("P0", inv) + " of cells" : "none"));
+                sb.AppendLine(ReportLine("Depth regression", dimRed.RegressDepth.ToString()));
+                sb.AppendLine(ReportLine("kNN smoothing", dimRed.SmoothingNeighbors > 0
+                    ? $"k = {dimRed.SmoothingNeighbors.ToString(inv)}, {dimRed.SmoothingSteps.ToString(inv)} step(s)" : "none"));
+                sb.AppendLine(ReportLine("UMAP engine", dimRed.UmapEngine == Models.UmapEngineKind.Uwot
+                    ? $"uwot (min_dist {dimRed.UmapMinDist.ToString("0.###", inv)}, spread {dimRed.UmapSpread.ToString("0.###", inv)})"
+                    : "legacy managed UMAP"));
                 sb.AppendLine();
                 sb.AppendLine("    These are the values currently stored in the project. If they were changed after");
                 sb.AppendLine("    the embedding on screen was computed, the plot still reflects the earlier values —");

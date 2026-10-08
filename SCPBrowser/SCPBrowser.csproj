@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -44,6 +44,7 @@
     <PackageReference Include="ScottPlot.WPF" Version="5.1.59" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
     <PackageReference Include="UMAP" Version="1.0.62830" />
+    <PackageReference Include="UMAPuwotSharp" Version="3.42.3" GeneratePathProperty="true" />
   </ItemGroup>
 
   <ItemGroup>
@@ -74,6 +75,20 @@
     <Reference Include="PatternTools">
       <HintPath>DLLs\PatternTools.dll</HintPath>
     </Reference>
+  </ItemGroup>
+
+  <!--
+    UMAPuwotSharp ships its native uwot.dll (x64) at the PACKAGE ROOT rather than under runtimes/win-x64/native/,
+    so NuGet never copies it and the wrapper fails at first use. Ship it as content next to the executable so it is
+    in the build output, in referencing projects (TransmutationLearning, HeadlessEmbed) and in the ClickOnce
+    manifest. If it still cannot load on some machine, ScatterPlotControl falls back to the legacy engine.
+  -->
+  <ItemGroup>
+    <Content Include="$(PkgUMAPuwotSharp)\uwot.dll" Condition="'$(PkgUMAPuwotSharp)' != '' And Exists('$(PkgUMAPuwotSharp)\uwot.dll')">
+      <Link>uwot.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </Content>
   </ItemGroup>
 
 </Project>

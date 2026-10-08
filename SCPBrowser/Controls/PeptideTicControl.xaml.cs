@@ -285,6 +285,7 @@ namespace SCPBrowser
         public PeptideTicControl()
         {
             InitializeComponent();
+            PlotGroupBox.SizeChanged += (_, e) => PlotHeaderPanel.MaxWidth = Math.Max(120, e.NewSize.Width - 32);
 
             ScatterPlot.SelectionChanged += ScatterPlot_SelectionChanged;
             SelectedPointsGridPanel.GridSelectionChanged += SelectedPointsGridPanel_GridSelectionChanged;
@@ -506,6 +507,10 @@ namespace SCPBrowser
             PcsForUmapTextBox.Text = s.NumPcsForUmap.ToString();
             UmapNeighborsTextBox.Text = s.UmapNeighbors.ToString();
             UmapSeedTextBox.Text = s.UmapSeed.ToString();
+            SelectComboByTag(UmapEngineComboBox, ((int)s.UmapEngine).ToString());
+            UmapMinDistTextBox.Text = s.UmapMinDist.ToString("0.###", CultureInfo.InvariantCulture);
+            UmapSpreadTextBox.Text = s.UmapSpread.ToString("0.###", CultureInfo.InvariantCulture);
+            UpdateUmapEngineControls();
             GuidedEmbeddingCheckBox.IsChecked = s.UseGuidedEmbedding;
             GuidedWeightSlider.Value = s.GuidedWeight;
             GuidedWeightLabel.Text = s.GuidedWeight.ToString("F2");
@@ -575,6 +580,13 @@ namespace SCPBrowser
                 s.UmapNeighbors = Math.Clamp(neighbors, 2, 200);
             if (int.TryParse(UmapSeedTextBox.Text, out int seed))
                 s.UmapSeed = Math.Max(0, seed);
+            s.UmapEngine = (Models.UmapEngineKind)ReadComboTag(UmapEngineComboBox, (int)s.UmapEngine);
+            if (double.TryParse(UmapSpreadTextBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double spread))
+                s.UmapSpread = Math.Clamp(spread, 0.1, 10.0);
+            if (double.TryParse(UmapMinDistTextBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double minDist))
+                s.UmapMinDist = minDist;
+            // min_dist must stay below spread or the layout curve is undefined; clamp rather than reject.
+            s.UmapMinDist = Math.Clamp(s.UmapMinDist, 0.0, s.UmapSpread * 0.99);
             s.UseGuidedEmbedding = GuidedEmbeddingCheckBox.IsChecked == true;
             s.GuidedWeight = GuidedWeightSlider.Value;
             s.ShowPcaView = ShowPcaViewCheckBox.IsChecked == true;
@@ -621,6 +633,17 @@ namespace SCPBrowser
 
             if (_currentData != null)
                 RefreshChart();
+        }
+
+        private void UmapEngineComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateUmapEngineControls();
+
+        /// <summary>min_dist and spread only exist in uwot; grey them out for the legacy engine so they cannot look active.</summary>
+        private void UpdateUmapEngineControls()
+        {
+            if (UmapMinDistTextBox == null || UmapSpreadTextBox == null) return;
+            bool uwot = ReadComboTag(UmapEngineComboBox, 0) == (int)Models.UmapEngineKind.Uwot;
+            UmapMinDistTextBox.IsEnabled = uwot;
+            UmapSpreadTextBox.IsEnabled = uwot;
         }
 
         private void DimRedResetButton_Click(object sender, RoutedEventArgs e)
@@ -1720,6 +1743,10 @@ namespace SCPBrowser
                 DrawContaminantGradient();
             }
 
+            // A cached k-means colouring must not outlive k-means mode: UpdatePlot re-applies whatever is cached.
+            if (colorMode != "KMeans")
+                ScatterPlot.ClearClusterColors();
+
             var options = new ScatterPlotOptions
             {
                 UseLogLog = LogLogCheckBox.IsChecked == true,
@@ -1820,7 +1847,19 @@ namespace SCPBrowser
         /// <summary>Shows/hides the batch-correction warning in the plot header based on the scatter's last run.</summary>
         private void UpdateBatchCorrectionWarning()
         {
-            string msg = ScatterPlot?.BatchCorrectionWarning;
+            // Every reason the embedding is not what the settings asked for belongs here: batch correction that
+            // fell back or failed, a detection floor that was ignored, and a UMAP engine that could not load.
+            // Only meaningful for PCA/UMAP; the Peptide vs TIC scatter has no embedding.
+            string view = (ViewModeComboBox?.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+            bool embedded = view == "PCA" || view == "UMAP";
+            var parts = new List<string>();
+            if (embedded)
+            {
+                foreach (var w in new[] { ScatterPlot?.BatchCorrectionWarning, ScatterPlot?.CoverageFloorWarning,
+                                          view == "UMAP" ? ScatterPlot?.UmapEngineWarning : null })
+                    if (!string.IsNullOrEmpty(w)) parts.Add(w);
+            }
+            string msg = parts.Count > 0 ? string.Join("   |   ", parts) : null;
             if (string.IsNullOrEmpty(msg))
             {
                 BatchCorrectionWarningText.Visibility = Visibility.Collapsed;
@@ -1934,7 +1973,8 @@ namespace SCPBrowser
             }
             else if (options.UseUmapView)
             {
-                baseHeader = "UMAP - Uniform Manifold Approximation and Projection";
+                string engine = ScatterPlot.UmapEngineUsed;
+                baseHeader = string.IsNullOrEmpty(engine) ? "UMAP" : $"UMAP ({engine})";
                 var purity = ScatterPlot.LabelPurity;
                 if (purity.HasValue)
                     baseHeader += $"  |  Label purity: {purity.Value:F2}";
@@ -1965,15 +2005,19 @@ namespace SCPBrowser
             // decision, and it was previously invisible - the filter checkbox did not mean what it appeared to.
             if (options.UsePcaView || options.UseUmapView)
             {
-                int used = options.HvpResults?.Count(h => h.IsHighlyVariable)
+                // The count that matters is what entered the embedding, after HVP selection AND the detection
+                // floor. Reporting the dataset's protein count here contradicted the floor note beside it.
+                int used = ScatterPlot.EmbeddingProteinCount;
+                if (used <= 0)
+                    used = options.HvpResults?.Count(h => h.IsHighlyVariable)
                            ?? _currentData?.ProteinQuantMatrix?.Count
                            ?? 0;
                 if (used > 0)
                 {
                     bool filtered = options.DimRedSettings?.UseHvpFilter == true && !_hvpUnscored;
                     baseHeader += filtered
-                        ? $"  |  {used:N0} highly variable proteins"
-                        : $"  |  {used:N0} proteins (all quantified)";
+                        ? $"  |  {used:N0} proteins in embedding (top HVPs)"
+                        : $"  |  {used:N0} proteins in embedding";
                 }
 
                 // How much of the matrix was imputed rather than measured. At high missingness the embedding is

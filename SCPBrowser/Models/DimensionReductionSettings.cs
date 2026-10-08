@@ -24,6 +24,22 @@ namespace SCPBrowser.Models
         ProteinMean = 1
     }
 
+    /// <summary>Which UMAP implementation produces the layout.</summary>
+    public enum UmapEngineKind
+    {
+        /// <summary>
+        /// uwot (umappp, the C++ core behind R's uwot) via UMAPuwotSharp. Exposes min_dist and spread, and uses
+        /// exact nearest neighbours for the cohort sizes SCPBrowser handles. Default.
+        /// </summary>
+        Uwot = 0,
+        /// <summary>
+        /// The managed UMAP package used before uwot was available. It hardcodes min_dist and spread and can split
+        /// one continuous population into separate-looking lobes that correspond to nothing, so it is kept only to
+        /// reproduce earlier figures and as the automatic fallback when the native uwot library cannot load.
+        /// </summary>
+        Legacy = 1
+    }
+
     /// <summary>
     /// Settings for the dimensionality reduction pipeline (PCA/UMAP).
     /// Persisted per-project via ProjectDatabaseService key-value store.
@@ -97,11 +113,26 @@ namespace SCPBrowser.Models
         public int UmapNeighbors { get; set; } = 15;
         public int UmapSeed { get; set; } = 42;
 
+        /// <summary>UMAP implementation. uwot by default; Legacy reproduces figures made before it existed.</summary>
+        public UmapEngineKind UmapEngine { get; set; } = UmapEngineKind.Uwot;
+
+        /// <summary>
+        /// uwot min_dist: how tightly points may pack. Low values pull cells into tight clumps and filaments; high
+        /// values spread them into a continuum. Must stay below spread. 0.1 is the umap-learn default.
+        /// Ignored by the legacy engine, which has no such control.
+        /// </summary>
+        public double UmapMinDist { get; set; } = 0.1;
+
+        /// <summary>uwot spread: overall scale of the embedded points. Ignored by the legacy engine.</summary>
+        public double UmapSpread { get; set; } = 1.0;
+
         // Guided Embedding (optional, NOT default)
         public bool UseGuidedEmbedding { get; set; } = false;
         public double GuidedWeight { get; set; } = 0.3;
 
-        // UI / display settings (do NOT trigger recomputation)
+        // ShowPcaView is display-only. The HVP filter and batch correction DO change the embedding: the HVP
+        // fields are compared in DiffersFrom, and batch correction is tracked by ScatterPlotControl from the
+        // options it is handed.
         public bool ShowPcaView { get; set; } = false;
         public bool UseHvpFilter { get; set; } = false;
         public int HvpCount { get; set; } = 500;
@@ -138,6 +169,9 @@ namespace SCPBrowser.Models
             s.RegressDepth = await ReadBoolAsync(db, "RegressDepth", s.RegressDepth);
             s.SmoothingNeighbors = await ReadIntAsync(db, "SmoothingNeighbors", s.SmoothingNeighbors);
             s.SmoothingSteps = await ReadIntAsync(db, "SmoothingSteps", s.SmoothingSteps);
+            s.UmapEngine = (UmapEngineKind)await ReadIntAsync(db, "UmapEngine", (int)s.UmapEngine);
+            s.UmapMinDist = await ReadDoubleAsync(db, "UmapMinDist", s.UmapMinDist);
+            s.UmapSpread = await ReadDoubleAsync(db, "UmapSpread", s.UmapSpread);
 
             return s;
         }
@@ -170,6 +204,9 @@ namespace SCPBrowser.Models
             await db.SetSettingAsync(KeyPrefix + "RegressDepth", RegressDepth.ToString());
             await db.SetSettingAsync(KeyPrefix + "SmoothingNeighbors", SmoothingNeighbors.ToString());
             await db.SetSettingAsync(KeyPrefix + "SmoothingSteps", SmoothingSteps.ToString());
+            await db.SetSettingAsync(KeyPrefix + "UmapEngine", ((int)UmapEngine).ToString());
+            await db.SetSettingAsync(KeyPrefix + "UmapMinDist", UmapMinDist.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+            await db.SetSettingAsync(KeyPrefix + "UmapSpread", UmapSpread.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
         }
 
         /// <summary>
@@ -195,7 +232,10 @@ namespace SCPBrowser.Models
                 || Math.Abs(MinDetectionRate - other.MinDetectionRate) > 1e-9
                 || RegressDepth != other.RegressDepth
                 || SmoothingNeighbors != other.SmoothingNeighbors
-                || SmoothingSteps != other.SmoothingSteps;
+                || SmoothingSteps != other.SmoothingSteps
+                || UmapEngine != other.UmapEngine
+                || Math.Abs(UmapMinDist - other.UmapMinDist) > 1e-9
+                || Math.Abs(UmapSpread - other.UmapSpread) > 1e-9;
         }
 
         /// <summary>
@@ -222,7 +262,10 @@ namespace SCPBrowser.Models
                 MinDetectionRate = MinDetectionRate,
                 RegressDepth = RegressDepth,
                 SmoothingNeighbors = SmoothingNeighbors,
-                SmoothingSteps = SmoothingSteps
+                SmoothingSteps = SmoothingSteps,
+                UmapEngine = UmapEngine,
+                UmapMinDist = UmapMinDist,
+                UmapSpread = UmapSpread
             };
         }
 

@@ -182,6 +182,71 @@ namespace SCPBrowser.Services
         /// True when the value is present, numeric and at or below the threshold. A missing or unparsable q-value
         /// FAILS: an identification carrying no confidence must not be admitted as though it had passed.
         /// </summary>
+        /// <summary>A string column as string[]; any other element type goes through ToString() as before.</summary>
+        private static string[] AsStrings(Array column)
+        {
+            if (column is string[] s) return s;
+            var result = new string[column.Length];
+            for (int i = 0; i < result.Length; i++) result[i] = column.GetValue(i)?.ToString();
+            return result;
+        }
+
+        /// <summary>
+        /// The quantity column as doubles, with the exact semantics of the original per-row
+        /// <c>value != null &amp;&amp; double.TryParse(value.ToString(), out v)</c>: a float becomes the double nearest its
+        /// shortest current-culture decimal form (NOT the widened float), which is kept so every intensity, sum and
+        /// downstream number stays bit-identical. Formatting and parsing go through a stack buffer, so nothing is
+        /// allocated per row.
+        /// </summary>
+        private static void ToQuantities(Array column, out double[] values, out bool[] parsed)
+        {
+            int n = column.Length;
+            values = new double[n];
+            parsed = new bool[n];
+            var culture = System.Globalization.CultureInfo.CurrentCulture;
+            const System.Globalization.NumberStyles styles =
+                System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands;
+            Span<char> buf = stackalloc char[64];
+
+            switch (column)
+            {
+                case float[] f:
+                    for (int i = 0; i < n; i++)
+                        parsed[i] = f[i].TryFormat(buf, out int len, default, culture)
+                                    && double.TryParse(buf.Slice(0, len), styles, culture, out values[i]);
+                    return;
+                case double[] d:
+                    for (int i = 0; i < n; i++)
+                        parsed[i] = d[i].TryFormat(buf, out int len, default, culture)
+                                    && double.TryParse(buf.Slice(0, len), styles, culture, out values[i]);
+                    return;
+                default:
+                    for (int i = 0; i < n; i++)
+                    {
+                        object v = column.GetValue(i);
+                        parsed[i] = v != null && double.TryParse(v.ToString(), out values[i]);
+                    }
+                    return;
+            }
+        }
+
+        /// <summary>PassesThreshold for a whole column; floats are widened exactly as Convert.ToDouble does.</summary>
+        private static bool[] PassFlags(Array column, double threshold)
+        {
+            var pass = new bool[column.Length];
+            if (column is float[] f)
+            {
+                for (int i = 0; i < f.Length; i++)
+                {
+                    double q = f[i];
+                    pass[i] = threshold <= 0 || (!double.IsNaN(q) && q <= threshold);
+                }
+                return pass;
+            }
+            for (int i = 0; i < pass.Length; i++) pass[i] = PassesThreshold(column.GetValue(i), threshold);
+            return pass;
+        }
+
         private static bool PassesThreshold(object value, double threshold)
         {
             if (threshold <= 0) return true;
@@ -485,8 +550,10 @@ namespace SCPBrowser.Services
                             var peptideColumn = await groupReader.ReadColumnAsync(peptideField);
                             var ticColumn = await groupReader.ReadColumnAsync(ticField);
 
+                            // Protein.Ids feeds only the target-protein ratio; without targets it is never read.
                             Array proteinIdsData = null;
-                            if (proteinIdsField != null)
+                            if (proteinIdsField != null && mapping.TargetProteinIdentifiers != null &&
+                                mapping.TargetProteinIdentifiers.Count > 0)
                             {
                                 var proteinIdsColumn = await groupReader.ReadColumnAsync(proteinIdsField);
                                 proteinIdsData = proteinIdsColumn.Data as Array;
@@ -513,85 +580,91 @@ namespace SCPBrowser.Services
                                 pgQValueData = pgQCol.Data as Array;
                             }
 
-                            var rawFileData = rawFileColumn.Data as Array;
-                            var proteinData = proteinColumn.Data as Array;
-                            var peptideData = peptideColumn.Data as Array;
-                            var ticData = ticColumn.Data as Array;
+                            // Columns as typed arrays, converted once per row group. The loop used to box every cell
+                            // through Array.GetValue and to turn each quantity into a string and parse it back, twice
+                            // per row; the conversions below give the same values without allocating (see
+                            // ToQuantities), and the loop body keeps the original order of every insertion and sum.
+                            var rawFileData = AsStrings(rawFileColumn.Data as Array);
+                            var proteinData = AsStrings(proteinColumn.Data as Array);
+                            var peptideData = AsStrings(peptideColumn.Data as Array);
+                            var proteinIdsStrings = proteinIdsData != null ? AsStrings(proteinIdsData) : null;
+                            var genesStrings = genesData != null ? AsStrings(genesData) : null;
+                            ToQuantities(ticColumn.Data as Array, out double[] ticValues, out bool[] ticParsed);
+                            bool[] qPass = qValueData != null ? PassFlags(qValueData, QValueThreshold) : null;
+                            bool[] pgQPass = pgQValueData != null ? PassFlags(pgQValueData, ProteinQValueThreshold) : null;
+                            bool hasTargets = mapping.TargetProteinIdentifiers != null && mapping.TargetProteinIdentifiers.Count > 0;
+
+                            string lastRawFile = null;
+                            HashSet<string> fileProteins = null, filePeptides = null;
 
                             for (int row = 0; row < rawFileData.Length; row++)
                             {
                                 // Drop identifications above the FDR thresholds before anything counts them. A null
                                 // q-value is treated as failing: an identification with no confidence attached
                                 // should not silently enter the analysis as though it had passed.
-                                if (qValueData != null && !PassesThreshold(qValueData.GetValue(row), QValueThreshold))
+                                if (qPass != null && !qPass[row])
                                 { RowsFilteredByQValue++; continue; }
-                                if (pgQValueData != null && !PassesThreshold(pgQValueData.GetValue(row), ProteinQValueThreshold))
+                                if (pgQPass != null && !pgQPass[row])
                                 { RowsFilteredByQValue++; continue; }
 
-                                var rawFile = rawFileData.GetValue(row)?.ToString();
-                                var protein = proteinData.GetValue(row)?.ToString();
-                                var peptide = peptideData.GetValue(row)?.ToString();
-                                var ticValue = ticData.GetValue(row);
-                                var proteinIds = proteinIdsData?.GetValue(row)?.ToString();
-                                var genes = genesData?.GetValue(row)?.ToString();
+                                var rawFile = rawFileData[row];
+                                if (string.IsNullOrEmpty(rawFile))
+                                    continue;
 
-                                if (!string.IsNullOrEmpty(rawFile))
+                                var protein = proteinData[row];
+                                var peptide = peptideData[row];
+                                var proteinIds = proteinIdsStrings?[row];
+                                var genes = genesStrings?[row];
+
+                                rawFiles.Add(rawFile);
+
+                                // Reports are written run by run, so the per-run containers are looked up only when
+                                // the run changes.
+                                if (!string.Equals(rawFile, lastRawFile, StringComparison.Ordinal))
                                 {
-                                    rawFiles.Add(rawFile);
+                                    if (!proteinsByFile.TryGetValue(rawFile, out fileProteins))
+                                        proteinsByFile[rawFile] = fileProteins = new HashSet<string>();
+                                    if (!peptidesByFile.TryGetValue(rawFile, out filePeptides))
+                                        peptidesByFile[rawFile] = filePeptides = new HashSet<string>();
+                                    ticByFile.TryAdd(rawFile, 0);
+                                    targetProteinTicByFile.TryAdd(rawFile, 0);
+                                    lastRawFile = rawFile;
+                                }
 
-                                    if (!proteinsByFile.ContainsKey(rawFile))
-                                        proteinsByFile[rawFile] = new HashSet<string>();
+                                if (!string.IsNullOrEmpty(protein))
+                                {
+                                    proteinGroups.Add(protein);
+                                    fileProteins.Add(protein);
 
-                                    if (!peptidesByFile.ContainsKey(rawFile))
-                                        peptidesByFile[rawFile] = new HashSet<string>();
+                                    // Store protein-to-gene mapping
+                                    if (!string.IsNullOrEmpty(genes))
+                                        data.ProteinToGeneMap.TryAdd(protein, genes);
 
-                                    if (!ticByFile.ContainsKey(rawFile))
-                                        ticByFile[rawFile] = 0;
+                                    if (!proteinQuantMatrix.TryGetValue(protein, out var proteinRow))
+                                        proteinQuantMatrix[protein] = proteinRow = new Dictionary<string, double>();
 
-                                    if (!targetProteinTicByFile.ContainsKey(rawFile))
-                                        targetProteinTicByFile[rawFile] = 0;
+                                    if (ticParsed[row])
+                                        System.Runtime.InteropServices.CollectionsMarshal
+                                            .GetValueRefOrAddDefault(proteinRow, rawFile, out _) += ticValues[row];
+                                }
 
-                                    if (!string.IsNullOrEmpty(protein))
+                                if (!string.IsNullOrEmpty(peptide))
+                                {
+                                    peptides.Add(peptide);
+                                    filePeptides.Add(peptide);
+                                }
+
+                                if (ticParsed[row])
+                                {
+                                    double ticVal = ticValues[row];
+                                    ticByFile[rawFile] += ticVal;
+
+                                    if (hasTargets && !string.IsNullOrEmpty(proteinIds))
                                     {
-                                        proteinGroups.Add(protein);
-                                        proteinsByFile[rawFile].Add(protein);
-
-                                        // Store protein-to-gene mapping
-                                        if (!string.IsNullOrEmpty(genes) && !data.ProteinToGeneMap.ContainsKey(protein))
+                                        if (mapping.TargetProteinIdentifiers.Any(target =>
+                                            proteinIds.Contains(target, StringComparison.OrdinalIgnoreCase)))
                                         {
-                                            data.ProteinToGeneMap[protein] = genes;
-                                        }
-
-                                        if (!proteinQuantMatrix.ContainsKey(protein))
-                                            proteinQuantMatrix[protein] = new Dictionary<string, double>();
-
-                                        if (ticValue != null && double.TryParse(ticValue.ToString(), out double tic))
-                                        {
-                                            if (!proteinQuantMatrix[protein].ContainsKey(rawFile))
-                                                proteinQuantMatrix[protein][rawFile] = 0;
-                                            proteinQuantMatrix[protein][rawFile] += tic;
-                                        }
-                                    }
-
-                                    if (!string.IsNullOrEmpty(peptide))
-                                    {
-                                        peptides.Add(peptide);
-                                        peptidesByFile[rawFile].Add(peptide);
-                                    }
-
-                                    if (ticValue != null && double.TryParse(ticValue.ToString(), out double ticVal))
-                                    {
-                                        ticByFile[rawFile] += ticVal;
-
-                                        if (mapping.TargetProteinIdentifiers != null &&
-                                            mapping.TargetProteinIdentifiers.Count > 0 &&
-                                            !string.IsNullOrEmpty(proteinIds))
-                                        {
-                                            if (mapping.TargetProteinIdentifiers.Any(target =>
-                                                proteinIds.Contains(target, StringComparison.OrdinalIgnoreCase)))
-                                            {
-                                                targetProteinTicByFile[rawFile] += ticVal;
-                                            }
+                                            targetProteinTicByFile[rawFile] += ticVal;
                                         }
                                     }
                                 }

@@ -33,6 +33,9 @@ namespace SCPBrowser
     {
         public string Label { get; init; } = string.Empty;
         public Color Color { get; init; }
+
+        /// <summary>Opacity of the IQR fill. Lower for a neutral box whose dots carry the colors, so it recedes.</summary>
+        public double FillOpacity { get; init; } = 0.18;
         public IReadOnlyList<BoxPlotRun> Runs { get; init; } = Array.Empty<BoxPlotRun>();
     }
 
@@ -67,7 +70,6 @@ namespace SCPBrowser
         private static readonly Typeface UiFace = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
         private static readonly Typeface UiFaceSemiBold = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
 
-        private const double BoxFillAlpha = 0.18;
         private const double BoxOutlineThickness = 1.5;
         private const double MedianThickness = 3.0;
         private const double WhiskerThickness = 1.2;
@@ -398,9 +400,9 @@ namespace SCPBrowser
             layout.YMin = min - range * 0.05;
             layout.YMax = max + range * 0.05;
 
-            // Gridlines about 40 px apart: the nice step nearest (on a log scale) to 40 px of data, between roughly 2.5
-            // and 8 steps over the axis.
-            double target = Math.Clamp(plotHeight / 40, 2.5, 8);
+            // Gridlines about 50 px apart (the reference figure is sparse: 500, 1000): the nice step nearest (on a log
+            // scale) to 50 px of data, between roughly 2.5 and 8 steps over the axis.
+            double target = Math.Clamp(plotHeight / 50, 2.5, 8);
             double step = NiceStep((layout.YMax - layout.YMin) / target);
             layout.Ticks.Clear();
             for (double t = Math.Ceiling(layout.YMin / step) * step; t <= layout.YMax + step * 1e-9; t += step)
@@ -450,12 +452,26 @@ namespace SCPBrowser
         }
 
         /// <summary>
-        /// Renders the plot at the current on-screen size into a bitmap of the given DPI. The export is the figure
-        /// itself: no hover label and no muting of the categories that are not selected.
+        /// Size of a saved figure: the plot's on-screen width, and at least 420 (up to 560) units tall so a plot squeezed
+        /// by the splitter still saves as a proper figure. The layout is recomputed for that size, not stretched.
+        /// </summary>
+        public Size ExportSize
+        {
+            get
+            {
+                double width = ActualWidth > 0 ? ActualWidth : 520;
+                double height = Math.Max(ActualHeight, Math.Min(560, Math.Max(420, width * 1.1)));
+                return new Size(width, height);
+            }
+        }
+
+        /// <summary>
+        /// Renders the plot at ExportSize into a bitmap of the given DPI. The export is the figure itself: no hover
+        /// label and no muting of the categories that are not selected.
         /// </summary>
         public BitmapSource RenderToBitmap(double dpi)
         {
-            var size = new Size(ActualWidth > 0 ? ActualWidth : 520, ActualHeight > 0 ? ActualHeight : 340);
+            var size = ExportSize;
             var visual = new DrawingVisual();
             using (var dc = visual.RenderOpen())
                 Draw(dc, size, dpi / 96.0, forExport: true);
@@ -466,6 +482,16 @@ namespace SCPBrowser
             bitmap.Render(visual);
             bitmap.Freeze();
             return bitmap;
+        }
+
+        /// <summary>The same figure as RenderToBitmap, as SVG (vector, text as outlines; 1 unit = 1/96 inch).</summary>
+        public string RenderToSvg()
+        {
+            var size = ExportSize;
+            var drawing = new DrawingGroup();
+            using (var dc = drawing.Open())
+                Draw(dc, size, 1.0, forExport: true);
+            return DrawingSvgWriter.Write(drawing, size);
         }
 
         private void Draw(DrawingContext dc, Size size, double pixelsPerDip, bool forExport)
@@ -611,13 +637,14 @@ namespace SCPBrowser
             var color = box.Box.Color;
 
             // A few runs sit on top of the box, as in the reference figure. A box of many runs would disappear under
-            // its dots, so there the outline, whiskers and median go on top, each over a thin halo of the card color.
+            // its dots, so there the outline, whiskers and median go on top, the thin lines over a halo of the card
+            // color (the outline needs none, and with one it reads as a doubled edge).
             bool structureOnTop = box.Box.Runs.Count > 40;
 
             if (box.Stats is { } stats)
             {
                 double yQ1 = YToScreen(layout, stats.Q1), yQ3 = YToScreen(layout, stats.Q3);
-                var fill = Frozen(new SolidColorBrush(Color.FromArgb((byte)(BoxFillAlpha * 255), color.R, color.G, color.B)));
+                var fill = Frozen(new SolidColorBrush(Color.FromArgb((byte)(Math.Clamp(box.Box.FillOpacity, 0, 1) * 255), color.R, color.G, color.B)));
                 dc.DrawRectangle(fill, null, new Rect(cx - half, yQ3, layout.BoxWidth, Math.Max(0.5, yQ1 - yQ3)));
                 if (!structureOnTop)
                     DrawBoxStructure(dc, layout, cx, half, color, stats, halo: false);
@@ -668,7 +695,6 @@ namespace SCPBrowser
                 var haloBrush = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, CardColor.R, CardColor.G, CardColor.B)));
                 dc.DrawLine(FlatPen(haloBrush, WhiskerThickness + 2), new Point(cx, yQ3), new Point(cx, yHigh));
                 dc.DrawLine(FlatPen(haloBrush, WhiskerThickness + 2), new Point(cx, yQ1), new Point(cx, yLow));
-                dc.DrawRectangle(null, FlatPen(haloBrush, BoxOutlineThickness + 2), boxRect);
                 dc.DrawLine(FlatPen(haloBrush, MedianThickness + 2), new Point(cx - half - 1, yMedian), new Point(cx + half + 1, yMedian));
             }
 

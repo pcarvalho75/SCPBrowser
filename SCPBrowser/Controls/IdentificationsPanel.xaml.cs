@@ -10,6 +10,7 @@ using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
@@ -58,6 +59,7 @@ namespace SCPBrowser
             InitializeComponent();
             Plot.CategoryClicked += (s, key) => CategoryClicked?.Invoke(this, key);
             Plot.RunClicked += (s, run) => RunClicked?.Invoke(this, run);
+            Plot.ContextMenu = BuildSaveMenu();
             ApplyGrouping();
         }
 
@@ -273,6 +275,7 @@ namespace SCPBrowser
                             {
                                 Label = condition,
                                 Color = plateColored ? PlotColors.NeutralBox : conditionColor,
+                                FillOpacity = plateColored ? 0.10 : 0.18,
                                 Runs = byPlate.SelectMany(g =>
                                 {
                                     var color = !plateColored ? conditionColor
@@ -366,41 +369,96 @@ namespace SCPBrowser
 
         private string MetricSlug => _isGeneMatrix ? "genes_per_sample" : UsePeptides ? "peptides_per_run" : "protein_groups_per_run";
 
+        /// <summary>The save and copy menu, shown on right-click over the plot and by the Save button.</summary>
+        private ContextMenu BuildSaveMenu()
+        {
+            var menu = new ContextMenu();
+            MenuItem Item(string header, RoutedEventHandler click, object? tag = null)
+            {
+                var item = new MenuItem { Header = header, Tag = tag };
+                item.Click += click;
+                menu.Items.Add(item);
+                return item;
+            }
+            var items = new List<MenuItem>
+            {
+                Item("Save as PNG (300 DPI)...", SavePng_Click, 300),
+                Item("Save as PNG (600 DPI)...", SavePng_Click, 600),
+                Item("Save as SVG (vector)...", SaveSvg_Click)
+            };
+            menu.Items.Add(new Separator());
+            items.Add(Item("Copy image", CopyImage_Click));
+            items.Add(Item("Copy values (tab-separated)", CopyValues_Click));
+
+            // Nothing to save while the plot shows only its empty-state message.
+            menu.Opened += (s, e) =>
+            {
+                bool hasPlot = Plot.Categories.Count > 0;
+                foreach (var item in items)
+                    item.IsEnabled = hasPlot;
+            };
+            return menu;
+        }
+
+        private void SaveButton_Click(object sender, RoutedEventArgs e)
+        {
+            var menu = BuildSaveMenu();
+            menu.PlacementTarget = SaveButton;
+            menu.Placement = PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+
+        private string DefaultFileName(string suffix) =>
+            $"{MetricSlug}_by_{(_grouping == IdentificationGrouping.Plate ? "plate" : "condition")}{suffix}";
+
+        /// <summary>Writes the figure as a PNG of the given DPI (the menu's handler, without the file dialog).</summary>
+        internal void SavePng(string path, int dpi)
+        {
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(Plot.RenderToBitmap(dpi)));
+            using var stream = new FileStream(path, FileMode.Create);
+            encoder.Save(stream);
+        }
+
+        /// <summary>Writes the figure as SVG (the menu's handler, without the file dialog).</summary>
+        internal void SaveSvg(string path) => File.WriteAllText(path, Plot.RenderToSvg(), new UTF8Encoding(false));
+
+        /// <summary>Puts the figure on the clipboard as a 300 DPI bitmap.</summary>
+        internal void CopyImage() => Clipboard.SetImage(Plot.RenderToBitmap(300));
+
+        private void SavePng_Click(object sender, RoutedEventArgs e)
+        {
+            int dpi = sender is MenuItem { Tag: int tag } ? tag : 300;
+            SaveWithDialog(DefaultFileName($"_{dpi}dpi.png"), "PNG image|*.png", path => SavePng(path, dpi));
+        }
+
+        private void SaveSvg_Click(object sender, RoutedEventArgs e) =>
+            SaveWithDialog(DefaultFileName(".svg"), "SVG vector image|*.svg", SaveSvg);
+
+        private void SaveWithDialog(string fileName, string filter, Action<string> save)
+        {
+            var dialog = new SaveFileDialog { FileName = fileName, Filter = filter, Title = "Save Identifications Plot" };
+            if (dialog.ShowDialog(Window.GetWindow(this)) != true)
+                return;
+            try
+            {
+                save(dialog.FileName);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not save the image:\n\n{ex.Message}", "Save Plot", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void CopyImage_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                Clipboard.SetImage(Plot.RenderToBitmap(300));
+                CopyImage();
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Could not copy the image:\n\n{ex.Message}", "Copy Image", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void ExportPng_Click(object sender, RoutedEventArgs e)
-        {
-            int dpi = sender is MenuItem { Tag: string tag } && int.TryParse(tag, out int parsed) ? parsed : 300;
-            string grouping = _grouping == IdentificationGrouping.Plate ? "plate" : "condition";
-            var dialog = new SaveFileDialog
-            {
-                FileName = $"{MetricSlug}_by_{grouping}_{dpi}dpi.png",
-                Filter = "PNG Image|*.png",
-                Title = "Export Identifications Plot"
-            };
-            if (dialog.ShowDialog() != true)
-                return;
-
-            try
-            {
-                var encoder = new PngBitmapEncoder();
-                encoder.Frames.Add(BitmapFrame.Create(Plot.RenderToBitmap(dpi)));
-                using var stream = new FileStream(dialog.FileName, FileMode.Create);
-                encoder.Save(stream);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Export failed: {ex.Message}", "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

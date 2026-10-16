@@ -45,6 +45,35 @@ Location: SCPBrowser/Controls/IdentificationsPanel.xaml
             </Setter>
         </Style>
 
+        <!-- Toolbar button in the same light-grey pill as the metric switch. -->
+        <Style x:Key="ToolbarButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#334155"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="#eef0f3"
+                                CornerRadius="7"
+                                Padding="10,5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#e2e6eb"/>
+                                <Setter Property="Foreground" Value="#0f172a"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#a3aab5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="OptionCheckBox" TargetType="CheckBox">
             <Setter Property="FontSize" Value="11.5"/>
             <Setter Property="Foreground" Value="#475569"/>
@@ -99,6 +128,20 @@ Location: SCPBrowser/Controls/IdentificationsPanel.xaml
                                          Checked="MetricRadio_Checked"/>
                         </StackPanel>
                     </Border>
+                    <Button x:Name="SaveButton"
+                            Style="{StaticResource ToolbarButton}"
+                            Margin="8,0,0,0"
+                            Click="SaveButton_Click"
+                            ToolTip="Save this plot as PNG (300 or 600 DPI) or SVG, or copy it. Also on right-click.">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE74E;"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Margin="0,1,6,0"/>
+                            <TextBlock Text="Save" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
                 <TextBlock x:Name="TitleText"
                            Text="Identifications per run"
@@ -109,17 +152,8 @@ Location: SCPBrowser/Controls/IdentificationsPanel.xaml
                            Margin="0,0,16,0"/>
             </DockPanel>
 
-            <local:IdentificationBoxPlot x:Name="Plot" Grid.Row="1">
-                <local:IdentificationBoxPlot.ContextMenu>
-                    <ContextMenu>
-                        <MenuItem Header="Copy image" Click="CopyImage_Click"/>
-                        <MenuItem Header="Export PNG (300 DPI)..." Tag="300" Click="ExportPng_Click"/>
-                        <MenuItem Header="Export PNG (600 DPI)..." Tag="600" Click="ExportPng_Click"/>
-                        <Separator/>
-                        <MenuItem Header="Copy values (tab-separated)" Click="CopyValues_Click"/>
-                    </ContextMenu>
-                </local:IdentificationBoxPlot.ContextMenu>
-            </local:IdentificationBoxPlot>
+            <!-- The right-click menu is built in code (BuildSaveMenu), the same one the Save button opens. -->
+            <local:IdentificationBoxPlot x:Name="Plot" Grid.Row="1"/>
         </Grid>
 
         <!-- The notes use the pane's full width, so they take one line under a narrow plot instead of three. -->

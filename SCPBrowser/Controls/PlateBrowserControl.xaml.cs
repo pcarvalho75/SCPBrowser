@@ -18,6 +18,12 @@ namespace SCPBrowser
         private ParquetDataService _parquetService;
         private System.Collections.Generic.List<PlateInfo> _plates;
 
+        /// <summary>
+        /// The data as loaded for analysis. Set by the host; the database stores only per-run counts, which cannot be
+        /// combined into a plate's distinct proteins and peptides.
+        /// </summary>
+        public Func<ProteomicsData?>? LoadedDataSource { get; set; }
+
         public PlateBrowserControl()
         {
             InitializeComponent();
@@ -119,9 +125,22 @@ namespace SCPBrowser
             // Calculate and show statistics
             if (rawFiles.Count > 0)
             {
+                // A protein or peptide identified in several runs is still one protein or peptide, so the plate's
+                // totals are distinct counts across its runs. Summing the per-run counts in the grid counts each one
+                // once for every run that saw it.
+                var loadedData = LoadedDataSource?.Invoke();
+                var runNames = rawFiles.Select(rf => rf.RawFileName).ToList();
+                var (distinctProteins, distinctPeptides) = loadedData == null
+                    ? (null, null)
+                    : await Task.Run(() => loadedData.CountDistinctAcrossRuns(runNames));
+
+                // Another plate may have been selected while counting; its summary must not be overwritten.
+                if (!ReferenceEquals(PlateListBox.SelectedItem, plate))
+                    return;
+
                 SelectedPlateRawFilesText.Text = rawFiles.Count.ToString("N0");
-                SelectedPlateProteinsText.Text = rawFiles.Sum(rf => rf.ProteinCount).ToString("N0");
-                SelectedPlatePeptidesText.Text = rawFiles.Sum(rf => rf.PeptideCount).ToString("N0");
+                SelectedPlateProteinsText.Text = distinctProteins?.ToString("N0") ?? "n/a";
+                SelectedPlatePeptidesText.Text = distinctPeptides?.ToString("N0") ?? "n/a";
                 SelectedPlateTICText.Text = rawFiles.Sum(rf => rf.TotalIonCurrent).ToString("N0");
                 SelectedPlateStatsPanel.Visibility = Visibility.Visible;
             }

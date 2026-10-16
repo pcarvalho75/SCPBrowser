@@ -81,6 +81,44 @@ namespace SCPBrowser.Services
         public HashSet<string> AllPeptideSequences { get; set; } = new();
 
         /// <summary>
+        /// The distinct protein groups identified in each run (the set behind ProteinCountPerFile). Kept, like
+        /// PeptidesPerFile, so a group of runs can report its distinct proteins: summing per-run counts counts a protein
+        /// once for every run that saw it. The strings are the pooled ones, so this costs one reference per pair.
+        /// </summary>
+        public Dictionary<string, string[]> ProteinsPerFile { get; set; } = new();
+
+        /// <summary>
+        /// The distinct peptide sequences identified in each run (the set behind PeptideCountPerFile). Empty for a gene
+        /// matrix, which has no peptide dimension.
+        /// </summary>
+        public Dictionary<string, string[]> PeptidesPerFile { get; set; } = new();
+
+        /// <summary>
+        /// Distinct protein groups and peptides identified across the given runs, each counted once however many of the
+        /// runs saw it. A run missing from this data had no identification pass the filters and adds nothing. A count is
+        /// null when this data holds no per-run identities for it (peptides of a gene matrix) or knows none of the runs.
+        /// </summary>
+        public (int? Proteins, int? Peptides) CountDistinctAcrossRuns(IEnumerable<string> runs)
+        {
+            var runList = runs as IReadOnlyCollection<string> ?? runs.ToList();
+            return (CountDistinct(ProteinsPerFile, runList), CountDistinct(PeptidesPerFile, runList));
+
+            static int? CountDistinct(Dictionary<string, string[]> perFile, IReadOnlyCollection<string> runNames)
+            {
+                var distinct = new HashSet<string>(StringComparer.Ordinal);
+                bool anyKnown = false;
+                foreach (var run in runNames)
+                {
+                    if (!perFile.TryGetValue(run, out var ids))
+                        continue;
+                    anyKnown = true;
+                    distinct.UnionWith(ids);
+                }
+                return anyKnown ? distinct.Count : null;
+            }
+        }
+
+        /// <summary>
         /// Protein groups marked as contaminants. Used to exclude from analyses (PCA, UMAP, classification, etc.)
         /// while still allowing contaminant ratio calculations.
         /// </summary>
@@ -411,6 +449,12 @@ namespace SCPBrowser.Services
                         mergedData.PeptideCountPerFile[kvp.Key] = kvp.Value;
                 }
 
+                // Merge ProteinsPerFile and PeptidesPerFile (the guard above rules out a key collision)
+                foreach (var kvp in additionalData.ProteinsPerFile)
+                    mergedData.ProteinsPerFile[kvp.Key] = kvp.Value;
+                foreach (var kvp in additionalData.PeptidesPerFile)
+                    mergedData.PeptidesPerFile[kvp.Key] = kvp.Value;
+
                 // Merge TotalIonCurrentPerFile (the guard above rules out a key collision)
                 foreach (var kvp in additionalData.TotalIonCurrentPerFile)
                 {
@@ -686,6 +730,8 @@ namespace SCPBrowser.Services
             {
                 data.ProteinCountPerFile[rawFile] = proteinsByFile[rawFile].Count;
                 data.PeptideCountPerFile[rawFile] = peptidesByFile[rawFile].Count;
+                data.ProteinsPerFile[rawFile] = proteinsByFile[rawFile].ToArray();
+                data.PeptidesPerFile[rawFile] = peptidesByFile[rawFile].ToArray();
                 data.TotalIonCurrentPerFile[rawFile] = ticByFile[rawFile];
 
                 if (mapping.TargetProteinIdentifiers != null && mapping.TargetProteinIdentifiers.Count > 0)

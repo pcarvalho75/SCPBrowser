@@ -113,6 +113,15 @@ namespace SCPBrowser.Services
             foreach (var run in runNames)
                 data.PeptideCountPerFile[run] = data.ProteinCountPerFile[run];
 
+            // The detected genes of each run (the set behind ProteinCountPerFile), for distinct counts over groups of runs.
+            var genesPerRun = runNames.ToDictionary(r => r, _ => new List<string>(), StringComparer.Ordinal);
+            foreach (var (gene, perRun) in data.ProteinQuantMatrix)
+                foreach (var run in perRun.Keys)
+                    if (genesPerRun.TryGetValue(run, out var genes))
+                        genes.Add(gene);
+            foreach (var (run, genes) in genesPerRun)
+                data.ProteinsPerFile[run] = genes.ToArray();
+
             data.RawFileNames = runNames.OrderBy(r => r, StringComparer.Ordinal).ToList();
             data.TotalRawFiles = runNames.Length;
             data.TotalProteinGroups = data.ProteinQuantMatrix.Count;

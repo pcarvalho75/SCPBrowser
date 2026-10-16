@@ -45,6 +45,12 @@ namespace SCPBrowser
             set => MaxProteinCutoffControl.Value = value;
         }
 
+        /// <summary>
+        /// The data as loaded for analysis (null before a load), for views outside this tab that report per-run or
+        /// distinct identifications with the same filtering the Explorer uses.
+        /// </summary>
+        public ProteomicsData? LoadedData => _currentData;
+
         public MainControl()
         {
             InitializeComponent();
@@ -384,6 +390,7 @@ namespace SCPBrowser
                     if (!merged.RawFileNames.Contains(run)) merged.RawFileNames.Add(run);
                 foreach (var kv in d.ProteinCountPerFile) merged.ProteinCountPerFile[kv.Key] = kv.Value;
                 foreach (var kv in d.PeptideCountPerFile) merged.PeptideCountPerFile[kv.Key] = kv.Value;
+                foreach (var kv in d.ProteinsPerFile) merged.ProteinsPerFile[kv.Key] = kv.Value;
                 foreach (var kv in d.TotalIonCurrentPerFile) merged.TotalIonCurrentPerFile[kv.Key] = kv.Value;
                 foreach (var kv in d.BiologicalConditionPerFile) merged.BiologicalConditionPerFile[kv.Key] = kv.Value;
                 foreach (var kv in d.ProteinToGeneMap) merged.ProteinToGeneMap[kv.Key] = kv.Value;

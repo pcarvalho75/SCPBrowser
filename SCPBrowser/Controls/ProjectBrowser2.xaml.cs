@@ -30,6 +30,16 @@ namespace SCPBrowser
         // Bubbled up from the Marker Classes tab after a marker-only classification, so MainWindow can unlock + colour the scatter.
         public event EventHandler? MarkerCellsClassified;
 
+        /// <summary>
+        /// Supplies the data as loaded for analysis to the Plate Data tab, which counts each plate's distinct proteins and
+        /// peptides from its per-run identities (the database stores only per-run counts).
+        /// </summary>
+        public Func<ProteomicsData?>? LoadedDataSource
+        {
+            get => PlateBrowser.LoadedDataSource;
+            set => PlateBrowser.LoadedDataSource = value;
+        }
+
         public ProjectBrowser2()
         {
             InitializeComponent();

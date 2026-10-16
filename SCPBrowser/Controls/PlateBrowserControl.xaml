@@ -247,12 +247,14 @@ Location: SCPBrowser/Controls/PlateBrowserControl.xaml
                                     <Run Text="Raw Files: " Foreground="#64748b"/>
                                     <Run x:Name="SelectedPlateRawFilesText" Text="0" FontWeight="SemiBold"/>
                                 </TextBlock>
-                                <TextBlock FontSize="11" Margin="0,0,20,0">
-                                    <Run Text="Total Proteins: " Foreground="#64748b"/>
+                                <TextBlock FontSize="11" Margin="0,0,20,0"
+                                           ToolTip="Protein groups identified in at least one of this plate's runs, each counted once, with the same filtering as the Explorer. n/a if the project data has not finished loading">
+                                    <Run Text="Distinct Proteins: " Foreground="#64748b"/>
                                     <Run x:Name="SelectedPlateProteinsText" Text="0" FontWeight="SemiBold"/>
                                 </TextBlock>
-                                <TextBlock FontSize="11" Margin="0,0,20,0">
-                                    <Run Text="Total Peptides: " Foreground="#64748b"/>
+                                <TextBlock FontSize="11" Margin="0,0,20,0"
+                                           ToolTip="Peptide sequences identified in at least one of this plate's runs, each counted once, with the same filtering as the Explorer. n/a for gene-matrix imports, or if the project data has not finished loading">
+                                    <Run Text="Distinct Peptides: " Foreground="#64748b"/>
                                     <Run x:Name="SelectedPlatePeptidesText" Text="0" FontWeight="SemiBold"/>
                                 </TextBlock>
                                 <TextBlock FontSize="11">

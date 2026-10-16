@@ -98,6 +98,9 @@ namespace SCPBrowser
             // Subscribe to ProjectBrowser cascade-delete completion so we can reload data
             ProjectBrowserDialog.ConditionDeleted += ProjectBrowserDialog_ConditionDeleted;
 
+            // The Plate Data tab counts each plate's distinct proteins and peptides from the loaded data
+            ProjectBrowserDialog.LoadedDataSource = () => MainControlTab.LoadedData;
+
             // Subscribe to Settings changes
             SettingsDialog.SettingsSaved += (s, args) => PeptideTicTab.ApplyConfidenceThresholdFromSettings();
 

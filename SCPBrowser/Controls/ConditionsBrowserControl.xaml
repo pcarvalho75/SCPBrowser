@@ -8,6 +8,7 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:SCPBrowser"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900"
              Background="White">
@@ -157,138 +158,161 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                         </DockPanel>
                     </Border>
 
-                    <!-- Stats grid -->
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel x:Name="StatsPanel" Visibility="Collapsed">
-                            <TextBlock Text="Blast Radius"
-                                       FontSize="13"
-                                       FontWeight="SemiBold"
-                                       Margin="0,0,0,8"/>
+                    <!-- Identifications per run of every condition (the selected one highlighted), dots colored by
+                         plate, above the selected condition's blast radius; the splitter trades height between them. -->
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="3*" MinHeight="240"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="2*" MinHeight="90"/>
+                        </Grid.RowDefinitions>
 
-                            <Grid Margin="0,0,0,12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
+                        <local:IdentificationsPanel x:Name="IdentificationsPlot"
+                                                    Grid.Row="0"
+                                                    Grouping="Condition"
+                                                    Margin="0,0,0,8"/>
 
-                                <!-- Raw files -->
-                                <Border Grid.Row="0" Grid.Column="0"
-                                        Background="White"
-                                        CornerRadius="4"
-                                        Padding="10"
-                                        Margin="0,0,5,5"
+                        <GridSplitter Grid.Row="1"
+                                      Height="5"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Center"
+                                      ResizeDirection="Rows"
+                                      Background="#e2e8f0"
+                                      Margin="0,0,0,8"/>
+
+                        <!-- Stats grid -->
+                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                            <StackPanel x:Name="StatsPanel" Visibility="Collapsed">
+                                <TextBlock Text="Blast Radius"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8"/>
+
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Raw files -->
+                                    <Border Grid.Row="0" Grid.Column="0"
+                                            Background="White"
+                                            CornerRadius="4"
+                                            Padding="10"
+                                            Margin="0,0,5,5"
+                                            BorderBrush="#e2e8f0"
+                                            BorderThickness="1">
+                                        <StackPanel>
+                                            <TextBlock Text="Raw Files" FontSize="11" Foreground="#64748b"/>
+                                            <TextBlock x:Name="StatRawFilesText" Text="0"
+                                                       FontSize="20" FontWeight="Bold" Foreground="#dc2626"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Plates touched -->
+                                    <Border Grid.Row="0" Grid.Column="1"
+                                            Background="White"
+                                            CornerRadius="4"
+                                            Padding="10"
+                                            Margin="0,0,5,5"
+                                            BorderBrush="#e2e8f0"
+                                            BorderThickness="1">
+                                        <StackPanel>
+                                            <TextBlock Text="Plates Touched" FontSize="11" Foreground="#64748b"/>
+                                            <TextBlock x:Name="StatPlatesText" Text="0"
+                                                       FontSize="20" FontWeight="Bold" Foreground="#2563eb"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Protein quant rows -->
+                                    <Border Grid.Row="0" Grid.Column="2"
+                                            Background="White"
+                                            CornerRadius="4"
+                                            Padding="10"
+                                            Margin="0,0,0,5"
+                                            BorderBrush="#e2e8f0"
+                                            BorderThickness="1">
+                                        <StackPanel>
+                                            <TextBlock Text="Protein Quant Rows" FontSize="11" Foreground="#64748b"/>
+                                            <TextBlock x:Name="StatProteinQuantText" Text="0"
+                                                       FontSize="20" FontWeight="Bold" Foreground="#10b981"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Classifications -->
+                                    <Border Grid.Row="1" Grid.Column="0"
+                                            Background="White"
+                                            CornerRadius="4"
+                                            Padding="10"
+                                            Margin="0,0,5,0"
+                                            BorderBrush="#e2e8f0"
+                                            BorderThickness="1">
+                                        <StackPanel>
+                                            <TextBlock Text="Classifications" FontSize="11" Foreground="#64748b"/>
+                                            <TextBlock x:Name="StatClassificationsText" Text="0"
+                                                       FontSize="20" FontWeight="Bold" Foreground="#f59e0b"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Exclusions -->
+                                    <Border Grid.Row="1" Grid.Column="1"
+                                            Background="White"
+                                            CornerRadius="4"
+                                            Padding="10"
+                                            Margin="0,0,5,0"
+                                            BorderBrush="#e2e8f0"
+                                            BorderThickness="1">
+                                        <StackPanel>
+                                            <TextBlock Text="Run Exclusions" FontSize="11" Foreground="#64748b"/>
+                                            <TextBlock x:Name="StatExclusionsText" Text="0"
+                                                       FontSize="20" FontWeight="Bold" Foreground="#64748b"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Orphan imports -->
+                                    <Border Grid.Row="1" Grid.Column="2"
+                                            Background="White"
+                                            CornerRadius="4"
+                                            Padding="10"
+                                            BorderBrush="#e2e8f0"
+                                            BorderThickness="1">
+                                        <StackPanel>
+                                            <TextBlock Text="Orphan Imports" FontSize="11" Foreground="#64748b"/>
+                                            <TextBlock x:Name="StatOrphanImportsText" Text="0"
+                                                       FontSize="20" FontWeight="Bold" Foreground="#64748b"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <!-- Plate names list -->
+                                <TextBlock Text="Plates Affected"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Margin="0,8,0,4"/>
+                                <Border Background="#f8fafc"
                                         BorderBrush="#e2e8f0"
-                                        BorderThickness="1">
-                                    <StackPanel>
-                                        <TextBlock Text="Raw Files" FontSize="11" Foreground="#64748b"/>
-                                        <TextBlock x:Name="StatRawFilesText" Text="0"
-                                                   FontSize="20" FontWeight="Bold" Foreground="#dc2626"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- Plates touched -->
-                                <Border Grid.Row="0" Grid.Column="1"
-                                        Background="White"
+                                        BorderThickness="1"
                                         CornerRadius="4"
-                                        Padding="10"
-                                        Margin="0,0,5,5"
-                                        BorderBrush="#e2e8f0"
-                                        BorderThickness="1">
-                                    <StackPanel>
-                                        <TextBlock Text="Plates Touched" FontSize="11" Foreground="#64748b"/>
-                                        <TextBlock x:Name="StatPlatesText" Text="0"
-                                                   FontSize="20" FontWeight="Bold" Foreground="#2563eb"/>
-                                    </StackPanel>
+                                        Padding="10">
+                                    <ItemsControl x:Name="PlateNamesList">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}"
+                                                           FontSize="11"
+                                                           Foreground="#334155"
+                                                           Margin="0,1"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </Border>
-
-                                <!-- Protein quant rows -->
-                                <Border Grid.Row="0" Grid.Column="2"
-                                        Background="White"
-                                        CornerRadius="4"
-                                        Padding="10"
-                                        Margin="0,0,0,5"
-                                        BorderBrush="#e2e8f0"
-                                        BorderThickness="1">
-                                    <StackPanel>
-                                        <TextBlock Text="Protein Quant Rows" FontSize="11" Foreground="#64748b"/>
-                                        <TextBlock x:Name="StatProteinQuantText" Text="0"
-                                                   FontSize="20" FontWeight="Bold" Foreground="#10b981"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- Classifications -->
-                                <Border Grid.Row="1" Grid.Column="0"
-                                        Background="White"
-                                        CornerRadius="4"
-                                        Padding="10"
-                                        Margin="0,0,5,0"
-                                        BorderBrush="#e2e8f0"
-                                        BorderThickness="1">
-                                    <StackPanel>
-                                        <TextBlock Text="Classifications" FontSize="11" Foreground="#64748b"/>
-                                        <TextBlock x:Name="StatClassificationsText" Text="0"
-                                                   FontSize="20" FontWeight="Bold" Foreground="#f59e0b"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- Exclusions -->
-                                <Border Grid.Row="1" Grid.Column="1"
-                                        Background="White"
-                                        CornerRadius="4"
-                                        Padding="10"
-                                        Margin="0,0,5,0"
-                                        BorderBrush="#e2e8f0"
-                                        BorderThickness="1">
-                                    <StackPanel>
-                                        <TextBlock Text="Run Exclusions" FontSize="11" Foreground="#64748b"/>
-                                        <TextBlock x:Name="StatExclusionsText" Text="0"
-                                                   FontSize="20" FontWeight="Bold" Foreground="#64748b"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- Orphan imports -->
-                                <Border Grid.Row="1" Grid.Column="2"
-                                        Background="White"
-                                        CornerRadius="4"
-                                        Padding="10"
-                                        BorderBrush="#e2e8f0"
-                                        BorderThickness="1">
-                                    <StackPanel>
-                                        <TextBlock Text="Orphan Imports" FontSize="11" Foreground="#64748b"/>
-                                        <TextBlock x:Name="StatOrphanImportsText" Text="0"
-                                                   FontSize="20" FontWeight="Bold" Foreground="#64748b"/>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-
-                            <!-- Plate names list -->
-                            <TextBlock Text="Plates Affected"
-                                       FontSize="12"
-                                       FontWeight="SemiBold"
-                                       Margin="0,8,0,4"/>
-                            <Border Background="#f8fafc"
-                                    BorderBrush="#e2e8f0"
-                                    BorderThickness="1"
-                                    CornerRadius="4"
-                                    Padding="10">
-                                <ItemsControl x:Name="PlateNamesList">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding}"
-                                                       FontSize="11"
-                                                       Foreground="#334155"
-                                                       Margin="0,1"/>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </Border>
-                        </StackPanel>
-                    </ScrollViewer>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
                 </DockPanel>
             </Border>
         </Grid>

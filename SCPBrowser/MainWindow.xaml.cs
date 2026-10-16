@@ -98,8 +98,12 @@ namespace SCPBrowser
             // Subscribe to ProjectBrowser cascade-delete completion so we can reload data
             ProjectBrowserDialog.ConditionDeleted += ProjectBrowserDialog_ConditionDeleted;
 
-            // The Plate Data tab counts each plate's distinct proteins and peptides from the loaded data
+            // The Plate Data tab counts each plate's distinct proteins and peptides from the loaded data, and both
+            // box plots of identifications per run read their values from it. The plots take plate colors from
+            // PlateFilterControl (the single source) and condition colors from the Explorer legend.
             ProjectBrowserDialog.LoadedDataSource = () => MainControlTab.LoadedData;
+            ProjectBrowserDialog.PlateColorSource = () => PlateFilterControl.GetPlateColorMapById();
+            ProjectBrowserDialog.ConditionColorSource = () => PeptideTicTab.GetBioConditionColorMap();
 
             // Subscribe to Settings changes
             SettingsDialog.SettingsSaved += (s, args) => PeptideTicTab.ApplyConfidenceThresholdFromSettings();

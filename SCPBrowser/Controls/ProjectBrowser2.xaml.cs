@@ -3,9 +3,11 @@
 // Location: SCPBrowser/Controls/ProjectBrowser2.xaml.cs
 
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using SCPBrowser.Services;
 
 namespace SCPBrowser
@@ -32,12 +34,35 @@ namespace SCPBrowser
 
         /// <summary>
         /// Supplies the data as loaded for analysis to the Plate Data tab, which counts each plate's distinct proteins and
-        /// peptides from its per-run identities (the database stores only per-run counts).
+        /// peptides from its per-run identities (the database stores only per-run counts), and to both box plots of
+        /// identifications per run (the database's per-run counts can predate the FDR filter).
         /// </summary>
         public Func<ProteomicsData?>? LoadedDataSource
         {
             get => PlateBrowser.LoadedDataSource;
-            set => PlateBrowser.LoadedDataSource = value;
+            set
+            {
+                PlateBrowser.LoadedDataSource = value;
+                ConditionsBrowser.LoadedDataSource = value;
+            }
+        }
+
+        /// <summary>Plate colors by plate id for the box plots; the host passes PlateFilterControl's, the single source.</summary>
+        public Func<IReadOnlyDictionary<int, Color>?>? PlateColorSource
+        {
+            get => PlateBrowser.PlateColorSource;
+            set
+            {
+                PlateBrowser.PlateColorSource = value;
+                ConditionsBrowser.PlateColorSource = value;
+            }
+        }
+
+        /// <summary>Condition colors by name for the Conditions box plot; the host passes the Explorer legend's.</summary>
+        public Func<IReadOnlyDictionary<string, Color>?>? ConditionColorSource
+        {
+            get => ConditionsBrowser.ConditionColorSource;
+            set => ConditionsBrowser.ConditionColorSource = value;
         }
 
         public ProjectBrowser2()

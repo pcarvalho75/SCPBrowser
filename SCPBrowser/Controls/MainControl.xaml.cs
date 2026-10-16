@@ -16,6 +16,7 @@ namespace SCPBrowser
         private readonly ParquetDataService _dataService;
         private readonly CellTypeClassificationManager _cellTypeClassificationManager;
         private ProteomicsData _currentData;
+        private ProteomicsData? _loadedData;
         private string _currentFilePath;
         private string _currentFileDirectory;
         private Dictionary<string, CellTypePredictionResult> _cellTypePredictions;
@@ -47,9 +48,11 @@ namespace SCPBrowser
 
         /// <summary>
         /// The data as loaded for analysis (null before a load), for views outside this tab that report per-run or
-        /// distinct identifications with the same filtering the Explorer uses.
+        /// distinct identifications with the same filtering the Explorer uses. This is the object the load produced,
+        /// not _currentData: UpdateChart replaces _currentData with the plate-filtered copy after every filter pass,
+        /// and that copy drops the runs of unselected plates and carries no ProteinsPerFile/PeptidesPerFile.
         /// </summary>
-        public ProteomicsData? LoadedData => _currentData;
+        public ProteomicsData? LoadedData => _loadedData;
 
         public MainControl()
         {
@@ -333,6 +336,7 @@ namespace SCPBrowser
         public async Task LoadDataFromProject(List<string> parquetFilePaths, string databasePath)
         {
             _projectDatabasePath = databasePath; // Store it
+            _loadedData = null; // the previous project's data must not stand in for this one's
 
             if (parquetFilePaths == null || parquetFilePaths.Count == 0)
             {
@@ -481,6 +485,7 @@ namespace SCPBrowser
                     var dataServiceWithDb = new ParquetDataService(_projectDatabasePath);
                     await dataServiceWithDb.PopulateBiologicalConditionsAsync(_currentData);
                 }
+                _loadedData = _currentData;
 
                 TotalRunsText.Text = _currentData.TotalRawFiles.ToString();
                 TotalProteinsText.Text = _currentData.TotalProteinGroups.ToString();

@@ -1372,6 +1372,12 @@ namespace SCPBrowser
             }
         }
 
+        /// <summary>
+        /// A copy of the condition colors the Explorer legend shows (user-editable, persisted as BioConditionColors), so
+        /// other views color a condition the way the Explorer does. Only conditions among the Explorer's runs have one.
+        /// </summary>
+        public Dictionary<string, Color> GetBioConditionColorMap() => new(GenerateBioConditionColorMap());
+
         private Dictionary<string, Color> GenerateBioConditionColorMap()
         {
             if (_bioConditionColorMap != null && _bioConditionColorMap.Count > 0)

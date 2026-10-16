@@ -8,6 +8,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using SCPBrowser.Models;
 using SCPBrowser.Services;
 
 namespace SCPBrowser
@@ -27,6 +29,7 @@ namespace SCPBrowser
     {
         private string _databasePath = string.Empty;
         private ParquetDataService? _parquetService;
+        private List<RawFileInfo> _allRawFiles = new();
 
         /// <summary>
         /// Lightweight DTO for the left-side conditions list.
@@ -42,9 +45,45 @@ namespace SCPBrowser
         /// </summary>
         public event EventHandler<ConditionDeletedEventArgs>? ConditionDeleted;
 
+        /// <summary>
+        /// The data as loaded for analysis, for the box plot's per-run values (the database's per-run counts can predate
+        /// the FDR filter). Set by the host.
+        /// </summary>
+        public Func<ProteomicsData?>? LoadedDataSource { get; set; }
+
+        /// <summary>Plate colors by plate id for the plot's dots (PlateFilterControl's, the single source).</summary>
+        public Func<IReadOnlyDictionary<int, Color>?>? PlateColorSource
+        {
+            get => IdentificationsPlot.PlateColorSource;
+            set => IdentificationsPlot.PlateColorSource = value;
+        }
+
+        /// <summary>Condition colors by name for the plot's boxes (the Explorer legend's).</summary>
+        public Func<IReadOnlyDictionary<string, Color>?>? ConditionColorSource
+        {
+            get => IdentificationsPlot.ConditionColorSource;
+            set => IdentificationsPlot.ConditionColorSource = value;
+        }
+
         public ConditionsBrowserControl()
         {
             InitializeComponent();
+            IdentificationsPlot.CategoryClicked += (s, condition) => SelectCondition(condition);
+            IdentificationsPlot.RunClicked += (s, run) =>
+            {
+                string? condition = _allRawFiles.FirstOrDefault(rf => rf.RawFileName == run)?.BiologicalCondition;
+                if (!string.IsNullOrEmpty(condition))
+                    SelectCondition(condition);
+            };
+        }
+
+        private void SelectCondition(string condition)
+        {
+            var item = (ConditionsListBox.ItemsSource as IEnumerable<ConditionListItem>)?.FirstOrDefault(c => c.Name == condition);
+            if (item == null)
+                return;
+            ConditionsListBox.SelectedItem = item;
+            ConditionsListBox.ScrollIntoView(item);
         }
 
         /// <summary>
@@ -76,12 +115,28 @@ namespace SCPBrowser
                 .ToList();
 
             ConditionsListBox.ItemsSource = items;
+
+            // Identifications per run of every condition, from the data as loaded for the Explorer
+            _allRawFiles = allRawFiles;
+            var plates = await new PlateService(_databasePath).GetPlatesAsync();
+            HashSet<string> excludedRuns;
+            try
+            {
+                excludedRuns = await _parquetService.GetExcludedRunNamesAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ConditionsBrowserControl] Could not read excluded runs: {ex.Message}");
+                excludedRuns = new HashSet<string>();
+            }
+            IdentificationsPlot.SetData(allRawFiles, plates, LoadedDataSource?.Invoke(), excludedRuns);
         }
 
         private async void ConditionsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (ConditionsListBox.SelectedItem is ConditionListItem selected)
             {
+                IdentificationsPlot.HighlightedKey = selected.Name;
                 await LoadConditionStatsAsync(selected.Name);
             }
             else
@@ -129,6 +184,7 @@ namespace SCPBrowser
 
         private void ResetDetailsPane()
         {
+            IdentificationsPlot.HighlightedKey = null;
             ConditionHeaderText.Text = "Select a condition to view its impact";
             ConditionSubText.Text = string.Empty;
             ConditionSubText.Visibility = Visibility.Collapsed;

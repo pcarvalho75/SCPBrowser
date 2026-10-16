@@ -3,10 +3,13 @@
 // Location: SCPBrowser/Controls/PlateBrowserControl.xaml.cs
 
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using SCPBrowser.Models;
 using SCPBrowser.Services;
 
@@ -17,6 +20,10 @@ namespace SCPBrowser
         private PlateService _plateService;
         private ParquetDataService _parquetService;
         private System.Collections.Generic.List<PlateInfo> _plates;
+        private List<RawFileInfo> _allRawFiles = new();
+
+        // A dot clicked on the plot names a run; it is selected in the grid once its plate's runs are bound.
+        private string? _pendingRunSelection;
 
         /// <summary>
         /// The data as loaded for analysis. Set by the host; the database stores only per-run counts, which cannot be
@@ -24,10 +31,18 @@ namespace SCPBrowser
         /// </summary>
         public Func<ProteomicsData?>? LoadedDataSource { get; set; }
 
+        /// <summary>Plate colors by plate id for the box plot (PlateFilterControl's, the single source).</summary>
+        public Func<IReadOnlyDictionary<int, Color>?>? PlateColorSource
+        {
+            get => IdentificationsPlot.PlateColorSource;
+            set => IdentificationsPlot.PlateColorSource = value;
+        }
+
         public PlateBrowserControl()
         {
             InitializeComponent();
-
+            IdentificationsPlot.CategoryClicked += IdentificationsPlot_CategoryClicked;
+            IdentificationsPlot.RunClicked += IdentificationsPlot_RunClicked;
         }
 
         /// <summary>
@@ -80,13 +95,74 @@ namespace SCPBrowser
 
             // Populate plate list
             PlateListBox.ItemsSource = _plates;
+
+            // Identifications per run of every plate, from the data as loaded for the Explorer
+            _allRawFiles = allRawFiles;
+            IdentificationsPlot.SetData(allRawFiles, _plates, LoadedDataSource?.Invoke(), await GetExcludedRunNamesAsync());
+            IdentificationsPlot.HighlightedKey = (PlateListBox.SelectedItem as PlateInfo)?.PlateId.ToString(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>Manually excluded runs (excluded_runs); empty if the table cannot be read.</summary>
+        private async Task<HashSet<string>> GetExcludedRunNamesAsync()
+        {
+            try
+            {
+                return await _parquetService.GetExcludedRunNamesAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PlateBrowserControl] Could not read excluded runs: {ex.Message}");
+                return new HashSet<string>();
+            }
+        }
+
+        private void IdentificationsPlot_CategoryClicked(object? sender, string plateKey)
+        {
+            var plate = _plates?.FirstOrDefault(p => p.PlateId.ToString(CultureInfo.InvariantCulture) == plateKey);
+            if (plate == null)
+                return;
+            PlateListBox.SelectedItem = plate;
+            PlateListBox.ScrollIntoView(plate);
+        }
+
+        private void IdentificationsPlot_RunClicked(object? sender, string runName)
+        {
+            var run = _allRawFiles.FirstOrDefault(rf => rf.RawFileName == runName);
+            var plate = run?.PlateId is int plateId ? _plates?.FirstOrDefault(p => p.PlateId == plateId) : null;
+            if (plate == null)
+                return;
+
+            if (ReferenceEquals(PlateListBox.SelectedItem, plate))
+            {
+                SelectRunInGrid(runName);
+                return;
+            }
+            _pendingRunSelection = runName;
+            PlateListBox.SelectedItem = plate;
+            PlateListBox.ScrollIntoView(plate);
+        }
+
+        private void SelectRunInGrid(string runName)
+        {
+            if (RawFilesGrid.ItemsSource is not IEnumerable<RawFileInfo> rows)
+                return;
+            var row = rows.FirstOrDefault(rf => rf.RawFileName == runName);
+            if (row == null)
+                return;
+            RawFilesGrid.SelectedItem = row;
+            RawFilesGrid.ScrollIntoView(row);
         }
 
         private async void PlateListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (PlateListBox.SelectedItem is PlateInfo selectedPlate)
             {
+                IdentificationsPlot.HighlightedKey = selectedPlate.PlateId.ToString(CultureInfo.InvariantCulture);
                 await ShowPlateRawFilesAsync(selectedPlate);
+            }
+            else
+            {
+                IdentificationsPlot.HighlightedKey = null;
             }
         }
 
@@ -119,8 +195,17 @@ namespace SCPBrowser
             // Get raw files for this plate using ParquetDataService
             var rawFiles = await _parquetService.GetRawFilesAsync(plateId: plate.PlateId);
 
+            // Another plate may have been selected while these runs were read; its grid must not be overwritten.
+            if (!ReferenceEquals(PlateListBox.SelectedItem, plate))
+                return;
+
             // Bind to DataGrid
             RawFilesGrid.ItemsSource = rawFiles;
+            if (_pendingRunSelection != null)
+            {
+                SelectRunInGrid(_pendingRunSelection);
+                _pendingRunSelection = null;
+            }
 
             // Calculate and show statistics
             if (rawFiles.Count > 0)

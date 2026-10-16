@@ -22,6 +22,14 @@ namespace SCPBrowser
         /// </summary>
         public static string? CurrentProjectPath { get; set; }
 
+        /// <summary>
+        /// Set once the application has started to exit. From then on there is no window or session left to lose, so an
+        /// exception escaping a background thread is logged without the fatal dialog, which would report a crash in an
+        /// app the user has already closed. The case that prompted this: Visual Studio replaced the .NET runtime under a
+        /// running session, and WPF's own exit-time cleanup could not find vcruntime140_cor3.dll in the removed folder.
+        /// </summary>
+        private static volatile bool _isShuttingDown;
+
         public App()
         {
             // Initialize SQLite
@@ -32,6 +40,26 @@ namespace SCPBrowser
             // is left with nothing to report and no way to recover.
             DispatcherUnhandledException += OnDispatcherUnhandledException;
             AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            _isShuttingDown = true;
+            base.OnExit(e);
+        }
+
+        /// <summary>True once the app is exiting, whether through Application.Exit or a dispatcher shutdown.</summary>
+        private static bool IsShuttingDown()
+        {
+            if (_isShuttingDown) return true;
+            try
+            {
+                return Current?.Dispatcher.HasShutdownStarted == true;
+            }
+            catch
+            {
+                return true; // the application object is already being torn down
+            }
         }
 
         private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
@@ -54,6 +82,12 @@ namespace SCPBrowser
             // A background-thread escape cannot be swallowed - the runtime is going to terminate either way, so
             // the only job here is to leave a record behind and say where it is.
             if (e.ExceptionObject is not Exception ex) return;
+
+            if (IsShuttingDown())
+            {
+                TryWriteErrorLog(ex, "background thread during shutdown (no dialog shown)");
+                return;
+            }
 
             string logPath = TryWriteErrorLog(ex, "background thread");
 

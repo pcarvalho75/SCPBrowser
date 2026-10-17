@@ -72,8 +72,7 @@ namespace SCPBrowser
         public ConditionsBrowserControl()
         {
             InitializeComponent();
-            // The plot keeps at least 240 px while the blast radius (when shown) can still keep its own minimum.
-            PlotSplitLayout.Attach(PlotStatsGrid, PlotRow, 240, StatsRow, StatsSplitter);
+            ScrollingPaneLayout.Attach(RightPaneScroller, RightPane, RequiredRightPaneHeight);
             IdentificationsPlot.CategoryClicked += (s, condition) => SelectCondition(condition);
             IdentificationsPlot.RunClicked += (s, run) =>
             {
@@ -214,6 +213,23 @@ namespace SCPBrowser
                 PlotRow.Height = new GridLength(1, GridUnitType.Star);
                 StatsSplitter.Visibility = Visibility.Collapsed;
             }
+        }
+
+        /// <summary>
+        /// Height the right pane needs: the condition header, the plot at its minimum plot area, and, while a condition
+        /// is selected, the blast radius at its minimum (it scrolls inside) and the Danger Zone at full size. Also keeps
+        /// the plot row's minimum at the plot's, so the blast radius gives up its room first.
+        /// </summary>
+        private double RequiredRightPaneHeight()
+        {
+            double plot = IdentificationsPlot.MinimumHeight() + IdentificationsPlot.Margin.Top + IdentificationsPlot.Margin.Bottom;
+            if (Math.Abs(PlotRow.MinHeight - plot) > 0.5)
+                PlotRow.MinHeight = plot;
+            double required = ScrollingPaneLayout.OuterHeight(ConditionHeaderBorder) + plot
+                + ScrollingPaneLayout.OuterHeight(DangerZonePanel);
+            if (StatsSplitter.Visibility == Visibility.Visible)
+                required += ScrollingPaneLayout.OuterHeight(StatsSplitter) + StatsRow.MinHeight;
+            return required;
         }
 
         private void ResetDetailsPane()

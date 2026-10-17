@@ -197,15 +197,18 @@ Location: SCPBrowser/Controls/PlateBrowserControl.xaml
             <!-- Right: Raw Files for Selected Plate -->
             <Border Grid.Column="2" 
                     Padding="15">
-                <DockPanel>
+                <!-- Scrolls only when the window is too short for the plot's minimum plus the grid's (ScrollingPaneLayout). -->
+                <ScrollViewer x:Name="RightPaneScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                <DockPanel x:Name="RightPane">
                     <!-- Header Section -->
-                    <Border DockPanel.Dock="Top"
+                    <Border x:Name="PlateHeaderBorder"
+                            DockPanel.Dock="Top"
                             Background="#f8fafc"
                             BorderBrush="#e2e8f0"
                             BorderThickness="1"
                             CornerRadius="6"
-                            Padding="15"
-                            Margin="0,0,0,15">
+                            Padding="15,12"
+                            Margin="0,0,0,10">
                         <StackPanel>
                             <TextBlock x:Name="RawFilesHeaderText"
                                        Text="Select a plate to view raw files" 
@@ -227,7 +230,7 @@ Location: SCPBrowser/Controls/PlateBrowserControl.xaml
                             BorderBrush="#cbd5e1"
                             BorderThickness="0,1,0,0"
                             Padding="15,10"
-                            Margin="0,15,0,0"
+                            Margin="0,10,0,0"
                             Visibility="Collapsed">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -267,9 +270,9 @@ Location: SCPBrowser/Controls/PlateBrowserControl.xaml
                     </Border>
 
                     <!-- Identifications per run of every plate (the selected one highlighted). With no plate selected
-                         the plot takes the whole area; selecting one opens its runs below (ShowGridArea), the plot keeping
-                         two thirds and at least 340 px, a minimum that gives way on a small window so the grid keeps its
-                         rows (PlotSplitLayout). The splitter trades height between the two. -->
+                         the plot takes the whole area; selecting one opens its runs below at 2:1 (ShowGridArea). The plot
+                         keeps a 220 px plot area and the grid two rows; a shorter window scrolls the pane. The splitter
+                         trades height between the two. -->
                     <Grid x:Name="PlotGridSplit">
                         <Grid.RowDefinitions>
                             <RowDefinition x:Name="PlotRow" Height="*"/>
@@ -280,7 +283,7 @@ Location: SCPBrowser/Controls/PlateBrowserControl.xaml
                         <local:IdentificationsPanel x:Name="IdentificationsPlot"
                                                     Grid.Row="0"
                                                     Grouping="Plate"
-                                                    Margin="0,0,0,8"/>
+                                                    Margin="0"/>
 
                         <GridSplitter x:Name="PlotGridSplitter"
                                       Grid.Row="1"
@@ -289,7 +292,7 @@ Location: SCPBrowser/Controls/PlateBrowserControl.xaml
                                       VerticalAlignment="Center"
                                       ResizeDirection="Rows"
                                       Background="#e2e8f0"
-                                      Margin="0,0,0,8"
+                                      Margin="0,4,0,4"
                                       Visibility="Collapsed"/>
 
                         <DataGrid x:Name="RawFilesGrid"
@@ -410,6 +413,7 @@ Location: SCPBrowser/Controls/PlateBrowserControl.xaml
                         </DataGrid>
                     </Grid>
                 </DockPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
     </Grid>

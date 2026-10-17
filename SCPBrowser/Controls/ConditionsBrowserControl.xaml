@@ -100,15 +100,19 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
 
             <!-- Right: Details + destructive button -->
             <Border Grid.Column="2" Padding="15">
-                <DockPanel>
+                <!-- Scrolls only when the window is too short for the plot's minimum plus the blast radius and the
+                     Danger Zone (ScrollingPaneLayout). -->
+                <ScrollViewer x:Name="RightPaneScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                <DockPanel x:Name="RightPane">
                     <!-- Header -->
-                    <Border DockPanel.Dock="Top"
+                    <Border x:Name="ConditionHeaderBorder"
+                            DockPanel.Dock="Top"
                             Background="#f8fafc"
                             BorderBrush="#e2e8f0"
                             BorderThickness="1"
                             CornerRadius="6"
-                            Padding="15"
-                            Margin="0,0,0,15">
+                            Padding="15,12"
+                            Margin="0,0,0,10">
                         <StackPanel>
                             <TextBlock x:Name="ConditionHeaderText"
                                        Text="Select a condition to view its impact"
@@ -131,7 +135,7 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                             BorderThickness="1"
                             CornerRadius="6"
                             Padding="15"
-                            Margin="0,15,0,0"
+                            Margin="0,10,0,0"
                             Visibility="Collapsed">
                         <DockPanel>
                             <Button DockPanel.Dock="Right"
@@ -171,7 +175,7 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                         <local:IdentificationsPanel x:Name="IdentificationsPlot"
                                                     Grid.Row="0"
                                                     Grouping="Condition"
-                                                    Margin="0,0,0,8"/>
+                                                    Margin="0"/>
 
                         <GridSplitter x:Name="StatsSplitter"
                                       Grid.Row="1"
@@ -180,7 +184,7 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                                       VerticalAlignment="Center"
                                       ResizeDirection="Rows"
                                       Background="#e2e8f0"
-                                      Margin="0,0,0,8"
+                                      Margin="0,4,0,4"
                                       Visibility="Collapsed"/>
 
                         <!-- Stats grid -->
@@ -317,6 +321,7 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                         </ScrollViewer>
                     </Grid>
                 </DockPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
     </Grid>

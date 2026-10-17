@@ -25,6 +25,9 @@ namespace SCPBrowser
         // A dot clicked on the plot names a run; it is selected in the grid once its plate's runs are bound.
         private string? _pendingRunSelection;
 
+        // Column headers plus two rows of the raw-file grid: what it keeps when the window is short.
+        private const double RawFilesGridMinimum = 104;
+
         // The plot/grid split while a plate is selected, kept when the user drags the splitter.
         private GridLength _plotShare = new(2, GridUnitType.Star);
         private GridLength _gridShare = new(1, GridUnitType.Star);
@@ -47,8 +50,7 @@ namespace SCPBrowser
             InitializeComponent();
             IdentificationsPlot.CategoryClicked += IdentificationsPlot_CategoryClicked;
             IdentificationsPlot.RunClicked += IdentificationsPlot_RunClicked;
-            // The plot keeps at least 340 px while the raw-file grid can still keep its own minimum.
-            PlotSplitLayout.Attach(PlotGridSplit, PlotRow, 340, RawFilesRow, PlotGridSplitter);
+            ScrollingPaneLayout.Attach(RightPaneScroller, RightPane, RequiredRightPaneHeight);
         }
 
         /// <summary>
@@ -149,6 +151,23 @@ namespace SCPBrowser
         }
 
         /// <summary>
+        /// Height the right pane needs: the plate header, the plot at its minimum plot area, and, while a plate is
+        /// selected, the raw-file grid at two rows and the summary bar. Also keeps the plot row's minimum at the
+        /// plot's, so the grid gives up its room first.
+        /// </summary>
+        private double RequiredRightPaneHeight()
+        {
+            double plot = IdentificationsPlot.MinimumHeight() + IdentificationsPlot.Margin.Top + IdentificationsPlot.Margin.Bottom;
+            if (Math.Abs(PlotRow.MinHeight - plot) > 0.5)
+                PlotRow.MinHeight = plot;
+            double required = ScrollingPaneLayout.OuterHeight(PlateHeaderBorder) + plot
+                + ScrollingPaneLayout.OuterHeight(SelectedPlateStatsPanel);
+            if (PlotGridSplitter.Visibility == Visibility.Visible)
+                required += ScrollingPaneLayout.OuterHeight(PlotGridSplitter) + RawFilesRow.MinHeight;
+            return required;
+        }
+
+        /// <summary>
         /// The raw-file grid takes room under the plot only while a plate is selected (it is empty otherwise); the plot
         /// has the whole area until then. A split the user dragged is restored the next time a plate is selected.
         /// </summary>
@@ -161,7 +180,7 @@ namespace SCPBrowser
             {
                 PlotRow.Height = _plotShare;
                 RawFilesRow.Height = _gridShare;
-                RawFilesRow.MinHeight = 90;
+                RawFilesRow.MinHeight = RawFilesGridMinimum;
                 PlotGridSplitter.Visibility = Visibility.Visible;
             }
             else
@@ -196,7 +215,12 @@ namespace SCPBrowser
             }
             else
             {
+                // Back to the pane as it is before any plate is chosen, so no stale summary takes the plot's room.
                 IdentificationsPlot.HighlightedKey = null;
+                RawFilesHeaderText.Text = "Select a plate to view raw files";
+                PlateDetailsText.Visibility = Visibility.Collapsed;
+                RawFilesGrid.ItemsSource = null;
+                SelectedPlateStatsPanel.Visibility = Visibility.Collapsed;
                 ShowGridArea(false);
             }
         }

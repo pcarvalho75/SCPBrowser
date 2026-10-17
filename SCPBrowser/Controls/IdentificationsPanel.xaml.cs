@@ -69,6 +69,18 @@ namespace SCPBrowser
             SyncStyleControls();
         }
 
+        /// <summary>
+        /// Height inside the axes the plot never goes below: enough to read the boxes and to fit the y-axis title
+        /// unabbreviated. A host shorter than that takes the room from its other panels, then scrolls.
+        /// </summary>
+        public const double MinimumPlotArea = 220;
+
+        /// <summary>Panel height (toolbar, plot, footnote) that leaves the plot the given plot area at the current width.</summary>
+        public double MinimumHeight(double plotArea = MinimumPlotArea) =>
+            Toolbar.ActualHeight + Toolbar.Margin.Top + Toolbar.Margin.Bottom
+            + Plot.HeightForPlotArea(plotArea)
+            + CaptionText.ActualHeight + CaptionText.Margin.Top + CaptionText.Margin.Bottom;
+
         /// <summary>Raised with the category key (plate id, or condition name) when a box is clicked.</summary>
         public event EventHandler<string>? CategoryClicked;
 
@@ -647,29 +659,31 @@ namespace SCPBrowser
     }
 
     /// <summary>
-    /// Sizes the plot row of a plot-over-something split so the plot gets its preferred minimum height whenever the row
-    /// below can still keep its own minimum. When both minimums cannot fit, WPF arranges the grid taller than the space
-    /// it was given and clips the bottom away (the axis labels, the footnote and the raw-file grid), so the plot's
-    /// minimum gives way first. The room is read from the layout slot, the height the parent actually grants, because
-    /// the grid's own ActualHeight is the inflated one in exactly that case.
+    /// Keeps a tab's right-hand pane at least as tall as its parts need (the plot's minimum plot area, the panel below it
+    /// at its own minimum, headers and buttons at their size) by giving the pane's content that height inside a
+    /// ScrollViewer: when the window is taller the content simply fills it, and when it is shorter the pane scrolls
+    /// instead of squeezing the plot or clipping the bottom. (Fixed row minimums alone made WPF arrange the content taller
+    /// than the window and clip the axis labels, the footnote and the raw-file grid away.)
     /// </summary>
-    internal static class PlotSplitLayout
+    internal static class ScrollingPaneLayout
     {
-        public static void Attach(Grid grid, RowDefinition plotRow, double preferredMinimum, RowDefinition otherRow, FrameworkElement splitter)
+        public static void Attach(ScrollViewer scroller, FrameworkElement content, Func<double> requiredHeight)
         {
-            grid.LayoutUpdated += (s, e) =>
+            void Update()
             {
-                double slot = System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(grid).Height - grid.Margin.Top - grid.Margin.Bottom;
-                if (slot <= 0 || double.IsInfinity(slot) || double.IsNaN(slot))
+                double viewport = scroller.ActualHeight;
+                if (viewport <= 0)
                     return;
-                double splitterHeight = splitter.Visibility == Visibility.Visible
-                    ? splitter.ActualHeight + splitter.Margin.Top + splitter.Margin.Bottom
-                    : 0;
-                double minimum = Math.Clamp(slot - splitterHeight - otherRow.MinHeight, 0, preferredMinimum);
-                if (Math.Abs(plotRow.MinHeight - minimum) > 0.5)
-                    plotRow.MinHeight = minimum;
-            };
+                double height = Math.Max(viewport, Math.Ceiling(requiredHeight()));
+                if (double.IsNaN(content.Height) || Math.Abs(content.Height - height) > 0.5)
+                    content.Height = height;
+            }
+            scroller.SizeChanged += (s, e) => Update();
+            content.LayoutUpdated += (s, e) => Update();
         }
+
+        public static double OuterHeight(FrameworkElement element) =>
+            element.Visibility == Visibility.Collapsed ? 0 : element.ActualHeight + element.Margin.Top + element.Margin.Bottom;
     }
 
     /// <summary>Colors as drawn on the plot's off-white card.</summary>

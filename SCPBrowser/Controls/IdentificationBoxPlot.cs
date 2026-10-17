@@ -314,6 +314,12 @@ namespace SCPBrowser
 
             /// <summary>Header row (group title, legend) drawn.</summary>
             public bool ShowHeader;
+
+            /// <summary>The y-axis title as it fits (smaller font, or wrapped); null when there is none.</summary>
+            public FormattedText? YTitle;
+
+            /// <summary>Width of the band left of the tick labels that holds the rotated y-axis title.</summary>
+            public double YTitleBand;
         }
 
         private int BoxesPerCategory => _categories.Count == 0 ? 1 : Math.Max(1, _categories.Max(c => c.Boxes.Count));
@@ -367,8 +373,10 @@ namespace SCPBrowser
             ComputeYScale(layout, plotBottom - plotTop);
             layout.TickTextWidth = layout.Ticks.Count == 0 ? 0
                 : layout.Ticks.Max(t => MakeText(FormatTick(layout, t), 11, TickTextColor, pixelsPerDip).Width);
+            layout.YTitle = FitYAxisTitle(plotBottom - plotTop, size.Height, pixelsPerDip);
+            layout.YTitleBand = layout.YTitle == null ? YTitleBand : Math.Max(YTitleBand, layout.YTitle.Height + 5);
 
-            double plotLeft = PadLeft + YTitleBand + layout.TickTextWidth + 8;
+            double plotLeft = PadLeft + layout.YTitleBand + layout.TickTextWidth + 8;
             double plotRight = size.Width - PadRight;
             layout.Plot = new Rect(plotLeft, plotTop, Math.Max(10, plotRight - plotLeft), Math.Max(10, plotBottom - plotTop));
             layout.SlotWidth = layout.Plot.Width / categoryCount;
@@ -414,6 +422,46 @@ namespace SCPBrowser
         /// </summary>
         private static double DenseSpread(double boxWidth, double plotHeight) =>
             Math.Min(boxWidth * 0.66, Math.Max(boxWidth * 0.35, plotHeight * 0.2));
+
+        /// <summary>
+        /// The y-axis title, never abbreviated: at 12.5 px if it fits along the plot (it may run past the plot area into
+        /// the header and label rows, nothing else sits in that band), else in a smaller font down to 10 px, else
+        /// wrapped onto as many lines as it needs at 10 px.
+        /// </summary>
+        private FormattedText? FitYAxisTitle(double plotHeight, double height, double pixelsPerDip)
+        {
+            if (_yAxisTitle.Length == 0)
+                return null;
+            double room = Math.Max(40, Math.Max(plotHeight + 30, height - 16));
+            foreach (double fontSize in new[] { 12.5, 12.0, 11.5, 11.0, 10.5, 10.0 })
+            {
+                var text = MakeText(_yAxisTitle, fontSize, TitleTextColor, pixelsPerDip);
+                if (text.Width <= room)
+                    return text;
+            }
+            var wrapped = MakeText(_yAxisTitle, 10.0, TitleTextColor, pixelsPerDip);
+            wrapped.MaxTextWidth = room; // no MaxLineCount and no trimming: every word stays
+            wrapped.TextAlignment = TextAlignment.Center;
+            return wrapped;
+        }
+
+        /// <summary>
+        /// The control height that leaves the given height inside the axes (the plot area) at the current width, with
+        /// the header, n= row and category labels the plot has now. The hosts size their rows (and scroll) by it, so a
+        /// short window never squeezes the plot below a readable size.
+        /// </summary>
+        public double HeightForPlotArea(double plotArea)
+        {
+            if (_categories.Count == 0)
+                return 120; // the empty-state message
+            double width = ActualWidth > 0 ? ActualWidth : FigureWidth;
+            double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+            double provisionalSlot = (width - (PadLeft + YTitleBand + 44) - PadRight) / _categories.Count;
+            bool rotate = provisionalSlot < 64 && _categories.Count > 1;
+            double labelBand = rotate ? RotatedLabelBand() : UprightLabelBand(provisionalSlot, pixelsPerDip);
+            bool header = _legend.Count > 0 || _groupTitle.Length > 0; // a plot this tall keeps its header row
+            return PadTop + (header ? 18 : 0) + (_style.ShowCounts ? 16 : 0) + 6 + plotArea + labelBand + PadBottom;
+        }
 
         /// <summary>Height of the upright category labels: one line, or two when a label has to wrap.</summary>
         private double UprightLabelBand(double slotWidth, double pixelsPerDip)
@@ -654,15 +702,14 @@ namespace SCPBrowser
 
         private void DrawYAxisTitle(DrawingContext dc, Layout layout)
         {
-            if (_yAxisTitle.Length == 0)
+            if (layout.YTitle is not { } text)
                 return;
-            // The rotated title may run past a short plot area into the header and label rows (nothing else sits in
-            // that left band), so a small window does not cut it to "Protein grou...".
-            var text = MakeText(_yAxisTitle, 12.5, TitleTextColor, layout.PixelsPerDip, maxWidth: Math.Max(layout.Plot.Height + 30, layout.Height - 8));
-            double cx = PadLeft + YTitleBand / 2 - 2;
-            double cy = Math.Clamp(layout.Plot.Top + layout.Plot.Height / 2, 4 + text.Width / 2, layout.Height - 4 - text.Width / 2);
+            // A wrapped title is centred inside its MaxTextWidth, which starts at the origin.
+            double length = text.MaxTextWidth > 0 ? text.MaxTextWidth : text.Width;
+            double cx = PadLeft + layout.YTitleBand / 2 - 2;
+            double cy = Math.Clamp(layout.Plot.Top + layout.Plot.Height / 2, 4 + length / 2, Math.Max(4 + length / 2, layout.Height - 4 - length / 2));
             dc.PushTransform(new RotateTransform(-90, cx, cy));
-            dc.DrawText(text, new Point(cx - text.Width / 2, cy - text.Height / 2));
+            dc.DrawText(text, new Point(cx - length / 2, cy - text.Height / 2));
             dc.Pop();
         }
 

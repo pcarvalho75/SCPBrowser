@@ -132,7 +132,7 @@ Location: SCPBrowser/Controls/IdentificationsPanel.xaml
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <DockPanel Grid.Row="0" Margin="2,0,2,6">
+        <DockPanel x:Name="Toolbar" Grid.Row="0" Margin="2,0,2,4">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                 <CheckBox x:Name="PlateColorsCheckBox"
                           Content="Plate colors"
@@ -201,7 +201,7 @@ Location: SCPBrowser/Controls/IdentificationsPanel.xaml
                    Foreground="#94a3b8"
                    TextWrapping="Wrap"
                    TextAlignment="Center"
-                   Margin="8,4,8,0"/>
+                   Margin="8,2,8,0"/>
 
         <Popup x:Name="CustomizePopup"
                PlacementTarget="{Binding ElementName=CustomizeButton}"

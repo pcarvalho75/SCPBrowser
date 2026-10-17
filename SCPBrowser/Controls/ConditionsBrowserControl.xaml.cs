@@ -31,6 +31,10 @@ namespace SCPBrowser
         private ParquetDataService? _parquetService;
         private List<RawFileInfo> _allRawFiles = new();
 
+        // The plot/blast-radius split while a condition is selected, kept when the user drags the splitter.
+        private GridLength _plotShare = new(2, GridUnitType.Star);
+        private GridLength _statsShare = new(1, GridUnitType.Star);
+
         /// <summary>
         /// Lightweight DTO for the left-side conditions list.
         /// </summary>
@@ -68,6 +72,8 @@ namespace SCPBrowser
         public ConditionsBrowserControl()
         {
             InitializeComponent();
+            // The plot keeps at least 240 px while the blast radius (when shown) can still keep its own minimum.
+            PlotSplitLayout.Attach(PlotStatsGrid, PlotRow, 240, StatsRow, StatsSplitter);
             IdentificationsPlot.CategoryClicked += (s, condition) => SelectCondition(condition);
             IdentificationsPlot.RunClicked += (s, run) =>
             {
@@ -169,6 +175,7 @@ namespace SCPBrowser
                 PlateNamesList.ItemsSource = stats.PlateNames;
 
                 StatsPanel.Visibility = Visibility.Visible;
+                ShowStatsArea(true);
                 DangerZonePanel.Visibility = Visibility.Visible;
                 DeleteConditionButton.IsEnabled = stats.RawFileCount > 0;
             }
@@ -182,9 +189,37 @@ namespace SCPBrowser
             }
         }
 
+        /// <summary>
+        /// The blast radius takes room under the plot only while a condition is selected; otherwise the plot has the
+        /// whole area. A split the user dragged is restored the next time a condition is selected.
+        /// </summary>
+        private void ShowStatsArea(bool show)
+        {
+            bool shown = StatsSplitter.Visibility == Visibility.Visible;
+            if (show == shown)
+                return;
+            if (show)
+            {
+                PlotRow.Height = _plotShare;
+                StatsRow.Height = _statsShare;
+                StatsRow.MinHeight = 80; // the blast radius scrolls, so a small window keeps more of the plot
+                StatsSplitter.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                if (PlotRow.Height.IsStar && StatsRow.Height.IsStar && StatsRow.Height.Value > 0)
+                    (_plotShare, _statsShare) = (PlotRow.Height, StatsRow.Height);
+                StatsRow.MinHeight = 0;
+                StatsRow.Height = new GridLength(0);
+                PlotRow.Height = new GridLength(1, GridUnitType.Star);
+                StatsSplitter.Visibility = Visibility.Collapsed;
+            }
+        }
+
         private void ResetDetailsPane()
         {
             IdentificationsPlot.HighlightedKey = null;
+            ShowStatsArea(false);
             ConditionHeaderText.Text = "Select a condition to view its impact";
             ConditionSubText.Text = string.Empty;
             ConditionSubText.Visibility = Visibility.Collapsed;

@@ -311,6 +311,9 @@ namespace SCPBrowser
             public double PixelsPerDip;
             public Color Background;
             public bool ForExport;
+
+            /// <summary>Header row (group title, legend) drawn.</summary>
+            public bool ShowHeader;
         }
 
         private int BoxesPerCategory => _categories.Count == 0 ? 1 : Math.Max(1, _categories.Max(c => c.Boxes.Count));
@@ -345,7 +348,11 @@ namespace SCPBrowser
             int categoryCount = Math.Max(1, _categories.Count);
             int perCategory = BoxesPerCategory;
 
-            double headerHeight = (_groupTitle.Length > 0 || _legend.Count > 0) ? 18 : 0;
+            // A short plot (a small window) gives the group title's row to the boxes, unless a legend needs it.
+            // Saved figures are always tall enough to keep it.
+            bool shortPlot = size.Height < 210;
+            layout.ShowHeader = _legend.Count > 0 || (_groupTitle.Length > 0 && !shortPlot);
+            double headerHeight = layout.ShowHeader ? 18 : 0;
             double countHeight = _style.ShowCounts ? 16 : 0;
             double plotTop = PadTop + headerHeight + countHeight + 6;
 
@@ -374,11 +381,7 @@ namespace SCPBrowser
             {
                 layout.BoxWidth = Math.Min(layout.SlotWidth * 0.42, MaxBoxWidth);
                 layout.ClusterStep = 0;
-                // A dense box fans its dots out well past the box (up to a quarter of the slot each side), so the
-                // cloud shows the distribution's shape instead of piling up on the box.
-                layout.JitterHalfWidth = dense
-                    ? Math.Min(Math.Max(layout.BoxWidth * 0.6, layout.SlotWidth * 0.25), 140)
-                    : layout.BoxWidth * 0.38;
+                layout.JitterHalfWidth = dense ? DenseSpread(layout.BoxWidth, layout.Plot.Height) : layout.BoxWidth * 0.38;
             }
             else
             {
@@ -386,7 +389,7 @@ namespace SCPBrowser
                 layout.ClusterStep = cluster / perCategory;
                 layout.BoxWidth = Math.Min(layout.ClusterStep * 0.7, MaxSplitBoxWidth);
                 layout.JitterHalfWidth = dense
-                    ? Math.Min(Math.Max(layout.BoxWidth * 0.6, layout.ClusterStep * 0.4), 90)
+                    ? Math.Min(DenseSpread(layout.BoxWidth, layout.Plot.Height), layout.ClusterStep * 0.46)
                     : layout.BoxWidth * 0.38;
             }
 
@@ -402,6 +405,15 @@ namespace SCPBrowser
                 && !(forExport && _style.Background == PlotBackground.Transparent);
             return layout;
         }
+
+        /// <summary>
+        /// Half-width of a dense box's cloud of dots: a little past the box (two thirds of its width each side), so the
+        /// cloud shows the distribution's shape instead of piling up on the box. It follows the box, not the slot, and
+        /// narrows on a short plot (a fifth of the plot height each side, down to 35% of the box), so the cloud does not
+        /// become wider than it is tall.
+        /// </summary>
+        private static double DenseSpread(double boxWidth, double plotHeight) =>
+            Math.Min(boxWidth * 0.66, Math.Max(boxWidth * 0.35, plotHeight * 0.2));
 
         /// <summary>Height of the upright category labels: one line, or two when a label has to wrap.</summary>
         private double UprightLabelBand(double slotWidth, double pixelsPerDip)
@@ -644,9 +656,11 @@ namespace SCPBrowser
         {
             if (_yAxisTitle.Length == 0)
                 return;
-            var text = MakeText(_yAxisTitle, 12.5, TitleTextColor, layout.PixelsPerDip, maxWidth: layout.Plot.Height + 30);
+            // The rotated title may run past a short plot area into the header and label rows (nothing else sits in
+            // that left band), so a small window does not cut it to "Protein grou...".
+            var text = MakeText(_yAxisTitle, 12.5, TitleTextColor, layout.PixelsPerDip, maxWidth: Math.Max(layout.Plot.Height + 30, layout.Height - 8));
             double cx = PadLeft + YTitleBand / 2 - 2;
-            double cy = layout.Plot.Top + layout.Plot.Height / 2;
+            double cy = Math.Clamp(layout.Plot.Top + layout.Plot.Height / 2, 4 + text.Width / 2, layout.Height - 4 - text.Width / 2);
             dc.PushTransform(new RotateTransform(-90, cx, cy));
             dc.DrawText(text, new Point(cx - text.Width / 2, cy - text.Height / 2));
             dc.Pop();
@@ -680,7 +694,7 @@ namespace SCPBrowser
                 }
             }
 
-            if (_groupTitle.Length > 0)
+            if (_groupTitle.Length > 0 && layout.ShowHeader)
             {
                 var title = MakeText(_groupTitle, 12, HeaderTextColor, layout.PixelsPerDip, semiBold: true);
                 double center = layout.Plot.Left + layout.Plot.Width / 2;

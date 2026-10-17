@@ -646,6 +646,32 @@ namespace SCPBrowser
         }
     }
 
+    /// <summary>
+    /// Sizes the plot row of a plot-over-something split so the plot gets its preferred minimum height whenever the row
+    /// below can still keep its own minimum. When both minimums cannot fit, WPF arranges the grid taller than the space
+    /// it was given and clips the bottom away (the axis labels, the footnote and the raw-file grid), so the plot's
+    /// minimum gives way first. The room is read from the layout slot, the height the parent actually grants, because
+    /// the grid's own ActualHeight is the inflated one in exactly that case.
+    /// </summary>
+    internal static class PlotSplitLayout
+    {
+        public static void Attach(Grid grid, RowDefinition plotRow, double preferredMinimum, RowDefinition otherRow, FrameworkElement splitter)
+        {
+            grid.LayoutUpdated += (s, e) =>
+            {
+                double slot = System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(grid).Height - grid.Margin.Top - grid.Margin.Bottom;
+                if (slot <= 0 || double.IsInfinity(slot) || double.IsNaN(slot))
+                    return;
+                double splitterHeight = splitter.Visibility == Visibility.Visible
+                    ? splitter.ActualHeight + splitter.Margin.Top + splitter.Margin.Bottom
+                    : 0;
+                double minimum = Math.Clamp(slot - splitterHeight - otherRow.MinHeight, 0, preferredMinimum);
+                if (Math.Abs(plotRow.MinHeight - minimum) > 0.5)
+                    plotRow.MinHeight = minimum;
+            };
+        }
+    }
+
     /// <summary>Colors as drawn on the plot's off-white card.</summary>
     internal static class PlotColors
     {

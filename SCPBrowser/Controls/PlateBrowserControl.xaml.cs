@@ -25,6 +25,10 @@ namespace SCPBrowser
         // A dot clicked on the plot names a run; it is selected in the grid once its plate's runs are bound.
         private string? _pendingRunSelection;
 
+        // The plot/grid split while a plate is selected, kept when the user drags the splitter.
+        private GridLength _plotShare = new(2, GridUnitType.Star);
+        private GridLength _gridShare = new(1, GridUnitType.Star);
+
         /// <summary>
         /// The data as loaded for analysis. Set by the host; the database stores only per-run counts, which cannot be
         /// combined into a plate's distinct proteins and peptides.
@@ -43,6 +47,8 @@ namespace SCPBrowser
             InitializeComponent();
             IdentificationsPlot.CategoryClicked += IdentificationsPlot_CategoryClicked;
             IdentificationsPlot.RunClicked += IdentificationsPlot_RunClicked;
+            // The plot keeps at least 340 px while the raw-file grid can still keep its own minimum.
+            PlotSplitLayout.Attach(PlotGridSplit, PlotRow, 340, RawFilesRow, PlotGridSplitter);
         }
 
         /// <summary>
@@ -142,6 +148,33 @@ namespace SCPBrowser
             PlateListBox.ScrollIntoView(plate);
         }
 
+        /// <summary>
+        /// The raw-file grid takes room under the plot only while a plate is selected (it is empty otherwise); the plot
+        /// has the whole area until then. A split the user dragged is restored the next time a plate is selected.
+        /// </summary>
+        private void ShowGridArea(bool show)
+        {
+            bool shown = PlotGridSplitter.Visibility == Visibility.Visible;
+            if (show == shown)
+                return;
+            if (show)
+            {
+                PlotRow.Height = _plotShare;
+                RawFilesRow.Height = _gridShare;
+                RawFilesRow.MinHeight = 90;
+                PlotGridSplitter.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                if (PlotRow.Height.IsStar && RawFilesRow.Height.IsStar && RawFilesRow.Height.Value > 0)
+                    (_plotShare, _gridShare) = (PlotRow.Height, RawFilesRow.Height);
+                RawFilesRow.MinHeight = 0;
+                RawFilesRow.Height = new GridLength(0);
+                PlotRow.Height = new GridLength(1, GridUnitType.Star);
+                PlotGridSplitter.Visibility = Visibility.Collapsed;
+            }
+        }
+
         private void SelectRunInGrid(string runName)
         {
             if (RawFilesGrid.ItemsSource is not IEnumerable<RawFileInfo> rows)
@@ -158,11 +191,13 @@ namespace SCPBrowser
             if (PlateListBox.SelectedItem is PlateInfo selectedPlate)
             {
                 IdentificationsPlot.HighlightedKey = selectedPlate.PlateId.ToString(CultureInfo.InvariantCulture);
+                ShowGridArea(true);
                 await ShowPlateRawFilesAsync(selectedPlate);
             }
             else
             {
                 IdentificationsPlot.HighlightedKey = null;
+                ShowGridArea(false);
             }
         }
 

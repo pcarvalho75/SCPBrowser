@@ -266,13 +266,15 @@ Location: SCPBrowser/Controls/PlateBrowserControl.xaml
                         </Grid>
                     </Border>
 
-                    <!-- Identifications per run of every plate (the selected one highlighted) above the selected
-                         plate's runs; the splitter trades height between the two. -->
-                    <Grid>
+                    <!-- Identifications per run of every plate (the selected one highlighted). With no plate selected
+                         the plot takes the whole area; selecting one opens its runs below (ShowGridArea), the plot keeping
+                         two thirds and at least 340 px, a minimum that gives way on a small window so the grid keeps its
+                         rows (PlotSplitLayout). The splitter trades height between the two. -->
+                    <Grid x:Name="PlotGridSplit">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="5*" MinHeight="240"/>
+                            <RowDefinition x:Name="PlotRow" Height="*"/>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="3*" MinHeight="120"/>
+                            <RowDefinition x:Name="RawFilesRow" Height="0"/>
                         </Grid.RowDefinitions>
 
                         <local:IdentificationsPanel x:Name="IdentificationsPlot"
@@ -280,13 +282,15 @@ Location: SCPBrowser/Controls/PlateBrowserControl.xaml
                                                     Grouping="Plate"
                                                     Margin="0,0,0,8"/>
 
-                        <GridSplitter Grid.Row="1"
+                        <GridSplitter x:Name="PlotGridSplitter"
+                                      Grid.Row="1"
                                       Height="5"
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Center"
                                       ResizeDirection="Rows"
                                       Background="#e2e8f0"
-                                      Margin="0,0,0,8"/>
+                                      Margin="0,0,0,8"
+                                      Visibility="Collapsed"/>
 
                         <DataGrid x:Name="RawFilesGrid"
                                   Grid.Row="2"

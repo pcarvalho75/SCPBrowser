@@ -159,12 +159,13 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                     </Border>
 
                     <!-- Identifications per run of every condition (the selected one highlighted), dots colored by
-                         plate, above the selected condition's blast radius; the splitter trades height between them. -->
-                    <Grid>
+                         plate. With no condition selected the plot takes the whole area; selecting one opens its blast
+                         radius below, and the splitter trades height between them (ShowStatsArea). -->
+                    <Grid x:Name="PlotStatsGrid">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="3*" MinHeight="240"/>
+                            <RowDefinition x:Name="PlotRow" Height="*"/>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="2*" MinHeight="90"/>
+                            <RowDefinition x:Name="StatsRow" Height="0"/>
                         </Grid.RowDefinitions>
 
                         <local:IdentificationsPanel x:Name="IdentificationsPlot"
@@ -172,13 +173,15 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                                                     Grouping="Condition"
                                                     Margin="0,0,0,8"/>
 
-                        <GridSplitter Grid.Row="1"
+                        <GridSplitter x:Name="StatsSplitter"
+                                      Grid.Row="1"
                                       Height="5"
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Center"
                                       ResizeDirection="Rows"
                                       Background="#e2e8f0"
-                                      Margin="0,0,0,8"/>
+                                      Margin="0,0,0,8"
+                                      Visibility="Collapsed"/>
 
                         <!-- Stats grid -->
                         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">

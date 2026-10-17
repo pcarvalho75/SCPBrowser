@@ -50,6 +50,8 @@ namespace SCPBrowser
         private IReadOnlySet<string> _excludedRuns = new HashSet<string>();
         private List<ResolvedRun> _plottedRuns = new();
         private bool _isGeneMatrix;
+        private int _lastNotLoaded, _lastNotShown;
+        private string _lastNotShownReason = string.Empty;
 
         /// <summary>A database run with the value plotted for it.</summary>
         private sealed record ResolvedRun(RawFileInfo File, int Value, bool IsExcluded, bool HasNoIdentifications);
@@ -60,7 +62,11 @@ namespace SCPBrowser
             Plot.CategoryClicked += (s, key) => CategoryClicked?.Invoke(this, key);
             Plot.RunClicked += (s, run) => RunClicked?.Invoke(this, run);
             Plot.ContextMenu = BuildSaveMenu();
+            Plot.Style = BoxPlotStyleStore.Current;
+            // One style for both tabs: a change made in either popover redraws both plots.
+            BoxPlotStyleStore.Changed += (s, e) => ApplyStyle();
             ApplyGrouping();
+            SyncStyleControls();
         }
 
         /// <summary>Raised with the category key (plate id, or condition name) when a box is clicked.</summary>
@@ -128,10 +134,14 @@ namespace SCPBrowser
             var conditionOnly = _grouping == IdentificationGrouping.Condition ? Visibility.Visible : Visibility.Collapsed;
             SplitByPlateCheckBox.Visibility = conditionOnly;
             PlateColorsCheckBox.Visibility = conditionOnly;
-            Plot.GroupTitle = _grouping == IdentificationGrouping.Plate ? "Plates" : "Biological conditions";
+            ApplyStyle();
         }
 
-        private void MetricRadio_Checked(object sender, RoutedEventArgs e) => Rebuild();
+        private void MetricRadio_Checked(object sender, RoutedEventArgs e)
+        {
+            Rebuild();
+            SyncStyleControls(); // the y-axis label field edits the label of the metric now shown
+        }
 
         private void PlotOption_Changed(object sender, RoutedEventArgs e)
         {
@@ -150,7 +160,7 @@ namespace SCPBrowser
             if (Plot == null)
                 return;
 
-            Plot.YAxisTitle = _isGeneMatrix ? "Genes per sample" : UsePeptides ? "Peptides per run" : "Protein groups per run";
+            ApplyStyle();
             Plot.ValueUnit = _isGeneMatrix ? "genes" : UsePeptides ? "peptides" : "protein groups";
 
             if (_data == null)
@@ -275,7 +285,7 @@ namespace SCPBrowser
                             {
                                 Label = condition,
                                 Color = plateColored ? PlotColors.NeutralBox : conditionColor,
-                                FillOpacity = plateColored ? 0.10 : 0.18,
+                                FillScale = plateColored ? 0.55 : 1.0,
                                 Runs = byPlate.SelectMany(g =>
                                 {
                                     var color = !plateColored ? conditionColor
@@ -308,6 +318,7 @@ namespace SCPBrowser
                 : "No runs with a biological condition in this project yet.";
             Plot.Legend = legend;
             Plot.Categories = categories.Count > 0 && _plottedRuns.Count > 0 ? categories : Array.Empty<BoxPlotCategory>();
+            (_lastNotLoaded, _lastNotShown, _lastNotShownReason) = (notLoaded, notShown, notShownReason);
             CaptionText.Text = BuildCaption(notLoaded, notShown, notShownReason);
         }
 
@@ -343,17 +354,23 @@ namespace SCPBrowser
         private string BuildCaption(int notLoaded, int notShown, string notShownReason)
         {
             string unit = _isGeneMatrix ? "sample" : "run";
-            var parts = new List<string>
+            var points = BoxPlotStyleStore.Current.Points;
+            string dots = points switch
             {
-                $"Each dot is a {unit}; box: median and interquartile range; whiskers: 1.5 × IQR."
+                PlotPoints.All => $"Each dot is a {unit}. ",
+                PlotPoints.OutliersOnly => $"Dots are {unit}s beyond the whiskers. ",
+                _ => string.Empty
             };
+            var parts = new List<string> { $"{dots}Box: median and interquartile range; whiskers: 1.5 × IQR." };
 
             int empty = _plottedRuns.Count(r => r.HasNoIdentifications);
             if (empty > 0)
                 parts.Add($"{Plural(empty, unit)} with no identification left after filtering {(empty == 1 ? "is" : "are")} plotted at 0.");
             int excluded = _plottedRuns.Count(r => r.IsExcluded);
             if (excluded > 0)
-                parts.Add($"{Plural(excluded, "manually excluded " + unit)} {(excluded == 1 ? "is" : "are")} drawn as {(excluded == 1 ? "a ring" : "rings")} and left out of the boxes and n.");
+                parts.Add(points == PlotPoints.All
+                    ? $"{Plural(excluded, "manually excluded " + unit)} {(excluded == 1 ? "is" : "are")} drawn as {(excluded == 1 ? "a ring" : "rings")} and left out of the boxes and n."
+                    : $"{Plural(excluded, "manually excluded " + unit)} {(excluded == 1 ? "is" : "are")} left out of the boxes and n.");
             if (notShown > 0)
                 parts.Add($"{Plural(notShown, unit)} {notShownReason} {(notShown == 1 ? "is" : "are")} not shown.");
             if (notLoaded > 0)
@@ -361,6 +378,146 @@ namespace SCPBrowser
             return string.Join(" ", parts);
 
             static string Plural(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n:N0} {noun}s";
+        }
+
+        // ------------------------------------------------------------------------------------------------------------
+        // Style (the Customize popover)
+        // ------------------------------------------------------------------------------------------------------------
+
+        private string TitleKey => _grouping == IdentificationGrouping.Plate ? "title.plate" : "title.condition";
+
+        private string YLabelKey => _isGeneMatrix ? "y.genes" : UsePeptides ? "y.peptides" : "y.proteins";
+
+        private string AutomaticTitle => _grouping == IdentificationGrouping.Plate ? "Plates" : "Biological conditions";
+
+        private string AutomaticYLabel => _isGeneMatrix ? "Genes per sample" : UsePeptides ? "Peptides per run" : "Protein groups per run";
+
+        private bool _syncingStyle;
+
+        /// <summary>Gives the plot the saved style and the header and axis texts it implies.</summary>
+        private void ApplyStyle()
+        {
+            if (Plot == null)
+                return;
+            var style = BoxPlotStyleStore.Current;
+            Plot.GroupTitle = style.Text(TitleKey) ?? AutomaticTitle;
+            Plot.YAxisTitle = style.Text(YLabelKey) ?? AutomaticYLabel;
+            Plot.Style = style;
+            Plot.InvalidateVisual();
+            if (!_syncingStyle)
+                SyncStyleControls();
+            if (_data != null && CaptionText != null)
+                CaptionText.Text = BuildCaption(_lastNotLoaded, _lastNotShown, _lastNotShownReason);
+        }
+
+        /// <summary>Shows the saved style in the popover's controls without writing it back.</summary>
+        private void SyncStyleControls()
+        {
+            if (WhiteBackgroundRadio == null)
+                return;
+            _syncingStyle = true;
+            try
+            {
+                var style = BoxPlotStyleStore.Current;
+                WhiteBackgroundRadio.IsChecked = style.Background == PlotBackground.White;
+                WarmBackgroundRadio.IsChecked = style.Background == PlotBackground.Warm;
+                TransparentBackgroundRadio.IsChecked = style.Background == PlotBackground.Transparent;
+                AllPointsRadio.IsChecked = style.Points == PlotPoints.All;
+                OutlierPointsRadio.IsChecked = style.Points == PlotPoints.OutliersOnly;
+                NoPointsRadio.IsChecked = style.Points == PlotPoints.None;
+                PointSizeSlider.Value = style.PointSize;
+                PointOpacitySlider.Value = Math.Round(style.PointOpacity * 100);
+                BoxFillSlider.Value = Math.Round(style.BoxFillOpacity * 100);
+                FitAxisRadio.IsChecked = !style.YFromZero;
+                ZeroAxisRadio.IsChecked = style.YFromZero;
+                CountsCheckBox.IsChecked = style.ShowCounts;
+                GridlinesCheckBox.IsChecked = style.ShowGridlines;
+                SetIfDifferent(TitleTextBox, style.RawText(TitleKey));
+                SetIfDifferent(YLabelTextBox, style.RawText(YLabelKey));
+                UpdateStyleLabels();
+            }
+            finally
+            {
+                _syncingStyle = false;
+            }
+
+            static void SetIfDifferent(TextBox box, string text)
+            {
+                if (box.Text != text)
+                    box.Text = text;
+            }
+        }
+
+        private void UpdateStyleLabels()
+        {
+            PointSizeValue.Text = PointSizeSlider.Value <= 0 ? "Auto" : $"{PointSizeSlider.Value:0} px";
+            PointOpacityValue.Text = PointOpacitySlider.Value <= 0 ? "Auto" : $"{PointOpacitySlider.Value:0}%";
+            BoxFillValue.Text = $"{BoxFillSlider.Value:0}%";
+            TitleWatermark.Text = TitleTextBox.Text.Length == 0 ? AutomaticTitle : string.Empty;
+            YLabelWatermark.Text = YLabelTextBox.Text.Length == 0 ? AutomaticYLabel : string.Empty;
+            // Point size and opacity mean nothing when no point is drawn.
+            bool points = NoPointsRadio.IsChecked != true;
+            PointSizeSlider.IsEnabled = points;
+            PointOpacitySlider.IsEnabled = points;
+        }
+
+        private void CustomizeButton_Click(object sender, RoutedEventArgs e)
+        {
+            SyncStyleControls();
+            // Right-align the card with the button, so it opens into the pane instead of off its right edge.
+            CustomizePopup.HorizontalOffset = CustomizeButton.ActualWidth - (CustomizeCard.Width + CustomizeCard.Margin.Left + CustomizeCard.Margin.Right) + 10;
+            CustomizePopup.IsOpen = !CustomizePopup.IsOpen;
+        }
+
+        private void CustomizePopup_Closed(object? sender, EventArgs e) => BoxPlotStyleStore.Flush();
+
+        private void ResetStyle_Click(object sender, RoutedEventArgs e) => BoxPlotStyleStore.Reset();
+
+        private void StyleControl_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_syncingStyle || WhiteBackgroundRadio == null)
+                return;
+            BoxPlotStyleStore.Update(style =>
+            {
+                if (WhiteBackgroundRadio.IsChecked == true) style.Background = PlotBackground.White;
+                else if (WarmBackgroundRadio.IsChecked == true) style.Background = PlotBackground.Warm;
+                else if (TransparentBackgroundRadio.IsChecked == true) style.Background = PlotBackground.Transparent;
+                if (AllPointsRadio.IsChecked == true) style.Points = PlotPoints.All;
+                else if (OutlierPointsRadio.IsChecked == true) style.Points = PlotPoints.OutliersOnly;
+                else if (NoPointsRadio.IsChecked == true) style.Points = PlotPoints.None;
+                style.YFromZero = ZeroAxisRadio.IsChecked == true;
+                style.ShowCounts = CountsCheckBox.IsChecked == true;
+                style.ShowGridlines = GridlinesCheckBox.IsChecked == true;
+            });
+        }
+
+        private void StyleSlider_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_syncingStyle || BoxFillSlider == null || PointOpacitySlider == null || PointSizeSlider == null)
+                return;
+            BoxPlotStyleStore.Update(style =>
+            {
+                style.PointSize = PointSizeSlider.Value;
+                style.PointOpacity = PointOpacitySlider.Value / 100.0;
+                style.BoxFillOpacity = BoxFillSlider.Value / 100.0;
+            });
+        }
+
+        private void StyleText_Changed(object sender, TextChangedEventArgs e)
+        {
+            if (_syncingStyle || TitleTextBox == null || YLabelTextBox == null)
+                return;
+            BoxPlotStyleStore.Update(style =>
+            {
+                Put(TitleKey, TitleTextBox.Text);
+                Put(YLabelKey, YLabelTextBox.Text);
+
+                void Put(string key, string text)
+                {
+                    if (string.IsNullOrWhiteSpace(text)) style.Texts.Remove(key);
+                    else style.Texts[key] = text; // as typed; trimming here would move the caret while typing
+                }
+            });
         }
 
         // ------------------------------------------------------------------------------------------------------------

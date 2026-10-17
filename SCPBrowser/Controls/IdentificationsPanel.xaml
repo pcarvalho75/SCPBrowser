@@ -1,7 +1,7 @@
 <!--
 IdentificationsPanel.xaml
-Identifications per run as a box plot, grouped by plate or by biological condition, with the metric switch.
-Hosted by the Plate Data and Conditions tabs of the Project Browser.
+Identifications per run as a box plot, grouped by plate or by biological condition, with the metric switch, the
+Customize popover and the Save menu. Hosted by the Plate Data and Conditions tabs of the Project Browser.
 Location: SCPBrowser/Controls/IdentificationsPanel.xaml
 -->
 <UserControl x:Class="SCPBrowser.IdentificationsPanel"
@@ -11,14 +11,15 @@ Location: SCPBrowser/Controls/IdentificationsPanel.xaml
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:local="clr-namespace:SCPBrowser"
              mc:Ignorable="d"
-             d:DesignHeight="360" d:DesignWidth="600">
+             d:DesignHeight="360" d:DesignWidth="800">
     <UserControl.Resources>
-        <!-- Two-segment switch: the checked segment is a white pill on a light grey track. -->
+        <!-- Segmented switch: the checked segment is a white pill on a light grey track. -->
         <Style x:Key="SegmentStyle" TargetType="RadioButton">
             <Setter Property="Foreground" Value="#64748b"/>
             <Setter Property="FontSize" Value="11.5"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Padding" Value="10,3"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
@@ -27,7 +28,7 @@ Location: SCPBrowser/Controls/IdentificationsPanel.xaml
                                 BorderBrush="Transparent"
                                 BorderThickness="1"
                                 CornerRadius="5"
-                                Padding="10,3">
+                                Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -43,6 +44,18 @@ Location: SCPBrowser/Controls/IdentificationsPanel.xaml
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <Style x:Key="SmallSegment" TargetType="RadioButton" BasedOn="{StaticResource SegmentStyle}">
+            <Setter Property="Padding" Value="8,2"/>
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+
+        <Style x:Key="SegmentTrack" TargetType="Border">
+            <Setter Property="Background" Value="#eef0f3"/>
+            <Setter Property="CornerRadius" Value="7"/>
+            <Setter Property="Padding" Value="2"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
 
         <!-- Toolbar button in the same light-grey pill as the metric switch. -->
@@ -74,6 +87,19 @@ Location: SCPBrowser/Controls/IdentificationsPanel.xaml
             </Setter>
         </Style>
 
+        <Style x:Key="LinkButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#2563eb"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter VerticalAlignment="Center"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="OptionCheckBox" TargetType="CheckBox">
             <Setter Property="FontSize" Value="11.5"/>
             <Setter Property="Foreground" Value="#475569"/>
@@ -82,87 +108,228 @@ Location: SCPBrowser/Controls/IdentificationsPanel.xaml
             <Setter Property="Margin" Value="0,0,14,0"/>
             <Setter Property="Visibility" Value="Collapsed"/>
         </Style>
+
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Foreground" Value="#475569"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,10,8"/>
+        </Style>
+
+        <Style x:Key="ValueLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="#64748b"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+            <Setter Property="Width" Value="40"/>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Centred and only as wide as the plot needs, so a project with two plates gets a figure, not a banner. -->
-        <Grid Grid.Row="0" HorizontalAlignment="Center">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+        <DockPanel Grid.Row="0" Margin="2,0,2,6">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox x:Name="PlateColorsCheckBox"
+                          Content="Plate colors"
+                          IsChecked="True"
+                          Style="{StaticResource OptionCheckBox}"
+                          ToolTip="Color each run by its plate, so a plate effect inside a condition shows. Off: each condition in its Explorer color"
+                          Checked="PlotOption_Changed"
+                          Unchecked="PlotOption_Changed"/>
+                <CheckBox x:Name="SplitByPlateCheckBox"
+                          Content="Split by plate"
+                          Style="{StaticResource OptionCheckBox}"
+                          ToolTip="One box per plate inside each condition, so a plate effect within a condition shows as a shift between neighbouring boxes"
+                          Checked="PlotOption_Changed"
+                          Unchecked="PlotOption_Changed"/>
+                <Border x:Name="MetricSwitch" Style="{StaticResource SegmentTrack}">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="ProteinsRadio"
+                                     Content="Protein groups"
+                                     IsChecked="True"
+                                     Style="{StaticResource SegmentStyle}"
+                                     Checked="MetricRadio_Checked"/>
+                        <RadioButton x:Name="PeptidesRadio"
+                                     Content="Peptides"
+                                     Style="{StaticResource SegmentStyle}"
+                                     Checked="MetricRadio_Checked"/>
+                    </StackPanel>
+                </Border>
+                <Button x:Name="CustomizeButton"
+                        Style="{StaticResource ToolbarButton}"
+                        Margin="8,0,0,0"
+                        Click="CustomizeButton_Click"
+                        ToolTip="Background, points, box fill, labels and axis. Remembered for every project.">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE790;" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" Margin="0,1,6,0"/>
+                        <TextBlock Text="Customize" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="SaveButton"
+                        Style="{StaticResource ToolbarButton}"
+                        Margin="6,0,0,0"
+                        Click="SaveButton_Click"
+                        ToolTip="Save this plot as PNG (300 or 600 DPI) or SVG, or copy it. Also on right-click.">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE74E;" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" Margin="0,1,6,0"/>
+                        <TextBlock Text="Save" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+            <TextBlock x:Name="TitleText"
+                       Text="Identifications per run"
+                       FontSize="13"
+                       FontWeight="SemiBold"
+                       Foreground="#1e293b"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       Margin="0,0,16,0"/>
+        </DockPanel>
 
-            <DockPanel Grid.Row="0" Margin="2,0,2,8">
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <CheckBox x:Name="PlateColorsCheckBox"
-                              Content="Plate colors"
-                              IsChecked="True"
-                              Style="{StaticResource OptionCheckBox}"
-                              ToolTip="Color each run by its plate, so a plate effect inside a condition shows. Off: each condition in its Explorer color"
-                              Checked="PlotOption_Changed"
-                              Unchecked="PlotOption_Changed"/>
-                    <CheckBox x:Name="SplitByPlateCheckBox"
-                              Content="Split by plate"
-                              Style="{StaticResource OptionCheckBox}"
-                              ToolTip="One box per plate inside each condition, so a plate effect within a condition shows as a shift between neighbouring boxes"
-                              Checked="PlotOption_Changed"
-                              Unchecked="PlotOption_Changed"/>
-                    <Border x:Name="MetricSwitch"
-                            Background="#eef0f3"
-                            CornerRadius="7"
-                            Padding="2">
-                        <StackPanel Orientation="Horizontal">
-                            <RadioButton x:Name="ProteinsRadio"
-                                         Content="Protein groups"
-                                         IsChecked="True"
-                                         Style="{StaticResource SegmentStyle}"
-                                         Checked="MetricRadio_Checked"/>
-                            <RadioButton x:Name="PeptidesRadio"
-                                         Content="Peptides"
-                                         Style="{StaticResource SegmentStyle}"
-                                         Checked="MetricRadio_Checked"/>
-                        </StackPanel>
-                    </Border>
-                    <Button x:Name="SaveButton"
-                            Style="{StaticResource ToolbarButton}"
-                            Margin="8,0,0,0"
-                            Click="SaveButton_Click"
-                            ToolTip="Save this plot as PNG (300 or 600 DPI) or SVG, or copy it. Also on right-click.">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE74E;"
-                                       FontFamily="Segoe MDL2 Assets"
-                                       FontSize="12"
-                                       VerticalAlignment="Center"
-                                       Margin="0,1,6,0"/>
-                            <TextBlock Text="Save" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-                <TextBlock x:Name="TitleText"
-                           Text="Identifications per run"
-                           FontSize="13"
-                           FontWeight="SemiBold"
-                           Foreground="#1e293b"
-                           VerticalAlignment="Center"
-                           Margin="0,0,16,0"/>
-            </DockPanel>
+        <!-- The plot fills the pane; the right-click menu is built in code (BuildSaveMenu), the one the Save button opens. -->
+        <local:IdentificationBoxPlot x:Name="Plot" Grid.Row="1"/>
 
-            <!-- The right-click menu is built in code (BuildSaveMenu), the same one the Save button opens. -->
-            <local:IdentificationBoxPlot x:Name="Plot" Grid.Row="1"/>
-        </Grid>
-
-        <!-- The notes use the pane's full width, so they take one line under a narrow plot instead of three. -->
+        <!-- Wraps at the pane's width, so it is never cut off. -->
         <TextBlock x:Name="CaptionText"
-                   Grid.Row="1"
+                   Grid.Row="2"
                    FontSize="10.5"
                    Foreground="#94a3b8"
                    TextWrapping="Wrap"
                    TextAlignment="Center"
-                   Margin="0,6,0,0"/>
+                   Margin="8,4,8,0"/>
+
+        <Popup x:Name="CustomizePopup"
+               PlacementTarget="{Binding ElementName=CustomizeButton}"
+               Placement="Bottom"
+               StaysOpen="False"
+               AllowsTransparency="True"
+               PopupAnimation="Fade"
+               Closed="CustomizePopup_Closed">
+            <Border x:Name="CustomizeCard"
+                    Margin="10,4,10,12"
+                    Width="318"
+                    Background="White"
+                    BorderBrush="#dfe3e8"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="14,12,14,12">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="3" Direction="270" Opacity="0.16"/>
+                </Border.Effect>
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,10">
+                        <Button DockPanel.Dock="Right"
+                                Content="Reset"
+                                Style="{StaticResource LinkButton}"
+                                Click="ResetStyle_Click"
+                                ToolTip="Back to the default look"/>
+                        <TextBlock Text="Customize plot" FontSize="12.5" FontWeight="SemiBold" Foreground="#0f172a"/>
+                    </DockPanel>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="86"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Text="Background" Style="{StaticResource FieldLabel}"/>
+                        <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource SegmentTrack}" Margin="0,0,0,8">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton x:Name="WhiteBackgroundRadio" Content="White" Style="{StaticResource SmallSegment}" Checked="StyleControl_Changed"/>
+                                <RadioButton x:Name="WarmBackgroundRadio" Content="Warm" Style="{StaticResource SmallSegment}" Checked="StyleControl_Changed"/>
+                                <RadioButton x:Name="TransparentBackgroundRadio" Content="Transparent" Style="{StaticResource SmallSegment}" Checked="StyleControl_Changed"
+                                             ToolTip="Saved images have no background (for slides and posters); on screen the plot looks white"/>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Grid.Row="1" Text="Points" Style="{StaticResource FieldLabel}"/>
+                        <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource SegmentTrack}" Margin="0,0,0,8">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton x:Name="AllPointsRadio" Content="All" Style="{StaticResource SmallSegment}" Checked="StyleControl_Changed"/>
+                                <RadioButton x:Name="OutlierPointsRadio" Content="Outliers only" Style="{StaticResource SmallSegment}" Checked="StyleControl_Changed"
+                                             ToolTip="Only the runs beyond the whiskers, as in a classic box plot"/>
+                                <RadioButton x:Name="NoPointsRadio" Content="None" Style="{StaticResource SmallSegment}" Checked="StyleControl_Changed"/>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Grid.Row="2" Text="Point size" Style="{StaticResource FieldLabel}"/>
+                        <DockPanel Grid.Row="2" Grid.Column="1" Margin="0,0,0,8">
+                            <TextBlock x:Name="PointSizeValue" DockPanel.Dock="Right" Style="{StaticResource ValueLabel}"/>
+                            <Slider x:Name="PointSizeSlider" Minimum="0" Maximum="12" TickFrequency="1" IsSnapToTickEnabled="True"
+                                    VerticalAlignment="Center" ValueChanged="StyleSlider_Changed"
+                                    ToolTip="Dot diameter in pixels; leftmost is automatic (smaller dots for crowded boxes)"/>
+                        </DockPanel>
+
+                        <TextBlock Grid.Row="3" Text="Point opacity" Style="{StaticResource FieldLabel}"/>
+                        <DockPanel Grid.Row="3" Grid.Column="1" Margin="0,0,0,8">
+                            <TextBlock x:Name="PointOpacityValue" DockPanel.Dock="Right" Style="{StaticResource ValueLabel}"/>
+                            <Slider x:Name="PointOpacitySlider" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
+                                    VerticalAlignment="Center" ValueChanged="StyleSlider_Changed"
+                                    ToolTip="Leftmost is automatic (more transparent for crowded boxes)"/>
+                        </DockPanel>
+
+                        <TextBlock Grid.Row="4" Text="Box fill" Style="{StaticResource FieldLabel}"/>
+                        <DockPanel Grid.Row="4" Grid.Column="1" Margin="0,0,0,8">
+                            <TextBlock x:Name="BoxFillValue" DockPanel.Dock="Right" Style="{StaticResource ValueLabel}"/>
+                            <Slider x:Name="BoxFillSlider" Minimum="0" Maximum="60" TickFrequency="2" IsSnapToTickEnabled="True"
+                                    VerticalAlignment="Center" ValueChanged="StyleSlider_Changed"
+                                    ToolTip="Opacity of the box fill in its own color"/>
+                        </DockPanel>
+
+                        <TextBlock Grid.Row="5" Text="Y axis" Style="{StaticResource FieldLabel}"/>
+                        <Border Grid.Row="5" Grid.Column="1" Style="{StaticResource SegmentTrack}" Margin="0,0,0,8">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton x:Name="FitAxisRadio" Content="Fit data" Style="{StaticResource SmallSegment}" Checked="StyleControl_Changed"/>
+                                <RadioButton x:Name="ZeroAxisRadio" Content="From zero" Style="{StaticResource SmallSegment}" Checked="StyleControl_Changed"/>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Grid.Row="6" Text="Show" Style="{StaticResource FieldLabel}"/>
+                        <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                            <CheckBox x:Name="CountsCheckBox" Content="n= labels" FontSize="11.5" Foreground="#334155" Margin="0,0,14,0"
+                                      VerticalContentAlignment="Center" Checked="StyleControl_Changed" Unchecked="StyleControl_Changed"/>
+                            <CheckBox x:Name="GridlinesCheckBox" Content="Gridlines" FontSize="11.5" Foreground="#334155"
+                                      VerticalContentAlignment="Center" Checked="StyleControl_Changed" Unchecked="StyleControl_Changed"/>
+                        </StackPanel>
+
+                        <TextBlock Grid.Row="7" Text="Title" Style="{StaticResource FieldLabel}"/>
+                        <Grid Grid.Row="7" Grid.Column="1" Margin="0,0,0,8">
+                            <TextBox x:Name="TitleTextBox" FontSize="11.5" Padding="4,2" TextChanged="StyleText_Changed"
+                                     ToolTip="Header above the boxes; empty uses the automatic one. Kept per tab"/>
+                            <TextBlock x:Name="TitleWatermark" FontSize="11.5" Foreground="#a3aab5" Margin="7,3,0,0" IsHitTestVisible="False"/>
+                        </Grid>
+
+                        <TextBlock Grid.Row="8" Text="Y-axis label" Style="{StaticResource FieldLabel}"/>
+                        <Grid Grid.Row="8" Grid.Column="1" Margin="0,0,0,8">
+                            <TextBox x:Name="YLabelTextBox" FontSize="11.5" Padding="4,2" TextChanged="StyleText_Changed"
+                                     ToolTip="Empty uses the automatic label. Kept per metric (protein groups, peptides, genes)"/>
+                            <TextBlock x:Name="YLabelWatermark" FontSize="11.5" Foreground="#a3aab5" Margin="7,3,0,0" IsHitTestVisible="False"/>
+                        </Grid>
+                    </Grid>
+
+                    <TextBlock Text="Applies to both tabs and to saved images, and is remembered for every project."
+                               FontSize="10.5"
+                               Foreground="#94a3b8"
+                               TextWrapping="Wrap"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+        </Popup>
     </Grid>
 </UserControl>

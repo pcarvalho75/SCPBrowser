@@ -270,9 +270,9 @@ Location: SCPBrowser/Controls/PlateBrowserControl.xaml
                          plate's runs; the splitter trades height between the two. -->
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="3*" MinHeight="240"/>
+                            <RowDefinition Height="5*" MinHeight="240"/>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="2*" MinHeight="120"/>
+                            <RowDefinition Height="3*" MinHeight="120"/>
                         </Grid.RowDefinitions>
 
                         <local:IdentificationsPanel x:Name="IdentificationsPlot"

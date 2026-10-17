@@ -1,6 +1,7 @@
 // IdentificationBoxPlot.cs
 // Box plot of identifications per run (one dot per run), drawn directly with a DrawingContext so it stays crisp on
-// screen and exports at any DPI. The data model and styling only; IdentificationsPanel decides what is plotted.
+// screen and exports at any DPI. The data model and drawing only; IdentificationsPanel decides what is plotted and
+// BoxPlotStyle what it looks like.
 // Location: SCPBrowser/Controls/IdentificationBoxPlot.cs
 
 using System;
@@ -34,8 +35,11 @@ namespace SCPBrowser
         public string Label { get; init; } = string.Empty;
         public Color Color { get; init; }
 
-        /// <summary>Opacity of the IQR fill. Lower for a neutral box whose dots carry the colors, so it recedes.</summary>
-        public double FillOpacity { get; init; } = 0.18;
+        /// <summary>
+        /// Multiplies the style's box fill opacity. Below 1 for a neutral box whose dots carry the colors, so it recedes.
+        /// </summary>
+        public double FillScale { get; init; } = 1.0;
+
         public IReadOnlyList<BoxPlotRun> Runs { get; init; } = Array.Empty<BoxPlotRun>();
     }
 
@@ -58,9 +62,11 @@ namespace SCPBrowser
 
     public class IdentificationBoxPlot : FrameworkElement
     {
-        // Styling. The plot is a warm off-white card with faint horizontal gridlines only; every box has one color.
-        private static readonly Color CardColor = Color.FromRgb(0xF7, 0xF6, 0xF3);
-        private static readonly Color GridColor = Color.FromRgb(0xE6, 0xE3, 0xDC);
+        // Faint horizontal gridlines only, no frame; every box has one color.
+        private static readonly Color WhiteColor = Color.FromRgb(0xFF, 0xFF, 0xFF);
+        private static readonly Color WarmColor = Color.FromRgb(0xF7, 0xF6, 0xF3);
+        private static readonly Color GridOnWhite = Color.FromRgb(0xEC, 0xEC, 0xEC);
+        private static readonly Color GridOnWarm = Color.FromRgb(0xE6, 0xE3, 0xDC);
         private static readonly Color TickTextColor = Color.FromRgb(0x6E, 0x6E, 0x6E);
         private static readonly Color TitleTextColor = Color.FromRgb(0x33, 0x33, 0x33);
         private static readonly Color HeaderTextColor = Color.FromRgb(0x5C, 0x5C, 0x5C);
@@ -71,12 +77,13 @@ namespace SCPBrowser
         private static readonly Typeface UiFaceSemiBold = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
 
         private const double BoxOutlineThickness = 1.5;
-        private const double MedianThickness = 3.0;
+        private const double MedianThickness = 3.2;
         private const double WhiskerThickness = 1.2;
         private const double MutedOpacity = 0.28;
-        private const double IdealSlotWidth = 150;
-        private const double SplitBoxSlotWidth = 46;
-        private const double MinSlotWidth = 30;
+        private const double MaxBoxWidth = 76;
+        private const double MaxSplitBoxWidth = 44;
+        private const double FigureSlotWidth = 200;
+        private const double FigureSplitBoxWidth = 58;
 
         private IReadOnlyList<BoxPlotCategory> _categories = Array.Empty<BoxPlotCategory>();
         private List<BoxGeometry> _boxes = new();
@@ -117,6 +124,10 @@ namespace SCPBrowser
                 InvalidateVisual();
             }
         }
+
+        private BoxPlotStyle _style = new();
+        /// <summary>How the plot looks (background, points, fills, labels); the panel passes the user's saved style.</summary>
+        public BoxPlotStyle Style { get => _style; set { _style = value ?? new BoxPlotStyle(); InvalidateVisual(); } }
 
         private string _groupTitle = string.Empty;
         /// <summary>Small grey header centred above the boxes, naming what the categories are.</summary>
@@ -223,7 +234,7 @@ namespace SCPBrowser
         /// Deterministic jitter, so dots stay put on every redraw. Runs are ranked by value and spread with the golden
         /// ratio sequence, which sends runs of similar value to opposite sides instead of piling them up. For larger
         /// boxes the spread follows the density of values (a sina plot), so a dense band fans out and a sparse tail
-        /// stays near the centre line.
+        /// stays near the centre line: the cloud of dots takes the shape of the distribution.
         /// </summary>
         private static double[] ComputeJitter(IReadOnlyList<BoxPlotRun> runs)
         {
@@ -268,7 +279,7 @@ namespace SCPBrowser
                     }
                     double maxDensity = density.Max();
                     for (int i = 0; i < n; i++)
-                        jitter[i] *= 0.25 + 0.75 * density[i] / maxDensity;
+                        jitter[i] *= 0.15 + 0.85 * density[i] / maxDensity;
                 }
             }
             return jitter;
@@ -293,36 +304,50 @@ namespace SCPBrowser
             public bool RotateLabels;
             public double DotRadius;
             public double DotOpacity;
+            public bool DotEdges;
             public double JitterHalfWidth;
             public double TickTextWidth;
             public bool GroupThousands;
             public double PixelsPerDip;
+            public Color Background;
+            public bool ForExport;
         }
 
         private int BoxesPerCategory => _categories.Count == 0 ? 1 : Math.Max(1, _categories.Max(c => c.Boxes.Count));
 
-        private double IdealSlot => Math.Max(IdealSlotWidth, BoxesPerCategory * SplitBoxSlotWidth + 44);
-
         private const double PadLeft = 12, PadRight = 18, PadTop = 9, PadBottom = 8;
         private const double YTitleBand = 22;
 
+        /// <summary>Width a figure needs: room for the axis plus a comfortable slot per category.</summary>
+        private double FigureWidth
+        {
+            get
+            {
+                // Narrower slots past four categories, so many conditions do not make a banner.
+                double perCategory = _categories.Count <= 4 ? FigureSlotWidth : FigureSlotWidth * 0.82;
+                double slot = Math.Max(perCategory, BoxesPerCategory * FigureSplitBoxWidth + 60);
+                return PadLeft + YTitleBand + 50 + Math.Max(1, _categories.Count) * slot + PadRight;
+            }
+        }
+
         protected override Size MeasureOverride(Size availableSize)
         {
-            double ideal = PadLeft + YTitleBand + 44 + Math.Max(1, _categories.Count) * IdealSlot + PadRight;
-            double width = double.IsInfinity(availableSize.Width) ? ideal : Math.Min(availableSize.Width, ideal);
+            // The plot takes all the room it is given; slots widen, boxes stop at MaxBoxWidth and the dots spread out.
+            double width = double.IsInfinity(availableSize.Width) ? FigureWidth : availableSize.Width;
             double height = double.IsInfinity(availableSize.Height) ? 340 : availableSize.Height;
             return new Size(Math.Max(0, width), Math.Max(0, height));
         }
 
-        private Layout ComputeLayout(Size size, double pixelsPerDip)
+        private Layout ComputeLayout(Size size, double pixelsPerDip, bool forExport)
         {
-            var layout = new Layout { Width = size.Width, Height = size.Height, PixelsPerDip = pixelsPerDip };
+            var layout = new Layout { Width = size.Width, Height = size.Height, PixelsPerDip = pixelsPerDip, ForExport = forExport };
+            layout.Background = _style.Background == PlotBackground.Warm ? WarmColor : WhiteColor;
             int categoryCount = Math.Max(1, _categories.Count);
             int perCategory = BoxesPerCategory;
 
             double headerHeight = (_groupTitle.Length > 0 || _legend.Count > 0) ? 18 : 0;
-            const double countHeight = 16;
-            double plotTop = PadTop + headerHeight + countHeight + 4;
+            double countHeight = _style.ShowCounts ? 16 : 0;
+            double plotTop = PadTop + headerHeight + countHeight + 6;
 
             // Tick labels decide how much room the axis needs, and the ticks depend on the plot height; one estimate
             // of the label band is close enough because the label width barely changes the height.
@@ -344,23 +369,35 @@ namespace SCPBrowser
             layout.CountTop = PadTop + headerHeight;
             layout.LabelTop = layout.Plot.Bottom + 8;
 
+            bool dense = _maxRunsPerBox >= 15;
             if (perCategory == 1)
             {
-                layout.BoxWidth = Math.Min(layout.SlotWidth * 0.46, 58);
+                layout.BoxWidth = Math.Min(layout.SlotWidth * 0.42, MaxBoxWidth);
                 layout.ClusterStep = 0;
+                // A dense box fans its dots out well past the box (up to a quarter of the slot each side), so the
+                // cloud shows the distribution's shape instead of piling up on the box.
+                layout.JitterHalfWidth = dense
+                    ? Math.Min(Math.Max(layout.BoxWidth * 0.6, layout.SlotWidth * 0.25), 140)
+                    : layout.BoxWidth * 0.38;
             }
             else
             {
-                double cluster = layout.SlotWidth * 0.86;
+                double cluster = layout.SlotWidth * 0.88;
                 layout.ClusterStep = cluster / perCategory;
-                layout.BoxWidth = Math.Min(layout.ClusterStep * 0.74, 40);
+                layout.BoxWidth = Math.Min(layout.ClusterStep * 0.7, MaxSplitBoxWidth);
+                layout.JitterHalfWidth = dense
+                    ? Math.Min(Math.Max(layout.BoxWidth * 0.6, layout.ClusterStep * 0.4), 90)
+                    : layout.BoxWidth * 0.38;
             }
 
-            // Dots shrink and fade a little as boxes fill up, so a plate of 250 runs still reads as a distribution.
-            layout.DotRadius = _maxRunsPerBox <= 30 ? 3.75 : _maxRunsPerBox <= 80 ? 3.25 : _maxRunsPerBox <= 200 ? 2.75 : 2.4;
-            layout.DotRadius = Math.Max(1.6, Math.Min(layout.DotRadius, layout.BoxWidth / 6.5));
-            layout.DotOpacity = _maxRunsPerBox <= 40 ? 1.0 : _maxRunsPerBox <= 120 ? 0.8 : 0.7;
-            layout.JitterHalfWidth = layout.BoxWidth * (_maxRunsPerBox >= 15 ? 0.46 : 0.36);
+            // Automatic dots shrink and fade as boxes fill up, so a plate of 280 runs still reads as a distribution
+            // with its box visible; the style can fix either.
+            double autoRadius = _maxRunsPerBox <= 15 ? 3.9 : _maxRunsPerBox <= 40 ? 3.4 : _maxRunsPerBox <= 120 ? 2.9 : _maxRunsPerBox <= 300 ? 2.5 : 2.1;
+            layout.DotRadius = _style.PointSize > 0 ? _style.PointSize / 2 : autoRadius;
+            layout.DotOpacity = _style.PointOpacity > 0 ? _style.PointOpacity
+                : _maxRunsPerBox <= 40 ? 1.0 : _maxRunsPerBox <= 120 ? 0.75 : 0.6;
+            // A thin edge in the background color keeps overlapping dots apart.
+            layout.DotEdges = _maxRunsPerBox > 40 && layout.DotRadius >= 1.8;
             return layout;
         }
 
@@ -370,12 +407,15 @@ namespace SCPBrowser
             double tallest = 0;
             foreach (var category in _categories)
             {
-                var text = MakeText(category.Label.Replace("_", "_\u200B"), 11.5, LabelTextColor, pixelsPerDip,
+                var text = MakeText(WrappableLabel(category.Label), 11.5, LabelTextColor, pixelsPerDip,
                     maxWidth: Math.Max(20, slotWidth - 8), maxLines: 2, semiBold: true);
                 tallest = Math.Max(tallest, text.Height);
             }
             return tallest + 10;
         }
+
+        /// <summary>A zero-width space after separators lets names like Plate_08_HeLa wrap onto two lines.</summary>
+        private static string WrappableLabel(string label) => label.Replace("_", "_​");
 
         private double RotatedLabelBand()
         {
@@ -388,16 +428,18 @@ namespace SCPBrowser
         {
             double min = double.IsInfinity(_dataMin) ? 0 : _dataMin;
             double max = double.IsInfinity(_dataMax) ? 1 : _dataMax;
+            if (_style.YFromZero)
+                min = Math.Min(0, min);
             if (max <= min)
             {
                 max = min + Math.Max(1, Math.Abs(min) * 0.1);
                 min = Math.Max(0, min - (max - min));
             }
 
-            // ggplot2-style 5% expansion on both sides so no dot sits on the edge; counts never go below zero, so the
-            // lower edge only dips under zero far enough to show dots at zero whole.
+            // ggplot2-style 5% expansion so no dot sits on the edge. Counts never go below zero, so the lower edge only
+            // dips under zero far enough to show dots at zero whole.
             double range = max - min;
-            layout.YMin = min - range * 0.05;
+            layout.YMin = min - range * (_style.YFromZero ? 0.03 : 0.05);
             layout.YMax = max + range * 0.05;
 
             // Gridlines about 50 px apart (the reference figure is sparse: 500, 1000): the nice step nearest (on a log
@@ -452,22 +494,23 @@ namespace SCPBrowser
         }
 
         /// <summary>
-        /// Size of a saved figure: the plot's on-screen width, and at least 420 (up to 560) units tall so a plot squeezed
-        /// by the splitter still saves as a proper figure. The layout is recomputed for that size, not stretched.
+        /// Size of a saved figure, from the content alone: room for the axis plus about 200 units per category (165 past
+        /// four categories, wider when split by plate), at most 1400, and 420 to 600 tall. The screen plot fills its pane, but a figure of
+        /// two plates should not come out as a 1000-unit banner, and the same data saves at the same size whatever the
+        /// window.
         /// </summary>
         public Size ExportSize
         {
             get
             {
-                double width = ActualWidth > 0 ? ActualWidth : 520;
-                double height = Math.Max(ActualHeight, Math.Min(560, Math.Max(420, width * 1.1)));
-                return new Size(width, height);
+                double width = Math.Clamp(FigureWidth, 360, 1400);
+                return new Size(width, Math.Clamp(width * 0.95, 420, 600));
             }
         }
 
         /// <summary>
-        /// Renders the plot at ExportSize into a bitmap of the given DPI. The export is the figure itself: no hover
-        /// label and no muting of the categories that are not selected.
+        /// Renders the figure at ExportSize into a bitmap of the given DPI, in the current style (a transparent
+        /// background stays transparent). No hover label and no muting of the categories that are not selected.
         /// </summary>
         public BitmapSource RenderToBitmap(double dpi)
         {
@@ -504,12 +547,7 @@ namespace SCPBrowser
                 _boxColumns.Clear();
             }
 
-            var card = new Rect(0, 0, size.Width, size.Height);
-            var cardBrush = Frozen(new SolidColorBrush(CardColor));
-            if (forExport)
-                dc.DrawRectangle(cardBrush, null, card);
-            else
-                dc.DrawRoundedRectangle(cardBrush, null, card, 6, 6);
+            DrawBackground(dc, size, forExport);
 
             if (_categories.Count == 0)
             {
@@ -519,7 +557,7 @@ namespace SCPBrowser
                 return;
             }
 
-            var layout = ComputeLayout(size, pixelsPerDip);
+            var layout = ComputeLayout(size, pixelsPerDip, forExport);
             bool muting = !forExport && _highlightedKey != null && _categories.Any(c => c.Key == _highlightedKey);
 
             if (!forExport)
@@ -543,7 +581,8 @@ namespace SCPBrowser
                 bool muted = muting && box.Category.Key != _highlightedKey;
                 if (muted) dc.PushOpacity(MutedOpacity);
                 DrawBox(dc, layout, box, recordHits: !forExport);
-                DrawCount(dc, layout, box);
+                if (_style.ShowCounts)
+                    DrawCount(dc, layout, box);
                 if (muted) dc.Pop();
             }
 
@@ -565,13 +604,34 @@ namespace SCPBrowser
                 DrawHover(dc, layout);
         }
 
+        private void DrawBackground(DrawingContext dc, Size size, bool forExport)
+        {
+            var rect = new Rect(0, 0, size.Width, size.Height);
+            switch (_style.Background)
+            {
+                case PlotBackground.Warm:
+                    var warm = Frozen(new SolidColorBrush(WarmColor));
+                    if (forExport) dc.DrawRectangle(warm, null, rect);
+                    else dc.DrawRoundedRectangle(warm, null, rect, 6, 6);
+                    break;
+                case PlotBackground.Transparent when forExport:
+                    break; // nothing: the saved image keeps an alpha channel
+                default:
+                    // White, and Transparent on screen: the pane behind the plot is white. Drawing it also keeps the
+                    // whole area hit-testable for hover and clicks.
+                    dc.DrawRectangle(Brushes.White, null, rect);
+                    break;
+            }
+        }
+
         private void DrawGridAndTicks(DrawingContext dc, Layout layout)
         {
-            var gridPen = Frozen(new Pen(Frozen(new SolidColorBrush(GridColor)), 1));
+            var gridPen = Frozen(new Pen(Frozen(new SolidColorBrush(_style.Background == PlotBackground.Warm ? GridOnWarm : GridOnWhite)), 1));
             foreach (var tick in layout.Ticks)
             {
                 double y = Math.Round(YToScreen(layout, tick)) + 0.5;
-                dc.DrawLine(gridPen, new Point(layout.Plot.Left, y), new Point(layout.Plot.Right, y));
+                if (_style.ShowGridlines)
+                    dc.DrawLine(gridPen, new Point(layout.Plot.Left, y), new Point(layout.Plot.Right, y));
 
                 var text = MakeText(FormatTick(layout, tick), 11, TickTextColor, layout.PixelsPerDip);
                 dc.DrawText(text, new Point(layout.Plot.Left - 8 - text.Width, y - text.Height / 2));
@@ -630,24 +690,45 @@ namespace SCPBrowser
             }
         }
 
+        /// <summary>The runs drawn as dots for a box, by the style's point mode.</summary>
+        private IEnumerable<int> VisibleRuns(BoxGeometry box)
+        {
+            var runs = box.Box.Runs;
+            for (int i = 0; i < runs.Count; i++)
+            {
+                switch (_style.Points)
+                {
+                    case PlotPoints.None:
+                        yield break;
+                    case PlotPoints.OutliersOnly:
+                        // Classic box plot: only the runs beyond the whiskers (excluded runs are not outliers).
+                        if (box.Stats is { } s && !runs[i].IsExcluded && (runs[i].Value < s.LowWhisker || runs[i].Value > s.HighWhisker))
+                            yield return i;
+                        break;
+                    default:
+                        yield return i;
+                        break;
+                }
+            }
+        }
+
         private void DrawBox(DrawingContext dc, Layout layout, BoxGeometry box, bool recordHits)
         {
             double cx = BoxCenterX(layout, box);
             double half = layout.BoxWidth / 2;
             var color = box.Box.Color;
+            var visible = VisibleRuns(box).ToList();
 
-            // A few runs sit on top of the box, as in the reference figure. A box of many runs would disappear under
-            // its dots, so there the outline, whiskers and median go on top, the thin lines over a halo of the card
-            // color (the outline needs none, and with one it reads as a doubled edge).
-            bool structureOnTop = box.Box.Runs.Count > 40;
-
+            // 1. The translucent IQR fill, under the dots.
             if (box.Stats is { } stats)
             {
                 double yQ1 = YToScreen(layout, stats.Q1), yQ3 = YToScreen(layout, stats.Q3);
-                var fill = Frozen(new SolidColorBrush(Color.FromArgb((byte)(Math.Clamp(box.Box.FillOpacity, 0, 1) * 255), color.R, color.G, color.B)));
-                dc.DrawRectangle(fill, null, new Rect(cx - half, yQ3, layout.BoxWidth, Math.Max(0.5, yQ1 - yQ3)));
-                if (!structureOnTop)
-                    DrawBoxStructure(dc, layout, cx, half, color, stats, halo: false);
+                double fillOpacity = Math.Clamp(_style.BoxFillOpacity * box.Box.FillScale, 0, 1);
+                if (fillOpacity > 0)
+                {
+                    var fill = Frozen(new SolidColorBrush(Color.FromArgb((byte)(fillOpacity * 255), color.R, color.G, color.B)));
+                    dc.DrawRectangle(fill, null, new Rect(cx - half, yQ3, layout.BoxWidth, Math.Max(0.5, yQ1 - yQ3)));
+                }
 
                 if (recordHits)
                 {
@@ -656,46 +737,55 @@ namespace SCPBrowser
                 }
             }
 
-            // Included runs are solid dots; excluded runs are grey rings, drawn last so a dense box does not hide them.
-            var ringPen = Frozen(new Pen(Frozen(new SolidColorBrush(ExcludedColor)), 1.3));
-            bool fade = layout.DotOpacity < 1.0;
-            if (fade) dc.PushOpacity(layout.DotOpacity);
-            foreach (bool excludedPass in new[] { false, true })
+            // 2. The dots: included runs solid, excluded runs as grey rings drawn last so a dense box does not hide them.
+            if (visible.Count > 0)
             {
-                for (int i = 0; i < box.Box.Runs.Count; i++)
+                var ringPen = Frozen(new Pen(Frozen(new SolidColorBrush(ExcludedColor)), 1.3));
+                var edgePen = layout.DotEdges ? Frozen(new Pen(Frozen(new SolidColorBrush(layout.Background)), 0.6)) : null;
+                bool fade = layout.DotOpacity < 1.0;
+                if (fade) dc.PushOpacity(layout.DotOpacity);
+                foreach (bool excludedPass in new[] { false, true })
                 {
-                    var run = box.Box.Runs[i];
-                    if (run.IsExcluded != excludedPass)
-                        continue;
-                    var center = new Point(cx + box.Jitter[i] * layout.JitterHalfWidth, YToScreen(layout, run.Value));
-                    if (run.IsExcluded)
-                        dc.DrawEllipse(null, ringPen, center, layout.DotRadius - 0.4, layout.DotRadius - 0.4);
-                    else
-                        dc.DrawEllipse(Brush(run.Color), null, center, layout.DotRadius, layout.DotRadius);
-                    if (recordHits)
-                        _dotHits.Add((center, layout.DotRadius, box, run));
+                    foreach (int i in visible)
+                    {
+                        var run = box.Box.Runs[i];
+                        if (run.IsExcluded != excludedPass)
+                            continue;
+                        var center = new Point(cx + box.Jitter[i] * layout.JitterHalfWidth, YToScreen(layout, run.Value));
+                        if (run.IsExcluded)
+                            dc.DrawEllipse(null, ringPen, center, Math.Max(1.5, layout.DotRadius - 0.4), Math.Max(1.5, layout.DotRadius - 0.4));
+                        else
+                            dc.DrawEllipse(Brush(run.Color), edgePen, center, layout.DotRadius, layout.DotRadius);
+                        if (recordHits)
+                            _dotHits.Add((center, layout.DotRadius, box, run));
+                    }
                 }
+                if (fade) dc.Pop();
             }
-            if (fade) dc.Pop();
 
-            if (structureOnTop && box.Stats is { } topStats)
-                DrawBoxStructure(dc, layout, cx, half, color, topStats, halo: true);
+            // 3. Whiskers, outline and median on top, so the summary always shows. Over a box crowded with dots the
+            //    thin lines get a halo of the background color; a transparent figure has no color to give them.
+            if (box.Stats is { } topStats)
+            {
+                bool halo = visible.Count > 15 && !(layout.ForExport && _style.Background == PlotBackground.Transparent);
+                DrawBoxStructure(dc, layout, cx, half, color, topStats, halo ? layout.Background : (Color?)null);
+            }
         }
 
         /// <summary>Whiskers, IQR outline and median of one box.</summary>
-        private static void DrawBoxStructure(DrawingContext dc, Layout layout, double cx, double half, Color color, BoxStats stats, bool halo)
+        private static void DrawBoxStructure(DrawingContext dc, Layout layout, double cx, double half, Color color, BoxStats stats, Color? halo)
         {
             double yQ1 = YToScreen(layout, stats.Q1), yQ3 = YToScreen(layout, stats.Q3);
             double yMedian = YToScreen(layout, stats.Median);
             double yHigh = YToScreen(layout, stats.HighWhisker), yLow = YToScreen(layout, stats.LowWhisker);
             var boxRect = new Rect(cx - half, yQ3, half * 2, Math.Max(0.5, yQ1 - yQ3));
 
-            if (halo)
+            if (halo is { } haloColor)
             {
-                var haloBrush = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, CardColor.R, CardColor.G, CardColor.B)));
+                var haloBrush = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, haloColor.R, haloColor.G, haloColor.B)));
                 dc.DrawLine(FlatPen(haloBrush, WhiskerThickness + 2), new Point(cx, yQ3), new Point(cx, yHigh));
                 dc.DrawLine(FlatPen(haloBrush, WhiskerThickness + 2), new Point(cx, yQ1), new Point(cx, yLow));
-                dc.DrawLine(FlatPen(haloBrush, MedianThickness + 2), new Point(cx - half - 1, yMedian), new Point(cx + half + 1, yMedian));
+                dc.DrawLine(FlatPen(haloBrush, MedianThickness + 2.4), new Point(cx - half - 1, yMedian), new Point(cx + half + 1, yMedian));
             }
 
             var stroke = Frozen(new SolidColorBrush(color));
@@ -721,14 +811,12 @@ namespace SCPBrowser
         private void DrawCategoryLabel(DrawingContext dc, Layout layout, int index, BoxPlotCategory category, bool highlighted)
         {
             double cx = layout.Plot.Left + (index + 0.5) * layout.SlotWidth;
-            // A zero-width space after separators lets names like Plate_08_HeLa wrap onto two lines.
-            string label = category.Label.Replace("_", "_​");
             var color = highlighted ? Color.FromRgb(0x11, 0x11, 0x11) : LabelTextColor;
 
             if (!layout.RotateLabels)
             {
                 double maxWidth = Math.Max(20, layout.SlotWidth - 8);
-                var text = MakeText(label, 11.5, color, layout.PixelsPerDip, maxWidth: maxWidth, maxLines: 2, semiBold: highlighted);
+                var text = MakeText(WrappableLabel(category.Label), 11.5, color, layout.PixelsPerDip, maxWidth: maxWidth, maxLines: 2, semiBold: highlighted);
                 text.TextAlignment = TextAlignment.Center;
                 // With a MaxTextWidth the lines are centred inside that width, which starts at the origin.
                 dc.DrawText(text, new Point(cx - maxWidth / 2, layout.LabelTop));

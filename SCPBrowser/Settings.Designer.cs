@@ -93,5 +93,17 @@ namespace SCPBrowser {
                 this["ClassificationConfidenceThreshold"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string IdentificationPlotStyle {
+            get {
+                return ((string)(this["IdentificationPlotStyle"]));
+            }
+            set {
+                this["IdentificationPlotStyle"] = value;
+            }
+        }
     }
 }

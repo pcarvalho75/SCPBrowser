@@ -396,8 +396,10 @@ namespace SCPBrowser
             layout.DotRadius = _style.PointSize > 0 ? _style.PointSize / 2 : autoRadius;
             layout.DotOpacity = _style.PointOpacity > 0 ? _style.PointOpacity
                 : _maxRunsPerBox <= 40 ? 1.0 : _maxRunsPerBox <= 120 ? 0.75 : 0.6;
-            // A thin edge in the background color keeps overlapping dots apart.
-            layout.DotEdges = _maxRunsPerBox > 40 && layout.DotRadius >= 1.8;
+            // A thin edge in the background color keeps overlapping dots apart. A transparent figure has no background
+            // color, and white edges would show as rings on a dark slide.
+            layout.DotEdges = _maxRunsPerBox > 40 && layout.DotRadius >= 1.8
+                && !(forExport && _style.Background == PlotBackground.Transparent);
             return layout;
         }
 

@@ -71,11 +71,15 @@ namespace SCPBrowser.GOTools
             if (!IsLoaded)
                 return results;
 
-            foreach (var runName in proteomicsData.RawFileNames)
-            {
-                var enrichmentResult = EnrichRun(proteomicsData, runName, pValueThreshold, minOverlap);
-                results[runName] = enrichmentResult;
-            }
+            // Runs are independent, so they are enriched in parallel; the results are then stored in the original run
+            // order, which the GO colour map's term order (and so every colour) follows.
+            var runs = proteomicsData.RawFileNames;
+            var perRun = new RunGoEnrichmentResult[runs.Count];
+            System.Threading.Tasks.Parallel.For(0, runs.Count, i =>
+                perRun[i] = EnrichRun(proteomicsData, runs[i], pValueThreshold, minOverlap));
+
+            for (int i = 0; i < runs.Count; i++)
+                results[runs[i]] = perRun[i];
 
             return results;
         }

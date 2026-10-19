@@ -204,6 +204,34 @@ namespace SCPBrowser
         /// </summary>
         public void Hide()
         {
+            // While a project load holds the screen, a step inside it that shows and hides the screen for its own
+            // work (the saved protein-cutoff filter, a PCA/UMAP pass) must not uncover a window that is still loading.
+            if (_holds > 0)
+                return;
+            HideNow();
+        }
+
+        private int _holds;
+
+        /// <summary>
+        /// Keeps the screen up until the matching EndHold, whatever else calls Hide in between. For the length of a
+        /// project load, which runs many steps that each show and hide the screen themselves.
+        /// </summary>
+        public void BeginHold()
+        {
+            _holds++;
+            Show();
+        }
+
+        /// <summary>Releases a BeginHold; the last release hides the screen.</summary>
+        public void EndHold()
+        {
+            if (_holds > 0 && --_holds == 0)
+                HideNow();
+        }
+
+        private void HideNow()
+        {
             this.Visibility = Visibility.Collapsed;
 
             StopHints();

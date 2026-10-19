@@ -671,11 +671,14 @@ namespace SCPBrowser
             if (!_hasOpenProject) return;
             try
             {
-
-
-                LoadingOverlay.SetMessage("Applying Filter");
-                LoadingOverlay.SetProgress("Filtering by protein count...");
-                LoadingOverlay.Show();
+                // Restoring the saved cutoff at project open fires this from the debounce timer in the middle of the
+                // load, whose wait screen is already up (and held): leave its title and progress alone.
+                if (!IsLoadingProjectData)
+                {
+                    LoadingOverlay.SetMessage("Applying Filter");
+                    LoadingOverlay.SetProgress("Filtering by protein count...");
+                    LoadingOverlay.Show();
+                }
 
                 // Allow UI to render the overlay
                 await Task.Delay(50);
@@ -2211,6 +2214,10 @@ namespace SCPBrowser
         {
             _postLoadWork = Task.CompletedTask;
             IsLoadingProjectData = true;
+            // Held for the whole load: steps inside it (the saved protein-cutoff filter fires from its debounce
+            // timer mid-load) show and hide the screen for their own work, and a hide uncovered the window for most
+            // of the load (SpaceProjectV3: from 3.7 s to 16.9 s of an 18.6 s open).
+            LoadingOverlay.BeginHold();
             try
             {
                 await MainControlTab.LoadDataFromProject(paths, _projectReferenceDatabasePath);
@@ -2218,6 +2225,7 @@ namespace SCPBrowser
             }
             finally
             {
+                LoadingOverlay.EndHold();
                 IsLoadingProjectData = false;
             }
         }

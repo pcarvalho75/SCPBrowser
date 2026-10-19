@@ -1122,10 +1122,19 @@ namespace SCPBrowser
             // The fit runs off the UI thread (no GUI lock) — show a brief wait overlay while it computes + recolors.
             // Everything is inside the try so the finally always clears _kmeansRunning + hides the overlay.
             var mainWindow = Window.GetWindow(this) as MainWindow;
+            // Inside a project load the load owns the wait screen: report on it, never hide it.
+            bool loadOwnsOverlay = mainWindow?.IsLoadingProjectData == true;
             try
             {
-                mainWindow?.LoadingOverlay.SetMessage("Clustering cells");
-                mainWindow?.LoadingOverlay.Show();
+                if (loadOwnsOverlay)
+                {
+                    mainWindow?.LoadingOverlay.SetProgress("Clustering cells...");
+                }
+                else
+                {
+                    mainWindow?.LoadingOverlay.SetMessage("Clustering cells");
+                    mainWindow?.LoadingOverlay.Show();
+                }
                 do
                 {
                     _kmeansRerunRequested = false;
@@ -1139,7 +1148,8 @@ namespace SCPBrowser
             finally
             {
                 _kmeansRunning = false;
-                mainWindow?.LoadingOverlay.Hide();
+                if (!loadOwnsOverlay)
+                    mainWindow?.LoadingOverlay.Hide();
             }
         }
 
@@ -1652,9 +1662,36 @@ namespace SCPBrowser
             _colorPickerPopup.IsOpen = true;
         }
         /// <summary>
-        /// Fire-and-forget refresh, as used by the many UI handlers that do not need to await it.
+        /// Fire-and-forget refresh, as used by the many UI handlers that do not need to await it. The task is kept so a
+        /// project load can wait for the Explorer to be drawn (WhenChartIdleAsync).
         /// </summary>
-        private void RefreshChart() => _ = RefreshChartAsync();
+        private void RefreshChart()
+        {
+            _pendingRefreshes.RemoveAll(t => t.IsCompleted);
+            _pendingRefreshes.Add(RefreshChartAsync());
+        }
+
+        private readonly List<Task> _pendingRefreshes = new();
+
+        /// <summary>Completes when no fire-and-forget redraw is running, including any started while waiting.</summary>
+        public async Task WhenChartIdleAsync()
+        {
+            while (true)
+            {
+                _pendingRefreshes.RemoveAll(t => t.IsCompleted);
+                if (_pendingRefreshes.Count == 0)
+                    return;
+                try
+                {
+                    await Task.WhenAll(_pendingRefreshes.ToArray());
+                }
+                catch (Exception ex)
+                {
+                    // A failed redraw shows its own state in the Explorer; it must not fail the load that waited for it.
+                    System.Diagnostics.Debug.WriteLine($"[WhenChartIdleAsync] {ex}");
+                }
+            }
+        }
 
         /// <summary>
         /// Awaitable refresh, for callers that must know when the (possibly seconds-long) recompute has finished -
@@ -1814,22 +1851,33 @@ namespace SCPBrowser
             if (needsHeavyCompute)
             {
                 mainWindow = Window.GetWindow(this) as MainWindow;
+                // Inside a project load the load owns the wait screen: report on it, never hide it.
+                bool loadOwnsOverlay = mainWindow?.IsLoadingProjectData == true;
                 if (mainWindow != null)
                 {
                     string computeType = options.UseUmapView ? "UMAP" : "PCA";
-                    if (willInvalidate && !ScatterPlot.NeedsPcaCompute)
-                        mainWindow.LoadingOverlay.SetMessage($"Recomputing {computeType}");
+                    if (loadOwnsOverlay)
+                    {
+                        mainWindow.LoadingOverlay.SetProgress($"Computing {computeType}...");
+                        await Task.Delay(50); // as below, so the order of work during a load is unchanged
+                    }
                     else
-                        mainWindow.LoadingOverlay.SetMessage($"Computing {computeType}");
-                    mainWindow.LoadingOverlay.SetProgress("This may take a moment...");
-                    mainWindow.LoadingOverlay.Show();
-                    await Task.Delay(50); // Let UI render the overlay
+                    {
+                        if (willInvalidate && !ScatterPlot.NeedsPcaCompute)
+                            mainWindow.LoadingOverlay.SetMessage($"Recomputing {computeType}");
+                        else
+                            mainWindow.LoadingOverlay.SetMessage($"Computing {computeType}");
+                        mainWindow.LoadingOverlay.SetProgress("This may take a moment...");
+                        mainWindow.LoadingOverlay.Show();
+                        await Task.Delay(50); // Let UI render the overlay
+                    }
                 }
 
                 // Precompute on background thread — caches will be filled when UpdatePlot runs
                 await ScatterPlot.PrecomputeIfNeededAsync(_currentData, options);
 
-                mainWindow?.LoadingOverlay.Hide();
+                if (!loadOwnsOverlay)
+                    mainWindow?.LoadingOverlay.Hide();
             }
 
             ScatterPlot.UpdatePlot(_currentData, options);

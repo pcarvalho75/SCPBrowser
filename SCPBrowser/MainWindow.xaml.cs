@@ -357,7 +357,7 @@ namespace SCPBrowser
 
                 // Load data into MainControlTab
                 // This will trigger the DataLoaded event which populates other tabs
-                await MainControlTab.LoadDataFromProject(parquetPaths, _projectReferenceDatabasePath);
+                await LoadProjectDataAsync(parquetPaths);
 
                 LoadingOverlay.Hide();
 
@@ -1440,7 +1440,7 @@ namespace SCPBrowser
                         if (resolved.Paths.Count > 0)
                         {
                             LoadingOverlay.SetProgress($"Loading {resolved.Paths.Count} parquet file(s)...");
-                            await MainControlTab.LoadDataFromProject(resolved.Paths, _projectReferenceDatabasePath);
+                            await LoadProjectDataAsync(resolved.Paths);
                         }
                     }
 
@@ -1636,7 +1636,7 @@ namespace SCPBrowser
                         if (resolved.Paths.Count > 0)
                         {
                             LoadingOverlay.SetProgress($"Loading {resolved.Paths.Count} import(s)...");
-                            await MainControlTab.LoadDataFromProject(resolved.Paths, _projectReferenceDatabasePath);
+                            await LoadProjectDataAsync(resolved.Paths);
                         }
                     }
 
@@ -2197,8 +2197,51 @@ namespace SCPBrowser
             }
         }
 
+        // The work DataLoaded starts. LoadDataFromProject raises the event without awaiting its handler, so a caller that
+        // hid the wait screen when LoadDataFromProject returned left the slowest part of a load (filters, Explorer,
+        // annotations, cell-type classification, restored view) running behind a window that looked ready, with
+        // options such as Color by Cell Type still locked. Callers await this through LoadProjectDataAsync.
+        private Task _postLoadWork = Task.CompletedTask;
+
+        /// <summary>
+        /// Loads the given data files and waits for everything the load triggers, under the wait screen. The caller hides
+        /// the overlay afterwards.
+        /// </summary>
+        private async Task LoadProjectDataAsync(List<string> paths)
+        {
+            _postLoadWork = Task.CompletedTask;
+            IsLoadingProjectData = true;
+            try
+            {
+                await MainControlTab.LoadDataFromProject(paths, _projectReferenceDatabasePath);
+                await _postLoadWork;
+            }
+            finally
+            {
+                IsLoadingProjectData = false;
+            }
+        }
+
+        /// <summary>
+        /// True while a project load owns the wait screen. Steps that run inside a load and normally show and hide the
+        /// screen themselves (the Explorer's PCA/UMAP, k-means) then only report progress on it: hiding it would
+        /// uncover a window that is still loading.
+        /// </summary>
+        public bool IsLoadingProjectData { get; private set; }
+
         private async void MainControlTab_DataLoaded(object sender, EventArgs e)
         {
+            var work = PrepareViewsAfterLoadAsync();
+            _postLoadWork = work;
+            await work;
+        }
+
+        private async Task PrepareViewsAfterLoadAsync()
+        {
+            // MainControl hides the wait screen once the files are read; these steps are the larger part of a load.
+            LoadingOverlay.SetProgress("Applying filters...");
+            LoadingOverlay.Show();
+
             try
             {
                 // Store original data in filter service
@@ -2212,6 +2255,7 @@ namespace SCPBrowser
                 await _dataFilterService.ApplyFiltersAsync(_parquetService);
 
                 // When MainControlTab finishes loading, populate other tabs with the same data
+                LoadingOverlay.SetProgress("Building the Explorer...");
                 MainControlTab.SetDatabaseService(_projectDatabaseService);
                 PeptideTicTab.SetDatabaseService(_projectDatabaseService);
                 PeptideTicTab.UpdateChart(_dataFilterService.FilteredData);
@@ -2229,15 +2273,19 @@ namespace SCPBrowser
 
 
                 // Load protein annotations BEFORE updating matrix so descriptions are available
+                LoadingOverlay.SetProgress("Loading protein annotations...");
                 await ProteinMatrixTab.LoadProteinAnnotationsAsync(_currentProjectPath);
 
                 ProteinMatrixTab.UpdateMatrix(_dataFilterService.FilteredData, _dataFilterService.HvpResults);
 
                 // Initialize protein coverage panel
+                LoadingOverlay.SetProgress("Preparing protein coverage...");
                 await InitializeProteinCoverageAsync();
 
             // Recalculate contaminant ratios on OriginalData (handles pre-loaded contaminants from DB)
-            ProteinMatrixTab_ContaminantsUpdated(this, EventArgs.Empty);
+            // Started here and left running alongside the steps below, as before (classification reads whichever
+            // filtered copy is current, so this ordering is kept); the load only waits for it at the end.
+            var contaminantPass = RecomputeContaminantRatiosAsync();
 
             // Subscribe to contaminant changes (unsubscribe first to avoid duplicates)
                 ProteinMatrixTab.ContaminantsUpdated -= ProteinMatrixTab_ContaminantsUpdated;
@@ -2263,21 +2311,30 @@ namespace SCPBrowser
                 // Auto-run cell type classification if reference database is loaded
                 if (cellTypeAvailable)
                 {
+                    LoadingOverlay.SetProgress("Classifying cell types...");
                     await AutoRunCellTypeClassificationAsync();
                 }
 
                 // Restore checkbox states from database
+                LoadingOverlay.SetProgress("Restoring the saved view...");
                 await RestoreCheckedStatesAsync();
 
                 // BioTessera renders only when this flag is set, and until now only an Explorer selection change
                 // set it - so going straight to the BioTessera tab after a load gave a permanently blank panel.
                 _bioTesseraNeedsUpdate = true;
 
+                // The steps above redraw the Explorer without waiting for it (PCA/UMAP run in the background); the
+                // project is not ready until the last redraw has finished.
+                LoadingOverlay.SetProgress("Drawing the Explorer...");
+                await contaminantPass;
+                await PeptideTicTab.WhenChartIdleAsync();
+
                 await UpdatePipelineStatusAsync();
             }
             catch (Exception ex)
             {
-
+                // Not under the wait screen: the user has to read and dismiss this.
+                LoadingOverlay.Hide();
                 MessageBox.Show($"Error loading data:\n\n{ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -2290,6 +2347,9 @@ namespace SCPBrowser
         }
 
         private async void ProteinMatrixTab_ContaminantsUpdated(object? sender, EventArgs e)
+            => await RecomputeContaminantRatiosAsync();
+
+        private async Task RecomputeContaminantRatiosAsync()
         {
             var contaminantIds = ProteinMatrixTab.ContaminantIds;
             var originalData = _dataFilterService?.OriginalData;
@@ -2814,7 +2874,7 @@ namespace SCPBrowser
                 LoadingOverlay.SetProgress(expectedImportCount > 0
                     ? $"Reloading data from {parquetPaths.Count} of {expectedImportCount} file(s)..."
                     : "Reloading data from 0 file(s)...");
-                await MainControlTab.LoadDataFromProject(parquetPaths, _projectReferenceDatabasePath);
+                await LoadProjectDataAsync(parquetPaths);
 
                 // 4. If the user has the Project Browser dialog open, refresh its inner
                 //    controls (omic / plate / conditions) too. When it's collapsed there's

@@ -88,6 +88,7 @@ internal static class Program
             };
             var data = new ParquetDataService(dbPath).LoadMultipleParquetFilesAsync(parquetFiles, mapping).GetAwaiter().GetResult();
             Console.WriteLine($"loaded         : {data.RawFileNames.Count} runs, {data.ProteinQuantMatrix.Count} protein groups");
+            data = ApplyNegativeControls(data, dbPath);
 
             // ---- cohort, through the same stages as the Explorer -------------------------------------------------
             // DataFilterService: plate filter, then the protein-count cutoff on the PARQUET-DERIVED count
@@ -329,6 +330,37 @@ internal static class Program
             d[r.GetString(0)] = new RunMeta(r.IsDBNull(1) ? "" : r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2),
                                             r.GetInt32(3), r.GetString(4));
         return d;
+    }
+
+    /// <summary>
+    /// The project's negative controls, as MainControl applies them on load: background removal from the selected blanks
+    /// and blank runs left out of the analyses. Without this a project with blanks applied would be embedded from
+    /// different data than the app shows.
+    /// </summary>
+    private static ProteomicsData ApplyNegativeControls(ProteomicsData data, string dbPath)
+    {
+        var settings = NegativeControlSettings.LoadAsync(new ProjectDatabaseService(dbPath)).GetAwaiter().GetResult();
+        if (!settings.ChangesAnalysis)
+            return data;
+        var service = new ParquetDataService(dbPath);
+        service.PopulateBiologicalConditionsAsync(data).GetAwaiter().GetResult();
+        var runToPlate = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var rf in service.GetRawFilesAsync().GetAwaiter().GetResult())
+            if (rf.PlateId.HasValue)
+                runToPlate[rf.RawFileName] = rf.PlateId.Value;
+        var plateNames = new PlateService(dbPath).GetPlatesAsync().GetAwaiter().GetResult().ToDictionary(p => p.PlateId, p => p.PlateName);
+        HashSet<string> excluded;
+        try { excluded = service.GetExcludedRunNamesAsync().GetAwaiter().GetResult(); }
+        catch { excluded = new HashSet<string>(); }
+        var plan = BackgroundRemovalService.BuildPlan(data, settings, runToPlate, plateNames, excluded);
+        if (plan.BlankRuns.Count == 0)
+        {
+            Console.WriteLine("negative ctrls : marked, but none of their runs is loaded; data unchanged");
+            return data;
+        }
+        var result = BackgroundRemovalService.Apply(data, plan);
+        Console.WriteLine($"negative ctrls : {result.Describe()}");
+        return result.Cleaned ?? data;
     }
 
     private static string ReadSetting(string dbPath, string key)

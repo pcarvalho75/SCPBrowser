@@ -32,8 +32,8 @@ namespace SCPBrowser.Services
         public List<string> SelectedBlanks { get; internal set; } = new();
 
         /// <summary>
-        /// The runs of this scope use the project's selected blanks: a per-plate scope whose plate has no selected
-        /// blank of its own, or runs without a plate.
+        /// The project's selected blanks standing in for plates that have fewer than the minimum number of selected
+        /// blanks of their own, and for runs without a plate (per-plate scope only).
         /// </summary>
         public bool UsesProjectBlanks { get; internal set; }
 
@@ -58,12 +58,21 @@ namespace SCPBrowser.Services
         /// <summary>The blank runs not left out, in data order.</summary>
         public List<string> SelectedBlanks { get; internal set; } = new();
 
+        /// <summary>
+        /// Blank runs excluded by hand in the Explorer (the excluded_runs table). They never estimate the background,
+        /// whatever the blank checklist says: an excluded run is one the user judged bad.
+        /// </summary>
+        public HashSet<string> ManuallyExcludedBlanks { get; internal set; } = new(StringComparer.Ordinal);
+
+        /// <summary>Plates with fewer than the minimum number of selected blanks, whose runs use all the selected blanks.</summary>
+        public List<string> PlatesUsingProjectBlanks { get; internal set; } = new();
+
         public List<BackgroundScope> Scopes { get; internal set; } = new();
 
         /// <summary>The scope of every run of the data (empty when no blank is selected).</summary>
         public Dictionary<string, BackgroundScope> ScopeByRun { get; internal set; } = new(StringComparer.Ordinal);
 
-        /// <summary>Runs whose plate has no selected blank and so use the project's selected blanks (per-plate scope only).</summary>
+        /// <summary>Runs whose plate has too few selected blanks, or no plate, and so use the project's selected blanks (per-plate scope only).</summary>
         public int RunsUsingProjectBlanks { get; internal set; }
     }
 
@@ -123,16 +132,19 @@ namespace SCPBrowser.Services
             var parts = new List<string>();
             if (s.RemovesBackground)
             {
-                if (Plan.SelectedBlanks.Count == 0)
+                if (Plan.BlankRuns.Count == 0)
+                    parts.Add("the negative-control conditions have no loaded run, so nothing is removed");
+                else if (Plan.SelectedBlanks.Count == 0)
                     parts.Add("background removal on, but no blank run is selected, so nothing is removed");
                 else
                 {
                     var rules = new List<string>();
                     if (s.UseFrequency) rules.Add($"found in at least {s.MinFraction:P0} of blanks");
                     if (s.UseIntensity) rules.Add($"below {s.IntensityFactor:0.##}x the {(s.BlankLevel == BlankLevelStatistic.Max ? "max" : "median")} blank level");
-                    parts.Add($"background removal on ({string.Join(" or ", rules)}; {Plan.SelectedBlanks.Count} blank run(s), " +
-                              $"{(s.PerPlate ? "per plate" : "whole project")}): {ProteinsRemovedEverywhere} protein(s) removed from every run, " +
-                              $"{MeasurementsRemovedByFrequency + MeasurementsRemovedByIntensity:N0} of {MeasurementsTotal:N0} measurements removed");
+                    parts.Add($"background removal on ({string.Join(s.RequireBothRules ? " and " : " or ", rules)}; {Plan.SelectedBlanks.Count} blank run(s), " +
+                              $"{(s.PerPlate ? "per plate" : "whole project")}): " +
+                              $"{MeasurementsRemovedByFrequency + MeasurementsRemovedByIntensity:N0} of {MeasurementsTotal:N0} measurements removed, " +
+                              $"{ProteinsRemovedEverywhere} protein(s) left with no measurement");
                 }
             }
             if (ExcludedBlankRuns.Count > 0)
@@ -158,7 +170,7 @@ namespace SCPBrowser.Services
         public double MedianCellToBlank { get; internal set; } = double.NaN;
         /// <summary>Non-blank runs where the protein is kept after removal.</summary>
         public int CellKept { get; internal set; }
-        /// <summary>Removed (frequency), Partly removed (intensity), Kept, or Not applied.</summary>
+        /// <summary>Removed (in every cell of the scope), Partly removed, Kept, or Not applied.</summary>
         public string Status { get; internal set; } = "";
     }
 
@@ -175,8 +187,10 @@ namespace SCPBrowser.Services
         /// </summary>
         /// <param name="runToPlate">Plate of each run (runs without a plate use the project's blanks).</param>
         /// <param name="plateNames">Plate names for display; optional.</param>
+        /// <param name="excludedRuns">Runs excluded by hand in the Explorer; a blank among them is never selected.</param>
         public static BackgroundRemovalPlan BuildPlan(ProteomicsData data, NegativeControlSettings settings,
-            IReadOnlyDictionary<string, int>? runToPlate, IReadOnlyDictionary<int, string>? plateNames)
+            IReadOnlyDictionary<string, int>? runToPlate, IReadOnlyDictionary<int, string>? plateNames,
+            IReadOnlySet<string>? excludedRuns = null)
         {
             var plan = new BackgroundRemovalPlan { Settings = settings.Clone() };
             if (data == null || settings.Conditions.Count == 0)
@@ -188,7 +202,9 @@ namespace SCPBrowser.Services
                 if (!data.BiologicalConditionPerFile.TryGetValue(run, out var condition) || !settings.IsNegativeControl(condition))
                     continue;
                 plan.BlankRuns.Add(run);
-                if (!leftOut.Contains(run))
+                if (excludedRuns != null && excludedRuns.Contains(run))
+                    plan.ManuallyExcludedBlanks.Add(run);
+                else if (!leftOut.Contains(run))
                     plan.SelectedBlanks.Add(run);
             }
 
@@ -202,7 +218,11 @@ namespace SCPBrowser.Services
             BackgroundScope ProjectScope()
             {
                 if (project != null) return project;
-                project = new BackgroundScope { Name = "Whole project", SelectedBlanks = new List<string>(plan.SelectedBlanks), UsesProjectBlanks = settings.PerPlate };
+                project = new BackgroundScope
+                {
+                    Name = settings.PerPlate ? "All selected blanks" : "Whole project",
+                    SelectedBlanks = new List<string>(plan.SelectedBlanks)
+                };
                 Estimate(project, data, settings);
                 plan.Scopes.Add(project);
                 return project;
@@ -211,7 +231,6 @@ namespace SCPBrowser.Services
             if (!settings.PerPlate)
             {
                 var scope = ProjectScope();
-                scope.UsesProjectBlanks = false;
                 foreach (var run in data.RawFileNames)
                 {
                     plan.ScopeByRun[run] = scope;
@@ -220,8 +239,14 @@ namespace SCPBrowser.Services
                 return plan;
             }
 
+            // A plate needs a minimum of its own selected blanks: with one blank, "found in X% of the blanks" means
+            // "found in that blank", so a single blank would remove everything it holds (on Isabele's iPSC plate, all
+            // 166 of its proteins, 60 of which no clean blank of the other plate has). Below the minimum the plate
+            // uses all the selected blanks, as a plate with none does.
+            int minBlanks = Math.Max(1, settings.MinBlanksPerScope);
             var byPlate = new Dictionary<int, BackgroundScope>();
-            foreach (var group in plan.SelectedBlanks.Where(b => PlateOf(b).HasValue).GroupBy(b => PlateOf(b)!.Value).OrderBy(g => g.Key))
+            foreach (var group in plan.SelectedBlanks.Where(b => PlateOf(b).HasValue).GroupBy(b => PlateOf(b)!.Value)
+                         .Where(g => g.Count() >= minBlanks).OrderBy(g => g.Key))
             {
                 var scope = new BackgroundScope { PlateId = group.Key, Name = PlateName(group.Key), SelectedBlanks = group.ToList() };
                 Estimate(scope, data, settings);
@@ -240,9 +265,13 @@ namespace SCPBrowser.Services
                 else
                 {
                     var fallback = ProjectScope();
+                    fallback.UsesProjectBlanks = true;
                     plan.ScopeByRun[run] = fallback;
                     fallback.Runs.Add(run);
                     plan.RunsUsingProjectBlanks++;
+                    string name = plate.HasValue ? PlateName(plate.Value) : "Runs without a plate";
+                    if (!plan.PlatesUsingProjectBlanks.Contains(name))
+                        plan.PlatesUsingProjectBlanks.Add(name);
                 }
             }
             return plan;
@@ -297,22 +326,26 @@ namespace SCPBrowser.Services
 
         private enum Decision { Kept, Frequency, Intensity }
 
-        // The one place a protein measurement is judged. Frequency first; the intensity rule then applies to the
-        // proteins of the scope's blanks that are left: a measurement must reach k times the protein's blank level.
-        // A protein with no blank intensity has no level to compare with and is kept by the intensity rule.
+        // The one place a protein measurement is judged. Frequency: the protein is common in the scope's blanks.
+        // Intensity: the measurement is below k times the protein's blank level; a protein with no blank intensity has
+        // no level to fall below, and a measurement without a quantity cannot be shown to clear the bar. By default
+        // either rule removes the measurement (frequency first). With RequireBothRules a frequent protein is removed
+        // only where it is also below the bar, so a run with clearly more of it than any blank keeps it; a frequent
+        // protein with no blank level is removed, as the frequency rule alone would.
         private static Decision Decide(ProteomicsData data, BackgroundScope? scope, NegativeControlSettings settings, string run, string protein)
         {
             if (scope == null)
                 return Decision.Kept;
-            if (scope.FrequentProteins.Contains(protein))
+            bool frequent = scope.FrequentProteins.Contains(protein);
+            bool requireBoth = settings.UseFrequency && settings.UseIntensity && settings.RequireBothRules;
+            if (frequent && !requireBoth)
                 return Decision.Frequency;
-            if (settings.UseIntensity && scope.BlankProteins.TryGetValue(protein, out var stats) && !double.IsNaN(stats.Level))
-            {
-                // A measurement without a quantity cannot be shown to clear the bar, so it is removed.
-                if (!TryIntensity(data, protein, run, out double value) || value < settings.IntensityFactor * stats.Level)
-                    return Decision.Intensity;
-            }
-            return Decision.Kept;
+            if (!settings.UseIntensity || !scope.BlankProteins.TryGetValue(protein, out var stats) || double.IsNaN(stats.Level))
+                return requireBoth && frequent ? Decision.Frequency : Decision.Kept;
+            bool below = !TryIntensity(data, protein, run, out double value) || value < settings.IntensityFactor * stats.Level;
+            if (requireBoth)
+                return frequent && below ? Decision.Frequency : Decision.Kept;
+            return below ? Decision.Intensity : Decision.Kept;
         }
 
         /// <summary>Per-run counts and totals of what the plan removes, without building the cleaned data.</summary>
@@ -344,8 +377,8 @@ namespace SCPBrowser.Services
                 RawFileNames = keptRuns
             } : null;
 
-            // Proteins kept in each analysed run; also the basis of the per-protein matrix copy below.
-            var keptByRun = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+            // For the copy, the proteins kept in each analysed run (null: all of them); the basis of the matrix copy.
+            var keptByRun = new Dictionary<string, HashSet<string>?>(StringComparer.Ordinal);
             var analysedBefore = new HashSet<string>(StringComparer.Ordinal);
             var analysedAfter = new HashSet<string>(StringComparer.Ordinal);
             var analysedRuns = new HashSet<string>(keptRuns, StringComparer.Ordinal);
@@ -365,7 +398,9 @@ namespace SCPBrowser.Services
                     RawPeptides = data.PeptideCountPerFile.TryGetValue(run, out var qc) ? qc : peptides.Length
                 };
 
+                bool analysed = analysedRuns.Contains(run);
                 var kept = new List<string>(proteins.Length);
+                var removed = cleaned != null && analysed ? new List<string>() : null;
                 double removedQuant = 0;
                 foreach (var protein in proteins)
                 {
@@ -374,10 +409,12 @@ namespace SCPBrowser.Services
                         case Decision.Frequency:
                             summary.RemovedByFrequency++;
                             if (TryIntensity(data, protein, run, out var f)) removedQuant += f;
+                            removed?.Add(protein);
                             break;
                         case Decision.Intensity:
                             summary.RemovedByIntensity++;
                             if (TryIntensity(data, protein, run, out var i)) removedQuant += i;
+                            removed?.Add(protein);
                             break;
                         default:
                             kept.Add(protein);
@@ -386,11 +423,11 @@ namespace SCPBrowser.Services
                 }
                 summary.KeptProteins = kept.Count;
 
+                // The kept set is needed only to filter peptides and, for the copy, the matrix rows of a run that lost
+                // proteins; a run that lost none keeps every row (null below means "all kept").
                 bool anyRemoved = kept.Count != proteins.Length;
                 string[] keptPeptides = peptides;
-                HashSet<string>? keptSet = null;
-                if (anyRemoved || analysedRuns.Contains(run))
-                    keptSet = new HashSet<string>(kept, StringComparer.Ordinal);
+                HashSet<string>? keptSet = anyRemoved ? new HashSet<string>(kept, StringComparer.Ordinal) : null;
                 if (anyRemoved && peptides.Length > 0)
                 {
                     // A peptide stays while at least one protein group it was identified under is kept in this run.
@@ -416,7 +453,7 @@ namespace SCPBrowser.Services
                     : anyRemoved ? keptPeptides.Length : summary.RawPeptides;
                 result.Runs[run] = summary;
 
-                if (!analysedRuns.Contains(run))
+                if (!analysed)
                     continue;
 
                 result.MeasurementsTotal += proteins.Length;
@@ -424,14 +461,17 @@ namespace SCPBrowser.Services
                 result.MeasurementsRemovedByIntensity += summary.RemovedByIntensity;
                 analysedBefore.UnionWith(proteins);
                 analysedAfter.UnionWith(kept);
-                keptByRun[run] = keptSet!;
 
                 if (cleaned == null)
                     continue;
+                keptByRun[run] = keptSet;
                 if (anyRemoved)
-                    result.RemovedProteinsPerRun[run] = new HashSet<string>(proteins.Where(p => !keptSet!.Contains(p)), StringComparer.Ordinal);
+                    result.RemovedProteinsPerRun[run] = new HashSet<string>(removed!, StringComparer.Ordinal);
                 cleaned.ProteinsPerFile[run] = anyRemoved ? kept.ToArray() : proteins;
-                cleaned.PeptidesPerFile[run] = keptPeptides;
+                // A gene matrix has no per-run peptide sets (the loader leaves them out, so distinct peptide counts
+                // stay "unknown" rather than 0).
+                if (!data.IsGeneMatrix)
+                    cleaned.PeptidesPerFile[run] = keptPeptides;
                 cleaned.ProteinCountPerFile[run] = anyRemoved ? kept.Count : summary.RawProteins;
                 cleaned.PeptideCountPerFile[run] = summary.KeptPeptides;
                 if (data.TotalIonCurrentPerFile.TryGetValue(run, out var tic))
@@ -460,7 +500,7 @@ namespace SCPBrowser.Services
                     var newRow = new Dictionary<string, double>();
                     foreach (var (run, value) in row)
                     {
-                        if (keptByRun.TryGetValue(run, out var keptSet) && keptSet.Contains(protein))
+                        if (keptByRun.TryGetValue(run, out var keptSet) && (keptSet == null || keptSet.Contains(protein)))
                             newRow[run] = value;
                     }
                     cleaned.ProteinQuantMatrix[protein] = newRow;
@@ -499,7 +539,7 @@ namespace SCPBrowser.Services
                     {
                         Protein = protein,
                         Genes = data.ProteinToGeneMap.TryGetValue(protein, out var g) ? g : "",
-                        Scope = scope.Name + (scope.UsesProjectBlanks ? " (project blanks)" : ""),
+                        Scope = scope.UsesProjectBlanks ? $"{scope.Name} (for {string.Join(", ", plan.PlatesUsingProjectBlanks)})" : scope.Name,
                         BlankDetections = stats.Detections,
                         SelectedBlanks = scope.SelectedBlanks.Count,
                         BlankFraction = stats.Fraction,
@@ -519,8 +559,9 @@ namespace SCPBrowser.Services
                     }
                     if (ratios.Count > 0)
                         row.MedianCellToBlank = Median(ratios);
+                    bool alwaysRemoved = scope.FrequentProteins.Contains(protein) && !(settings.UseIntensity && settings.RequireBothRules);
                     row.Status = !settings.RemovesBackground ? "Not applied"
-                        : scope.FrequentProteins.Contains(protein) ? "Removed"
+                        : alwaysRemoved || (row.CellDetections > 0 && row.CellKept == 0) ? "Removed"
                         : row.CellKept < row.CellDetections ? "Partly removed"
                         : "Kept";
                     rows.Add(row);

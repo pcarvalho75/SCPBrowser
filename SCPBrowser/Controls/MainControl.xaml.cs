@@ -544,9 +544,24 @@ namespace SCPBrowser
                     runToPlate[rf.RawFileName] = rf.PlateId.Value;
             var plateNames = (await new PlateService(_projectDatabasePath).GetPlatesAsync())
                 .ToDictionary(p => p.PlateId, p => p.PlateName);
+            // A blank excluded by hand in the Explorer is one the user judged bad, so it never estimates the background.
+            HashSet<string> excludedRuns;
+            try { excludedRuns = await new ParquetDataService(_projectDatabasePath).GetExcludedRunNamesAsync(); }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[BuildAnalysisDataAsync] excluded runs unreadable: {ex.Message}");
+                excludedRuns = new HashSet<string>();
+            }
 
-            var result = await System.Threading.Tasks.Task.Run(() =>
-                BackgroundRemovalService.Apply(loaded, BackgroundRemovalService.BuildPlan(loaded, settings, runToPlate, plateNames)));
+            var plan = BackgroundRemovalService.BuildPlan(loaded, settings, runToPlate, plateNames, excludedRuns);
+            if (plan.BlankRuns.Count == 0)
+            {
+                // The marked conditions have no loaded run (renamed or re-imported): a copy would equal the data as
+                // loaded. The summary still reports it in the status line.
+                BackgroundRemoval = BackgroundRemovalService.Summarize(loaded, plan);
+                return loaded;
+            }
+            var result = await System.Threading.Tasks.Task.Run(() => BackgroundRemovalService.Apply(loaded, plan));
             BackgroundRemoval = result;
             return result.Cleaned ?? loaded;
         }
@@ -560,13 +575,6 @@ namespace SCPBrowser
             {
                 mainWindow?.LoadingOverlay.SetProgress("Applying negative controls...");
                 _currentData = await BuildAnalysisDataAsync(_loadedData!);
-
-                TotalRunsText.Text = _currentData.TotalRawFiles.ToString();
-                TotalProteinsText.Text = _currentData.TotalProteinGroups.ToString();
-                TotalPeptidesText.Text = _currentData.TotalPeptides.ToString();
-                // A gene matrix has no peptide dimension — the "Peptides" card shows the detected-gene count, so
-                // relabel it honestly (see XlsxGeneMatrixParser: PeptideCountPerFile is substituted with gene counts).
-                PeptidesCaptionText.Text = _currentData.IsGeneMatrix ? "Genes" : "Peptides";
 
                 // Set plate count
                 if (!string.IsNullOrEmpty(_projectDatabasePath))

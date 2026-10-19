@@ -161,14 +161,15 @@ namespace SCPBrowser
         /// Marks the blank runs (hollow when left out of the background estimate) and gives each run its counts after
         /// background removal, shown with the Raw / After removal switch. Null clears the view.
         /// </summary>
-        public void SetNegativeControls(NegativeControlOverlay? overlay)
+        /// <param name="rebuild">False when the caller sets the data right after, which draws the plot once.</param>
+        public void SetNegativeControls(NegativeControlOverlay? overlay, bool rebuild = true)
         {
             _negativeControls = overlay;
             bool hasRemoval = overlay?.Removal != null;
             RemovalSwitch.Visibility = hasRemoval ? Visibility.Visible : Visibility.Collapsed;
             if (!hasRemoval && AfterRemovalRadio.IsChecked == true)
                 RawValuesRadio.IsChecked = true; // rebuilds
-            else
+            else if (rebuild)
                 Rebuild();
         }
 
@@ -369,7 +370,7 @@ namespace SCPBrowser
             if (excluded > 0)
                 legend.Add(new BoxPlotLegendEntry { Label = "Excluded", IsRing = true });
             if (_plottedRuns.Any(r => r.IsLeftOutBlank))
-                legend.Add(new BoxPlotLegendEntry { Label = "Blank left out", IsHollow = true, Color = PlotColors.NoPlate });
+                legend.Add(new BoxPlotLegendEntry { Label = "Blank left out", IsHollow = true, Color = PlotColors.NeutralBox });
 
             Plot.EmptyMessage = _grouping == IdentificationGrouping.Plate
                 ? "No plates with runs in this project yet."
@@ -408,7 +409,9 @@ namespace SCPBrowser
                     int? kept = null;
                     if (nc?.Removal != null && nc.Removal.TryGetValue(rf.RawFileName, out var summary))
                         kept = peptides ? summary.KeptPeptides : summary.KeptProteins;
-                    runs.Add(new ResolvedRun(rf, after && kept.HasValue ? kept.Value : value, excluded, HasNoIdentifications: false,
+                    // Blanks keep their value as loaded in the After view: they lose their own background, and a blank box
+                    // near zero reads as a fault. The hover label still shows what removal leaves of them.
+                    runs.Add(new ResolvedRun(rf, after && kept.HasValue && !isBlank ? kept.Value : value, excluded, HasNoIdentifications: false,
                         Raw: value, Kept: kept, IsBlank: isBlank, IsLeftOutBlank: leftOut));
                 }
                 else if (loadedImports.Contains(rf.ImportId))
@@ -440,7 +443,7 @@ namespace SCPBrowser
                     ? $"{Plural(excluded, "manually excluded " + unit)} {(excluded == 1 ? "is" : "are")} drawn as {(excluded == 1 ? "a ring" : "rings")} and left out of the boxes and n."
                     : $"{Plural(excluded, "manually excluded " + unit)} {(excluded == 1 ? "is" : "are")} left out of the boxes and n.");
             if (ShowAfterRemoval)
-                parts.Add("Values after negative-control background removal; the hover label shows kept / identified.");
+                parts.Add("Values after negative-control background removal (blanks as loaded); the hover label shows kept / identified.");
             int leftOut = _plottedRuns.Count(r => r.IsLeftOutBlank);
             if (leftOut > 0 && points == PlotPoints.All)
                 parts.Add($"{Plural(leftOut, "blank " + unit)} left out of the background estimate {(leftOut == 1 ? "is" : "are")} drawn hollow and stay in the box; click a blank to leave it out or use it.");

@@ -2243,15 +2243,37 @@ namespace SCPBrowser
         public BackgroundRemovalResult? AppliedBackgroundRemoval => MainControlTab.BackgroundRemoval;
 
         // Set when the negative controls changed the data the cells are classified on, so the next classification
-        // recomputes instead of serving the predictions stored for the old data.
+        // recomputes instead of serving the predictions stored for the old data (the manager reuses stored rows
+        // whenever their count matches the runs). Kept in the project too: closing it before any classification ran
+        // must not let the next session serve the old predictions.
         private bool _reclassifyAfterNegativeControls;
+        private const string ReclassifyPendingKey = "negctrl.ReclassifyPending";
+
+        private async Task<bool> ReclassifyPendingAsync()
+        {
+            if (_reclassifyAfterNegativeControls)
+                return true;
+            try { return _projectDatabaseService != null && await _projectDatabaseService.GetSettingAsync(ReclassifyPendingKey) == "True"; }
+            catch { return false; }
+        }
+
+        private async Task SetReclassifyPendingAsync(bool pending)
+        {
+            _reclassifyAfterNegativeControls = pending;
+            try
+            {
+                if (_projectDatabaseService != null)
+                    await _projectDatabaseService.SetSettingAsync(ReclassifyPendingKey, pending ? "True" : "False");
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SetReclassifyPendingAsync] {ex.Message}"); }
+        }
 
         private async void ProjectBrowserDialog_NegativeControlsApplied(object? sender, EventArgs e)
         {
             if (!_hasOpenProject) return;
             try
             {
-                _reclassifyAfterNegativeControls = true;
+                await SetReclassifyPendingAsync(true);
                 MainControlTab.ClearCellTypePredictions();
                 await RunProjectLoadAsync(() => MainControlTab.ReapplyNegativeControlsAsync());
                 if (ProjectBrowserDialog.Visibility == Visibility.Visible)
@@ -2560,8 +2582,7 @@ namespace SCPBrowser
                 var keyMarkers = ProjectBrowserDialog.GetKeyMarkers();
                 var excludedCellTypes = ProjectBrowserDialog.GetExcludedCellTypes();
                 var priorWeights = ProjectBrowserDialog.GetPriorWeights();
-                bool recompute = _reclassifyAfterNegativeControls;
-                _reclassifyAfterNegativeControls = false;
+                bool recompute = await ReclassifyPendingAsync();
                 var predictions = await MainControlTab.GetCellTypePredictionsAsync(
                     proteomicsData,
                     _projectReferenceDatabasePath,
@@ -2571,6 +2592,8 @@ namespace SCPBrowser
                     forceRecompute: recompute,
                     excludedCellTypes,
                     priorWeights);
+                if (recompute && predictions != null && predictions.Count > 0)
+                    await SetReclassifyPendingAsync(false);
 
                 if (predictions == null || predictions.Count == 0)
                 {
@@ -2644,8 +2667,7 @@ namespace SCPBrowser
                 var keyMarkers = ProjectBrowserDialog.GetKeyMarkers();
                 var excludedCellTypes = ProjectBrowserDialog.GetExcludedCellTypes();
                 var priorWeights = ProjectBrowserDialog.GetPriorWeights();
-                bool recompute = _reclassifyAfterNegativeControls;
-                _reclassifyAfterNegativeControls = false;
+                bool recompute = await ReclassifyPendingAsync();
                 var predictions = await MainControlTab.GetCellTypePredictionsAsync(
                     proteomicsData,
                     _projectReferenceDatabasePath,
@@ -2655,6 +2677,8 @@ namespace SCPBrowser
                     forceRecompute: recompute,
                     excludedCellTypes,
                     priorWeights);
+                if (recompute && predictions != null && predictions.Count > 0)
+                    await SetReclassifyPendingAsync(false);
 
                 // Get color map
                 var colorMap = MainControlTab.GetCellTypeColorMap();

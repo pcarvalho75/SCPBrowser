@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using SCPBrowser.Models;
 using SCPBrowser.Services;
@@ -50,6 +51,14 @@ namespace SCPBrowser
         private List<BlankProteinView> _blankProteins = new();
         private bool _blankProteinsStale = true;
         private bool _syncingNegativeControls;
+        private bool _syncingBlankList;
+        private string _blankListShown = "";      // the blank runs the checklist was built for
+        private bool _numbersValid = true;         // every number box parses; Apply waits for it
+        private HashSet<string> _excludedRuns = new(StringComparer.Ordinal);   // excluded by hand in the Explorer
+
+        // The preview is rebuilt once typing in a number box pauses, not on every keystroke (about 0.1 s per rebuild at
+        // 470 runs).
+        private readonly DispatcherTimer _numberDebounce = new() { Interval = TimeSpan.FromMilliseconds(250) };
 
         /// <summary>
         /// Lightweight DTO for the left-side conditions list.
@@ -114,6 +123,11 @@ namespace SCPBrowser
         public ConditionsBrowserControl()
         {
             InitializeComponent();
+            _numberDebounce.Tick += (s, e) =>
+            {
+                _numberDebounce.Stop();
+                RefreshNegativeControls();
+            };
             ScrollingPaneLayout.Attach(RightPaneScroller, RightPane, RequiredRightPaneHeight);
             IdentificationsPlot.CategoryClicked += (s, condition) => SelectCondition(condition);
             IdentificationsPlot.RunClicked += (s, run) =>
@@ -122,7 +136,13 @@ namespace SCPBrowser
                 // A blank's dot puts it in or out of the background estimate.
                 if (_plan != null && _plan.BlankRuns.Contains(run))
                 {
-                    SetBlankUsed(run, _draft.LeftOutRuns.Contains(run, StringComparer.Ordinal));
+                    if (_plan.ManuallyExcludedBlanks.Contains(run))
+                    {
+                        NcSuggestText.Text = "That blank is excluded in the Explorer, so it is never used for the estimate. Restore it there to use it.";
+                        NcSuggestText.Visibility = Visibility.Visible;
+                    }
+                    else
+                        SetBlankUsed(run, _draft.LeftOutRuns.Contains(run, StringComparer.Ordinal));
                     if (!string.IsNullOrEmpty(condition))
                         SelectCondition(condition);
                     DetailTabs.SelectedItem = NegativeControlsTab;
@@ -147,13 +167,24 @@ namespace SCPBrowser
         /// </summary>
         public async Task LoadDataAsync(string databasePath)
         {
+            // Reopening the browser on the same project keeps negative-control changes not yet applied; closing it asks
+            // about them first (ProjectBrowser2), so only a reload reaches here with a draft.
+            bool keepDraft = string.Equals(_databasePath, databasePath, StringComparison.OrdinalIgnoreCase)
+                             && HasPendingNegativeControlChanges;
             _databasePath = databasePath;
             _parquetService = new ParquetDataService(databasePath);
             _savedSettings = await NegativeControlSettings.LoadAsync(new ProjectDatabaseService(databasePath));
-            _draft = _savedSettings.Clone();
+            if (!keepDraft)
+            {
+                _draft = _savedSettings.Clone();
+                NcSuggestText.Visibility = Visibility.Collapsed;
+            }
             await PopulateConditionsListAsync();
             ResetDetailsPane();
         }
+
+        /// <summary>True when the negative controls were changed here and not applied.</summary>
+        public bool HasPendingNegativeControlChanges => !_draft.SameAs(_savedSettings);
 
         private async Task PopulateConditionsListAsync()
         {
@@ -188,8 +219,9 @@ namespace SCPBrowser
                 System.Diagnostics.Debug.WriteLine($"[ConditionsBrowserControl] Could not read excluded runs: {ex.Message}");
                 excludedRuns = new HashSet<string>();
             }
+            _excludedRuns = new HashSet<string>(excludedRuns, StringComparer.Ordinal);
+            RefreshNegativeControls(rebuildPlot: false);   // SetData below draws the plot once, with the overlay
             IdentificationsPlot.SetData(allRawFiles, _plates, LoadedDataSource?.Invoke(), excludedRuns);
-            RefreshNegativeControls();
         }
 
         private async void ConditionsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -251,6 +283,7 @@ namespace SCPBrowser
                 PlateNamesList.ItemsSource = stats.PlateNames;
 
                 StatsPanel.Visibility = Visibility.Visible;
+                BlastRadiusTab.IsEnabled = true;
                 DetailTabs.Visibility = Visibility.Visible;
                 ShowStatsArea(true);
                 DangerZonePanel.Visibility = Visibility.Visible;
@@ -313,15 +346,22 @@ namespace SCPBrowser
         private void ResetDetailsPane()
         {
             IdentificationsPlot.HighlightedKey = null;
-            ShowStatsArea(false);
             ConditionHeaderText.Text = "Select a condition to view its impact";
             ConditionSubText.Text = string.Empty;
             ConditionSubText.Visibility = Visibility.Collapsed;
             NegativeControlCheckBox.Visibility = Visibility.Collapsed;
             StatsPanel.Visibility = Visibility.Collapsed;
-            DetailTabs.Visibility = Visibility.Collapsed;
             DangerZonePanel.Visibility = Visibility.Collapsed;
             PlateNamesList.ItemsSource = null;
+            BlastRadiusTab.IsEnabled = false;
+
+            // With negative controls marked, their tabs stay open without a selection, so a project with blanks shows
+            // its settings and blank proteins without first clicking a condition. The blast radius needs one.
+            bool showNegativeControls = _draft.Conditions.Count > 0;
+            DetailTabs.Visibility = showNegativeControls ? Visibility.Visible : Visibility.Collapsed;
+            if (showNegativeControls && (DetailTabs.SelectedItem == null || DetailTabs.SelectedItem == BlastRadiusTab))
+                DetailTabs.SelectedItem = NegativeControlsTab;
+            ShowStatsArea(showNegativeControls);
         }
 
         /// <summary>
@@ -336,6 +376,7 @@ namespace SCPBrowser
             var tab = DetailTabs.SelectedItem;
             _savedSettings = await NegativeControlSettings.LoadAsync(new ProjectDatabaseService(_databasePath));
             _draft = _savedSettings.Clone();
+            NcSuggestText.Visibility = Visibility.Collapsed;
             await PopulateConditionsListAsync();
             if (selected != null)
             {
@@ -369,8 +410,9 @@ namespace SCPBrowser
         /// Rebuilds everything that shows the draft: the plot's blank markings and after-removal counts, the rule
         /// controls, the blank-run checklist, the preview, and (when shown) the Blank Proteins table.
         /// </summary>
-        private void RefreshNegativeControls()
+        private void RefreshNegativeControls(bool rebuildPlot = true)
         {
+            _numberDebounce.Stop();
             var data = LoadedDataSource?.Invoke();
             _plan = null;
             _preview = null;
@@ -383,7 +425,7 @@ namespace SCPBrowser
                 // Removal is previewed even while it is switched off, so the effect can be judged before turning it on.
                 var previewSettings = _draft.Clone();
                 previewSettings.RemovalEnabled = true;
-                _plan = BackgroundRemovalService.BuildPlan(data, previewSettings, RunToPlate(), PlateNames());
+                _plan = BackgroundRemovalService.BuildPlan(data, previewSettings, RunToPlate(), PlateNames(), _excludedRuns);
                 _preview = previewSettings.RemovesBackground && _plan.SelectedBlanks.Count > 0
                     ? BackgroundRemovalService.Summarize(data, _plan)
                     : null;
@@ -394,7 +436,7 @@ namespace SCPBrowser
                 BlankRuns = _plan.BlankRuns,
                 LeftOutBlanks = new HashSet<string>(_plan.BlankRuns.Where(r => !_plan.SelectedBlanks.Contains(r)), StringComparer.Ordinal),
                 Removal = _preview?.Runs
-            });
+            }, rebuildPlot);
 
             BuildBlankRunsList(data);
             BuildPreview(data);
@@ -416,15 +458,20 @@ namespace SCPBrowser
                     MinFractionBox.Text = fraction;
                 if (!TryParseNumber(IntensityFactorBox.Text, out var factor) || Math.Abs(factor - _draft.IntensityFactor) > 1e-9)
                     IntensityFactorBox.Text = _draft.IntensityFactor.ToString("0.##", CultureInfo.CurrentCulture);
+                if (!int.TryParse(MinBlanksBox.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out var minBlanks) || minBlanks != _draft.MinBlanksPerScope)
+                    MinBlanksBox.Text = _draft.MinBlanksPerScope.ToString(CultureInfo.CurrentCulture);
                 BlankLevelCombo.SelectedIndex = _draft.BlankLevel == BlankLevelStatistic.Max ? 0 : 1;
+                EitherRuleRadio.IsChecked = !_draft.RequireBothRules;
+                BothRulesRadio.IsChecked = _draft.RequireBothRules;
                 PerPlateRadio.IsChecked = _draft.PerPlate;
                 WholeProjectRadio.IsChecked = !_draft.PerPlate;
                 ExcludeBlanksCheckBox.IsChecked = _draft.ExcludeBlankRunsFromAnalysis;
 
-                RulesPanel.IsEnabled = true;
                 MinFractionBox.IsEnabled = _draft.UseFrequency;
                 IntensityFactorBox.IsEnabled = _draft.UseIntensity;
                 BlankLevelCombo.IsEnabled = _draft.UseIntensity;
+                CombineRow.IsEnabled = _draft.UseFrequency && _draft.UseIntensity;
+                MinBlanksRow.IsEnabled = _draft.PerPlate;
 
                 if (ConditionsListBox.SelectedItem is ConditionListItem selected)
                     NegativeControlCheckBox.IsChecked = _draft.IsNegativeControl(selected.Name);
@@ -441,7 +488,6 @@ namespace SCPBrowser
 
         private void BuildBlankRunsList(ProteomicsData? data)
         {
-            BlankRunsPanel.Children.Clear();
             bool any = _plan != null && _plan.BlankRuns.Count > 0;
             NcBody.Visibility = _draft.Conditions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             SuggestOutliersButton.IsEnabled = any;
@@ -462,9 +508,25 @@ namespace SCPBrowser
                                $"{_plan?.SelectedBlanks.Count ?? 0} of {_plan?.BlankRuns.Count ?? 0} blank runs are used for the estimate.";
             if (!any)
             {
+                BlankRunsPanel.Children.Clear();
+                _blankListShown = "";
                 BlankRunsPanel.Children.Add(new TextBlock { Text = "These conditions have no loaded run.", Style = (Style)FindResource("NcText") });
                 return;
             }
+
+            // Same blanks as on screen: only the ticks change, so the list keeps its scroll position and focus.
+            string shown = string.Join("|", _plan!.BlankRuns.OrderBy(r => r, StringComparer.Ordinal)) + "#" +
+                           string.Join("|", _plan.ManuallyExcludedBlanks.OrderBy(r => r, StringComparer.Ordinal));
+            if (shown == _blankListShown)
+            {
+                _syncingBlankList = true;
+                foreach (var box in BlankRunsPanel.Children.OfType<CheckBox>())
+                    box.IsChecked = _plan.SelectedBlanks.Contains((string)box.Tag);
+                _syncingBlankList = false;
+                return;
+            }
+            _blankListShown = shown;
+            BlankRunsPanel.Children.Clear();
 
             foreach (var plateGroup in _plan!.BlankRuns
                          .OrderBy(r => PlateNameOf(r), StringComparer.OrdinalIgnoreCase)
@@ -482,9 +544,11 @@ namespace SCPBrowser
                 foreach (var run in plateGroup)
                 {
                     int proteins = data.ProteinCountPerFile.TryGetValue(run, out var n) ? n : 0;
+                    bool excluded = _plan.ManuallyExcludedBlanks.Contains(run);
                     var box = new CheckBox
                     {
                         IsChecked = _plan.SelectedBlanks.Contains(run),
+                        IsEnabled = !excluded,
                         Tag = run,
                         Style = (Style)FindResource("NcCheckBox"),
                         Margin = new Thickness(6, 1, 0, 1),
@@ -493,14 +557,15 @@ namespace SCPBrowser
                             Inlines =
                             {
                                 new System.Windows.Documents.Run(run),
-                                new System.Windows.Documents.Run($"   {proteins:N0} protein groups") { Foreground = new SolidColorBrush(Color.FromRgb(0x94, 0xa3, 0xb8)) }
+                                new System.Windows.Documents.Run($"   {proteins:N0} protein groups" + (excluded ? " (excluded in the Explorer)" : ""))
+                                    { Foreground = new SolidColorBrush(Color.FromRgb(0x94, 0xa3, 0xb8)) }
                             },
                             TextTrimming = TextTrimming.CharacterEllipsis
                         },
-                        ToolTip = run
+                        ToolTip = excluded ? run + "\nExcluded in the Explorer: never used for the estimate. Restore it there to use it." : run
                     };
-                    box.Checked += (s, e) => SetBlankUsed((string)((CheckBox)s!).Tag, true);
-                    box.Unchecked += (s, e) => SetBlankUsed((string)((CheckBox)s!).Tag, false);
+                    box.Checked += (s, e) => { if (!_syncingBlankList) SetBlankUsed((string)((CheckBox)s!).Tag, true); };
+                    box.Unchecked += (s, e) => { if (!_syncingBlankList) SetBlankUsed((string)((CheckBox)s!).Tag, false); };
                     BlankRunsPanel.Children.Add(box);
                 }
             }
@@ -554,15 +619,23 @@ namespace SCPBrowser
                     string blanks = scope.SelectedBlanks.Count == 1 ? "1 blank" : $"{scope.SelectedBlanks.Count} blanks";
                     var parts = new List<string> { $"{scope.BlankProteins.Count:N0} proteins seen in {blanks}" };
                     if (_draft.UseFrequency)
-                        parts.Add($"{scope.FrequentProteins.Count:N0} removed by the frequency rule");
-                    Line($"{scope.Name}{(scope.UsesProjectBlanks ? " (no blank of its own; uses all selected blanks)" : "")}: {string.Join(", ", parts)}.");
+                        parts.Add($"{scope.FrequentProteins.Count:N0} frequent");
+                    // How strong the blanks are against the cells: strong blanks put more cell proteins below the blank level.
+                    double blankSignal = MedianSignal(data, scope.SelectedBlanks);
+                    double cellSignal = MedianSignal(data, scope.Runs.Where(r => !_plan.BlankRuns.Contains(r)));
+                    if (blankSignal > 0 && cellSignal > 0)
+                        parts.Add($"blank signal {blankSignal / cellSignal:0.#}x that of the cells");
+                    Line($"{scope.Name}: {string.Join(", ", parts)}.");
                     if (_draft.UseFrequency && scope.SelectedBlanks.Count == 1)
-                        Line($"   With a single blank, every protein in it is removed from the runs of {scope.Name}, whatever the percentage.", warn);
+                        Line($"   With a single blank, every protein in it is frequent, whatever the percentage.", warn);
                 }
+                if (_draft.PerPlate && _plan.PlatesUsingProjectBlanks.Count > 0)
+                    Line($"{string.Join(", ", _plan.PlatesUsingProjectBlanks)}: fewer than {_draft.MinBlanksPerScope} selected blanks of its own, " +
+                         $"so its runs use all {_plan.SelectedBlanks.Count} selected blanks.");
 
                 int removed = _preview.MeasurementsRemovedByFrequency + _preview.MeasurementsRemovedByIntensity;
                 double share = _preview.MeasurementsTotal > 0 ? removed / (double)_preview.MeasurementsTotal : 0;
-                string byRule = _draft.UseFrequency && _draft.UseIntensity
+                string byRule = _draft.UseFrequency && _draft.UseIntensity && !_draft.RequireBothRules
                     ? $" ({_preview.MeasurementsRemovedByFrequency:N0} by frequency, {_preview.MeasurementsRemovedByIntensity:N0} by intensity)"
                     : "";
                 Line($"Protein measurements removed from the analysed runs: {removed:N0} of {_preview.MeasurementsTotal:N0} ({share:P0}){byRule}. " +
@@ -591,14 +664,24 @@ namespace SCPBrowser
 
             if (_draft.ExcludeBlankRunsFromAnalysis && _plan.BlankRuns.Count > 0)
                 Line($"{_plan.BlankRuns.Count} blank run(s) are left out of the cell analyses.");
-            if (_plan.RunsUsingProjectBlanks > 0 && _draft.PerPlate && _draft.RemovalEnabled)
-                Line($"{_plan.RunsUsingProjectBlanks} run(s) are on a plate without a selected blank and use all the selected blanks.", warn);
+            if (_plan.ManuallyExcludedBlanks.Count > 0)
+                Line($"{_plan.ManuallyExcludedBlanks.Count} blank run(s) excluded in the Explorer are not used for the estimate.");
+        }
+
+        private static double MedianSignal(ProteomicsData data, IEnumerable<string> runs)
+        {
+            var values = runs.Select(r => data.TotalIonCurrentPerFile.TryGetValue(r, out var v) ? v : double.NaN)
+                .Where(v => v > 0).OrderBy(v => v).ToList();
+            if (values.Count == 0)
+                return 0;
+            int m = values.Count / 2;
+            return values.Count % 2 == 1 ? values[m] : (values[m - 1] + values[m]) / 2;
         }
 
         private void UpdateNegativeControlStatus(ProteomicsData? data)
         {
             bool pending = !_draft.SameAs(_savedSettings);
-            ApplyNegativeControlsButton.IsEnabled = pending && data != null;
+            ApplyNegativeControlsButton.IsEnabled = pending && data != null && _numbersValid;
             DiscardNegativeControlsButton.IsEnabled = pending;
             var applied = AppliedRemovalSource?.Invoke();
             string appliedText = applied != null && !string.IsNullOrEmpty(applied.Describe())
@@ -629,12 +712,14 @@ namespace SCPBrowser
 
         private void NcOption_Changed(object sender, RoutedEventArgs e)
         {
-            if (_syncingNegativeControls || RemovalEnabledCheckBox == null || BlankLevelCombo == null)
+            if (_syncingNegativeControls || RemovalEnabledCheckBox == null || BlankLevelCombo == null || BothRulesRadio == null
+                || ExcludeBlanksCheckBox == null)
                 return;
             _draft.RemovalEnabled = RemovalEnabledCheckBox.IsChecked == true;
             _draft.UseFrequency = FrequencyCheckBox.IsChecked == true;
             _draft.UseIntensity = IntensityCheckBox.IsChecked == true;
             _draft.BlankLevel = BlankLevelCombo.SelectedIndex == 1 ? BlankLevelStatistic.Median : BlankLevelStatistic.Max;
+            _draft.RequireBothRules = BothRulesRadio.IsChecked == true;
             _draft.PerPlate = PerPlateRadio.IsChecked == true;
             _draft.ExcludeBlankRunsFromAnalysis = ExcludeBlanksCheckBox.IsChecked == true;
             RefreshNegativeControls();
@@ -642,11 +727,12 @@ namespace SCPBrowser
 
         private void NcNumber_Changed(object sender, TextChangedEventArgs e)
         {
-            if (_syncingNegativeControls || MinFractionBox == null || IntensityFactorBox == null)
+            if (_syncingNegativeControls || MinFractionBox == null || IntensityFactorBox == null || MinBlanksBox == null)
                 return;
             var normal = new SolidColorBrush(Color.FromRgb(0xab, 0xad, 0xb3));
             var bad = new SolidColorBrush(Color.FromRgb(0xdc, 0x26, 0x26));
             bool changed = false;
+            bool valid = true;
 
             if (TryParseNumber(MinFractionBox.Text, out var percent) && percent > 0 && percent <= 100)
             {
@@ -654,7 +740,10 @@ namespace SCPBrowser
                 if (Math.Abs(_draft.MinFraction - percent / 100) > 1e-12) { _draft.MinFraction = percent / 100; changed = true; }
             }
             else
+            {
                 MinFractionBox.BorderBrush = bad;
+                valid = false;
+            }
 
             if (TryParseNumber(IntensityFactorBox.Text, out var factor) && factor > 0)
             {
@@ -662,10 +751,29 @@ namespace SCPBrowser
                 if (Math.Abs(_draft.IntensityFactor - factor) > 1e-12) { _draft.IntensityFactor = factor; changed = true; }
             }
             else
+            {
                 IntensityFactorBox.BorderBrush = bad;
+                valid = false;
+            }
 
+            if (int.TryParse(MinBlanksBox.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out var minBlanks) && minBlanks >= 1)
+            {
+                MinBlanksBox.BorderBrush = normal;
+                if (_draft.MinBlanksPerScope != minBlanks) { _draft.MinBlanksPerScope = minBlanks; changed = true; }
+            }
+            else
+            {
+                MinBlanksBox.BorderBrush = bad;
+                valid = false;
+            }
+
+            _numbersValid = valid;
             if (changed)
-                RefreshNegativeControls();
+            {
+                _numberDebounce.Stop();
+                _numberDebounce.Start();
+            }
+            UpdateNegativeControlStatus(LoadedDataSource?.Invoke());
         }
 
         /// <summary>
@@ -710,10 +818,17 @@ namespace SCPBrowser
             RefreshNegativeControls();
         }
 
-        private async void ApplyNegativeControlsButton_Click(object sender, RoutedEventArgs e)
+        private async void ApplyNegativeControlsButton_Click(object sender, RoutedEventArgs e) =>
+            await ApplyNegativeControlsAsync();
+
+        /// <summary>
+        /// Saves the negative controls being edited and asks the host to rebuild the analyses. False when there was
+        /// nothing valid to apply or the save failed.
+        /// </summary>
+        public async Task<bool> ApplyNegativeControlsAsync()
         {
-            if (string.IsNullOrEmpty(_databasePath))
-                return;
+            if (string.IsNullOrEmpty(_databasePath) || !_numbersValid)
+                return false;
             try
             {
                 ApplyNegativeControlsButton.IsEnabled = false;
@@ -727,16 +842,21 @@ namespace SCPBrowser
                 NcStatusText.Text = "Saved. Reprocessing the analyses...";
                 NcStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0x47, 0x55, 0x69));
                 NegativeControlsApplied?.Invoke(this, EventArgs.Empty);
+                return true;
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Could not save the negative controls:\n\n{ex.Message}", "Negative Controls",
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 UpdateNegativeControlStatus(LoadedDataSource?.Invoke());
+                return false;
             }
         }
 
-        private void DiscardNegativeControlsButton_Click(object sender, RoutedEventArgs e)
+        private void DiscardNegativeControlsButton_Click(object sender, RoutedEventArgs e) => DiscardNegativeControlChanges();
+
+        /// <summary>Drops the changes not applied: the tab shows the saved negative controls again.</summary>
+        public void DiscardNegativeControlChanges()
         {
             _draft = _savedSettings.Clone();
             NcSuggestText.Visibility = Visibility.Collapsed;
@@ -800,7 +920,7 @@ namespace SCPBrowser
             int partly = _blankProteins.Count(v => v.Status == "Partly removed");
             BlankProteinsSummaryText.Text =
                 $"{_blankProteins.Count:N0} protein rows in the selected blanks ({_plan?.Scopes.Count ?? 0} plate scope(s)); " +
-                $"{removed:N0} removed, {partly:N0} partly removed with these settings" +
+                $"{removed:N0} removed, {partly:N0} partly removed with these settings" + (_draft.RemovalEnabled ? "" : " (if switched on)") +
                 (filter.Length > 0 ? $"; {shown.Count:N0} shown" : "") + ".";
         }
 

@@ -318,8 +318,28 @@ namespace SCPBrowser
         /// Close button handler - hides the control and triggers reclassification
         /// only if the user actually changed something inside OmicBrowser.
         /// </summary>
-        private void CloseButton_Click(object sender, RoutedEventArgs e)
+        private async void CloseButton_Click(object sender, RoutedEventArgs e)
         {
+            // Negative controls edited but not applied would otherwise be lost without a word when the browser reopens.
+            if (ConditionsBrowser.HasPendingNegativeControlChanges)
+            {
+                var answer = MessageBox.Show(
+                    "The negative controls were changed in the Conditions tab but not applied.\n\n" +
+                    "Apply them and reprocess now? No discards the changes.",
+                    "Negative Controls", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+                if (answer == MessageBoxResult.Cancel)
+                    return;
+                if (answer == MessageBoxResult.Yes)
+                {
+                    if (!await ConditionsBrowser.ApplyNegativeControlsAsync())
+                        return;
+                    // The reprocess classifies again with the current markers, weights and exclusions.
+                    _omicChanged = false;
+                }
+                else
+                    ConditionsBrowser.DiscardNegativeControlChanges();
+            }
+
             this.Visibility = Visibility.Collapsed;
 
             if (!_omicChanged)

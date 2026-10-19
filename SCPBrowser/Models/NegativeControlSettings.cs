@@ -22,8 +22,9 @@ namespace SCPBrowser.Models
     /// marked as a negative control holds blank runs; the runs not left out are the selected blanks the background is
     /// estimated from. When removal is on, a protein is removed from every run its blanks apply to (the run's plate, or
     /// the whole project) if it is found in at least <see cref="MinFraction"/> of those blanks, and, with the intensity
-    /// rule, a measurement is also removed when it is below <see cref="IntensityFactor"/> times the protein's blank level.
-    /// The data as loaded is never changed; the cleaned copy is built from it on every load.
+    /// rule, a measurement is also removed when it is below <see cref="IntensityFactor"/> times the protein's blank level
+    /// (with <see cref="RequireBothRules"/>, only when both rules apply). The data as loaded is never changed; the
+    /// cleaned copy is built from it on every load.
     /// </summary>
     public sealed class NegativeControlSettings
     {
@@ -47,17 +48,34 @@ namespace SCPBrowser.Models
         /// <summary>Intensity rule: remove a measurement below <see cref="IntensityFactor"/> times the blank level.</summary>
         public bool UseIntensity { get; set; }
 
-        /// <summary>How many times its blank level a cell measurement must reach to be kept under the intensity rule.</summary>
-        public double IntensityFactor { get; set; } = 3;
+        /// <summary>
+        /// How many times its blank level a cell measurement must reach to be kept under the intensity rule. 2 reads as
+        /// "at most half of the signal can be the blank's"; on Isabele's biopsies every k from 1 to 3 draws nearly the
+        /// same line, because their background proteins sit at about the blank level while lysates sit 16x above it.
+        /// </summary>
+        public double IntensityFactor { get; set; } = 2;
+
+        /// <summary>
+        /// With both rules on, remove a measurement only when both apply: the protein is frequent in the blanks AND the
+        /// measurement is below <see cref="IntensityFactor"/> times its blank level. A run with clearly more of a blank
+        /// protein than any blank keeps it (Isabele's cell lysates, 16x above the blanks). Off: either rule removes it.
+        /// </summary>
+        public bool RequireBothRules { get; set; }
 
         /// <summary>How the blank level is taken from the selected blanks that detect a protein.</summary>
         public BlankLevelStatistic BlankLevel { get; set; } = BlankLevelStatistic.Max;
 
         /// <summary>
-        /// Each plate's blanks apply only to that plate's runs. A plate with no selected blank of its own uses all the
-        /// selected blanks of the project, and the preview says so.
+        /// Each plate's blanks apply only to that plate's runs. A plate with fewer than <see cref="MinBlanksPerScope"/>
+        /// selected blanks of its own uses all the selected blanks of the project, and the preview says so.
         /// </summary>
         public bool PerPlate { get; set; } = true;
+
+        /// <summary>
+        /// The fewest selected blanks a plate needs to be estimated on its own blanks (per-plate scope). With one blank,
+        /// any percentage means "found in that blank", so the default is 2.
+        /// </summary>
+        public int MinBlanksPerScope { get; set; } = 2;
 
         /// <summary>
         /// Blank runs are left out of the cell analyses (Explorer, classification, protein matrix, exports), with or
@@ -85,8 +103,10 @@ namespace SCPBrowser.Models
             MinFraction = MinFraction,
             UseIntensity = UseIntensity,
             IntensityFactor = IntensityFactor,
+            RequireBothRules = RequireBothRules,
             BlankLevel = BlankLevel,
             PerPlate = PerPlate,
+            MinBlanksPerScope = MinBlanksPerScope,
             ExcludeBlankRunsFromAnalysis = ExcludeBlankRunsFromAnalysis
         };
 
@@ -100,8 +120,10 @@ namespace SCPBrowser.Models
             && MinFraction == other.MinFraction
             && UseIntensity == other.UseIntensity
             && IntensityFactor == other.IntensityFactor
+            && RequireBothRules == other.RequireBothRules
             && BlankLevel == other.BlankLevel
             && PerPlate == other.PerPlate
+            && MinBlanksPerScope == other.MinBlanksPerScope
             && ExcludeBlankRunsFromAnalysis == other.ExcludeBlankRunsFromAnalysis;
 
         /// <summary>The saved settings, or the defaults (no blanks, removal off) when none are saved or they cannot be read.</summary>
@@ -119,7 +141,8 @@ namespace SCPBrowser.Models
                 settings.LeftOutRuns ??= new List<string>();
                 settings.MinFraction = Math.Clamp(settings.MinFraction, 0.0, 1.0);
                 if (!(settings.IntensityFactor > 0))
-                    settings.IntensityFactor = 3;
+                    settings.IntensityFactor = 2;
+                settings.MinBlanksPerScope = Math.Max(1, settings.MinBlanksPerScope);
                 return settings;
             }
             catch (Exception ex)

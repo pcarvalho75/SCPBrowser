@@ -430,22 +430,39 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                                                 <TextBlock Text="x the" Style="{StaticResource NcText}" Margin="0,0,5,0"/>
                                                 <ComboBox x:Name="BlankLevelCombo" FontSize="11.5" Width="80" VerticalAlignment="Center"
                                                           SelectionChanged="NcOption_Changed">
-                                                    <ComboBoxItem Content="max" ToolTip="The highest blank intensity: the stricter bar"/>
-                                                    <ComboBoxItem Content="median" ToolTip="The median blank intensity: less sensitive to one high blank"/>
+                                                    <ComboBoxItem Content="max" ToolTip="The highest blank intensity: the stricter bar. With 2 to 4 blanks, max and median barely differ"/>
+                                                    <ComboBoxItem Content="median" ToolTip="The median blank intensity: less sensitive to one high blank; it matters only with many blanks"/>
                                                 </ComboBox>
                                                 <TextBlock Text="blank level" Style="{StaticResource NcText}" Margin="5,0,0,0"/>
                                             </StackPanel>
+                                            <StackPanel x:Name="CombineRow" Orientation="Horizontal" Margin="0,2">
+                                                <TextBlock Text="With both rules, remove a measurement" Style="{StaticResource NcText}" Margin="0,0,8,0"/>
+                                                <RadioButton x:Name="EitherRuleRadio" Content="when either applies" GroupName="NcCombine" FontSize="11.5"
+                                                             VerticalContentAlignment="Center" Margin="0,0,12,0"
+                                                             Checked="NcOption_Changed"
+                                                             ToolTip="A protein frequent in the blanks is removed everywhere; any other blank protein is removed where it is below k x its blank level"/>
+                                                <RadioButton x:Name="BothRulesRadio" Content="only when both apply" GroupName="NcCombine" FontSize="11.5"
+                                                             VerticalContentAlignment="Center"
+                                                             Checked="NcOption_Changed"
+                                                             ToolTip="A protein frequent in the blanks is removed only where the run is below k x its blank level: a run with clearly more of it than any blank keeps it (for example a lysate)"/>
+                                            </StackPanel>
                                             <TextBlock Style="{StaticResource NcText}" FontSize="10.5" Foreground="#94a3b8" Margin="0,0,0,4"
-                                                       Text="With both rules, frequency applies first; the intensity rule then judges what is left. A protein's blank level comes from the selected blanks that detect it."/>
+                                                       Text="A protein's blank level comes from the selected blanks that detect it; one detection is enough to set it. To choose k, sort the Blank Proteins table by Cell / blank: proteins near 1 are background, proteins at 10 or more are cell signal."/>
                                             <StackPanel Orientation="Horizontal" Margin="0,2">
                                                 <TextBlock Text="Blanks apply to" Style="{StaticResource NcText}" Margin="0,0,8,0"/>
                                                 <RadioButton x:Name="PerPlateRadio" Content="their own plate" GroupName="NcScope" FontSize="11.5"
                                                              VerticalContentAlignment="Center" Margin="0,0,12,0"
                                                              Checked="NcOption_Changed"
-                                                             ToolTip="Each plate's blanks apply only to that plate's runs. A plate with no selected blank uses all the selected blanks"/>
+                                                             ToolTip="Each plate's blanks apply only to that plate's runs. A plate with too few selected blanks of its own uses all the selected blanks"/>
                                                 <RadioButton x:Name="WholeProjectRadio" Content="the whole project" GroupName="NcScope" FontSize="11.5"
                                                              VerticalContentAlignment="Center"
                                                              Checked="NcOption_Changed"/>
+                                            </StackPanel>
+                                            <StackPanel x:Name="MinBlanksRow" Orientation="Horizontal" Margin="0,2">
+                                                <TextBlock Text="A plate with fewer than" Style="{StaticResource NcText}"/>
+                                                <TextBox x:Name="MinBlanksBox" Style="{StaticResource NcNumberBox}" Width="34" TextChanged="NcNumber_Changed"
+                                                         ToolTip="With one blank, any percentage means &quot;found in that blank&quot;, so a plate needs at least 2 to be estimated on its own"/>
+                                                <TextBlock Text="selected blanks of its own uses all the selected blanks" Style="{StaticResource NcText}"/>
                                             </StackPanel>
                                         </StackPanel>
                                         <CheckBox x:Name="ExcludeBlanksCheckBox" Style="{StaticResource NcCheckBox}" Margin="0,6,0,0"
@@ -476,7 +493,8 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
                                     <Button DockPanel.Dock="Right" x:Name="ExportBlankProteinsButton" Content="Export CSV..."
                                             Style="{StaticResource NcButton}" Margin="8,0,0,0"
-                                            Click="ExportBlankProteinsButton_Click"/>
+                                            Click="ExportBlankProteinsButton_Click"
+                                            ToolTip="Saves every row, whatever the filter shows"/>
                                     <Grid DockPanel.Dock="Right" Width="160" VerticalAlignment="Center">
                                         <TextBox x:Name="BlankProteinFilterBox" FontSize="11.5" Padding="3,1"
                                                  TextChanged="BlankProteinFilterBox_TextChanged"
@@ -507,7 +525,7 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                                         <DataGridTextColumn Header="Cell / blank" Binding="{Binding MedianRatio, StringFormat={}{0:G3}}" Width="72"/>
                                         <DataGridTextColumn Header="Kept in cells" Binding="{Binding CellKept}" Width="80"/>
                                         <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
-                                        <DataGridTextColumn Header="Plate" Binding="{Binding Scope}" Width="*"/>
+                                        <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="*"/>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </DockPanel>

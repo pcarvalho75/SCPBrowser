@@ -312,48 +312,62 @@ contaminants. Mark them as negative controls and SCPBrowser can remove that back
 
 <h3>Marking the blanks</h3>
 <p>Open <span class="path">Project Browser ▸ Conditions</span>, select the condition that holds the blanks and
-tick <b>Negative control (blanks)</b>. Several conditions can be marked. The marking is saved in the project.</p>
+tick <b>Negative control (blanks)</b>. Several conditions can be marked. The marking is saved in the project, and
+once a condition is marked the <b>Negative Controls</b> and <b>Blank Proteins</b> tabs stay open even with no
+condition selected.</p>
 
 <h3>Choosing the blanks used for the estimate</h3>
-<p>A contaminated blank makes real proteins look like background. In the <b>Negative Controls</b> tab, untick it
-in the list, or click its dot in the plot (click again to use it). Blanks left out are drawn as hollow rings and
-stay in the box. <b>Suggest outliers</b> leaves out the blanks with far more protein groups than the others (above
-the median plus 3 robust deviations and above 1.5 times the median); check them in the plot before applying.</p>
+<p>A contaminated blank distorts the estimate both ways: it makes real cell proteins look frequent, and it dilutes
+true background below the percentage. In the <b>Negative Controls</b> tab, untick it in the list, or click its dot
+in the plot (click again to use it). Blanks left out are drawn as hollow rings and stay in the box. <b>Suggest
+outliers</b> leaves out the blanks with far more protein groups than the others (above the median plus 3 robust
+deviations and above 1.5 times the median); check them in the plot before applying. A blank excluded in the
+Explorer is never used for the estimate; restore it there to use it.</p>
 
 <h3>The rules</h3>
 <ul>
-  <li><b>Frequency</b> (on by default): a protein found in at least X% of the selected blanks (default 50%) is
-      removed from every run the blanks apply to.</li>
+  <li><b>Frequency</b> (on by default): a protein found in at least X% of the selected blanks (default 50%, that is,
+      in at least two of up to four blanks) is frequent. 75% is the conservative choice: it removes only proteins
+      that stay frequent whichever single blank is dropped.</li>
   <li><b>Intensity</b> (off by default): each protein gets a blank level, the highest (default) or the median
-      intensity over the selected blanks that detect it. In each run, a measurement below k times that level
-      (default 3) is removed.</li>
-  <li>With both rules, frequency applies first and the intensity rule judges what is left.</li>
-  <li><b>Blanks apply to</b> their own plate (default) or the whole project. A plate without a selected blank uses
-      all the selected blanks, and the preview says so. With a single blank on a plate, every protein in it is
-      removed from that plate's runs.</li>
+      intensity over the selected blanks that detect it (with two to four blanks the two barely differ). In each
+      run, a measurement below k times that level (default 2: at most half of the signal can be the blank's) is
+      removed. One detection is enough to set a level.</li>
+  <li><b>With both rules</b>, a measurement is removed when either applies (default), or only when both apply: a
+      protein frequent in the blanks is then kept in a run that shows at least k times its blank level. Use the
+      second when some samples are much stronger than the blanks (cell lysates, for example), so that their real
+      signal is not removed with the background.</li>
+  <li><b>Blanks apply to</b> their own plate (default) or the whole project. A plate needs at least 2 selected blanks
+      of its own (adjustable): with a single blank, any percentage means "found in that blank". A plate with fewer
+      uses all the selected blanks, and the preview says so.</li>
   <li><b>Leave the blank runs out of the cell analyses</b> (on by default): blanks are not cells, so they are kept
       out of the Explorer, classification, the protein matrix and the exports.</li>
 </ul>
 
 <h3>Preview, then apply</h3>
-<p>Every change is previewed at once: per plate, the proteins seen in the blanks and how many the rules remove;
-the share of protein measurements removed; and, per condition, the median share of protein groups its runs lose.
-The plot's <b>After removal</b> switch shows the counts after removal, and the hover label shows both numbers
-(kept / identified). The <b>Blank Proteins</b> tab lists every protein of the selected blanks with how many blanks
-and cells detect it, its blank level, the median cell-to-blank intensity ratio and what the rules do to it;
-<b>Export CSV</b> saves the table.</p>
+<p>Every change is previewed at once: per plate, the proteins seen in the blanks, how many are frequent and how
+strong the blanks are against the cells; the share of protein measurements removed; and, per condition, the median
+share of protein groups its runs lose. The plot's <b>After removal</b> switch shows the cells' counts after removal
+(blanks stay as loaded), and the hover label shows both numbers (kept / identified). The <b>Blank Proteins</b> tab
+lists every protein of the selected blanks with how many blanks and cells detect it, its blank level, the median
+cell-to-blank intensity ratio and what the rules do to it; <b>Export CSV</b> saves every row.</p>
+<p><b>Choosing k:</b> sort the Blank Proteins table by <b>Cell / blank</b>. Proteins near 1 are background in those
+cells; proteins at 10 or more are cell signal. Pick k where the column splits.</p>
 <p><b>Apply and reprocess</b> saves the settings and rebuilds every analysis from the data already in memory (no
 file is read again). Removal runs after loading and the 1% FDR filter, before every filter and analysis: the
 peptides seen only under a removed protein are removed with it, and each run's total ion current drops by the
 signal removed. The imported data never change: switching the removal off restores them, and the plot's
-<b>Raw</b> view always shows the counts as loaded.</p>
+<b>Raw</b> view always shows the counts as loaded. Closing the Project Browser with changes not applied asks
+whether to apply or discard them.</p>
 <div class="note"><b>Read the preview before applying</b>
-In deep single-cell data, blanks share many proteins with real cells, usually the most abundant ones. A rule that
-removes half of a condition's proteins is usually too aggressive: raise the percentage, use the intensity rule
-on its own, or leave out contaminated blanks.</div>
-<p>The Analysis Report and the PatternLab export record the blanks, the rules and their effect. Marker-only
-classification honours the removal as well. The protein coverage viewer reads peptides straight from the
-parquet files, so it still shows every identified peptide.</p>
+In deep single-cell data, blanks share many proteins with real cells, usually the most abundant ones, and blanks
+can carry more total signal than a single cell. A rule that removes half of a condition's proteins may be honest
+(those proteins sit at blank level in those cells) or too aggressive: compare 50% with 75%, try requiring both
+rules, and leave out contaminated blanks.</div>
+<p>The Analysis Report and the PatternLab export record the blanks, the rules and their effect. Profile
+classification recomputes after a change, and marker-only classification and HeadlessEmbed honour the removal as
+well. The protein coverage viewer reads peptides straight from the parquet files, so it still shows every
+identified peptide.</p>
 
 <!-- ───────────────────────────── REFERENCE ───────────────────────────── -->
 <h2 id="reference">Reference profiles</h2>

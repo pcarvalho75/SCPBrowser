@@ -570,10 +570,7 @@ namespace SCPBrowser
         }
 
         /// <summary>
-        /// Builds the plain-text provenance block shared by the report file and the PLP sidecar.
-        /// </summary>
-        /// <summary>
-        /// The blanks, the rule and its effect, as applied to the data this report describes (the settings saved and
+        /// The blanks, the rules and their effect, as applied to the data this report describes (the settings saved and
         /// applied on the last load; changes previewed in the Conditions tab but not applied are not in effect).
         /// </summary>
         private static void AppendNegativeControls(StringBuilder sb, BackgroundRemovalResult? applied, CultureInfo inv)
@@ -587,9 +584,9 @@ namespace SCPBrowser
             var s = plan.Settings;
             sb.AppendLine(ReportLine("Negative-control conditions", string.Join(", ", s.Conditions)));
             sb.AppendLine(ReportLine("Blank runs", $"{plan.BlankRuns.Count.ToString(inv)} ({plan.SelectedBlanks.Count.ToString(inv)} used for the estimate, " +
-                                                   $"{(plan.BlankRuns.Count - plan.SelectedBlanks.Count).ToString(inv)} left out)"));
+                                                   $"{(plan.BlankRuns.Count - plan.SelectedBlanks.Count).ToString(inv)} not)"));
             foreach (var run in plan.BlankRuns.Where(r => !plan.SelectedBlanks.Contains(r)).OrderBy(r => r, StringComparer.Ordinal))
-                sb.AppendLine("    left out of the estimate: " + run);
+                sb.AppendLine((plan.ManuallyExcludedBlanks.Contains(run) ? "    excluded in the Explorer: " : "    left out of the estimate: ") + run);
             sb.AppendLine(ReportLine("Blank runs in the analyses", s.ExcludeBlankRunsFromAnalysis ? "left out" : "kept"));
             if (!s.RemovesBackground)
             {
@@ -598,22 +595,35 @@ namespace SCPBrowser
             }
             sb.AppendLine(ReportLine("Background removal", "on"));
             sb.AppendLine(ReportLine("Frequency rule", s.UseFrequency
-                ? $"remove a protein found in at least {(s.MinFraction * 100).ToString("0.##", inv)}% of the selected blanks" : "off"));
+                ? $"a protein found in at least {(s.MinFraction * 100).ToString("0.##", inv)}% of the selected blanks" : "off"));
             sb.AppendLine(ReportLine("Intensity rule", s.UseIntensity
-                ? $"remove a measurement below {s.IntensityFactor.ToString("0.##", inv)} x the {(s.BlankLevel == Models.BlankLevelStatistic.Max ? "max" : "median")} blank level" : "off"));
-            sb.AppendLine(ReportLine("Blanks apply to", s.PerPlate ? "their own plate (plates without a selected blank use all of them)" : "the whole project"));
+                ? $"a measurement below {s.IntensityFactor.ToString("0.##", inv)} x the {(s.BlankLevel == Models.BlankLevelStatistic.Max ? "max" : "median")} blank level" : "off"));
+            if (s.UseFrequency && s.UseIntensity)
+                sb.AppendLine(ReportLine("Rules combined", s.RequireBothRules
+                    ? "removed only when both apply (a frequent protein is kept where it reaches the bar)"
+                    : "removed when either applies"));
+            sb.AppendLine(ReportLine("Blanks apply to", s.PerPlate
+                ? $"their own plate (a plate with fewer than {s.MinBlanksPerScope.ToString(inv)} selected blanks uses all of them)"
+                : "the whole project"));
             foreach (var scope in plan.Scopes)
-                sb.AppendLine($"    {scope.Name}{(scope.UsesProjectBlanks ? " (all selected blanks)" : "")}: {scope.SelectedBlanks.Count.ToString(inv)} blank(s), " +
-                              $"{scope.BlankProteins.Count.ToString(inv)} proteins in them, {scope.FrequentProteins.Count.ToString(inv)} removed by the frequency rule");
+                sb.AppendLine($"    {scope.Name}: {scope.SelectedBlanks.Count.ToString(inv)} blank(s), " +
+                              $"{scope.BlankProteins.Count.ToString(inv)} proteins in them, {scope.FrequentProteins.Count.ToString(inv)} frequent");
+            if (plan.PlatesUsingProjectBlanks.Count > 0)
+                sb.AppendLine("    using all selected blanks: " + string.Join(", ", plan.PlatesUsingProjectBlanks));
             int removed = applied.MeasurementsRemovedByFrequency + applied.MeasurementsRemovedByIntensity;
-            sb.AppendLine(ReportLine("Measurements removed", $"{removed.ToString(inv)} of {applied.MeasurementsTotal.ToString(inv)} protein measurements " +
-                                                             $"({applied.MeasurementsRemovedByFrequency.ToString(inv)} by frequency, {applied.MeasurementsRemovedByIntensity.ToString(inv)} by intensity)"));
+            string byRule = s.UseFrequency && s.UseIntensity && !s.RequireBothRules
+                ? $" ({applied.MeasurementsRemovedByFrequency.ToString(inv)} by frequency, {applied.MeasurementsRemovedByIntensity.ToString(inv)} by intensity)"
+                : "";
+            sb.AppendLine(ReportLine("Measurements removed", $"{removed.ToString(inv)} of {applied.MeasurementsTotal.ToString(inv)} protein measurements{byRule}"));
             sb.AppendLine(ReportLine("Proteins with no measurement left", applied.ProteinsRemovedEverywhere.ToString(inv)));
             sb.AppendLine();
             sb.AppendLine("    Applied after loading and the 1% FDR filter and before every filter and analysis; the peptides");
             sb.AppendLine("    seen only under a removed protein are removed with it. The imported data are not changed.");
         }
 
+        /// <summary>
+        /// Builds the plain-text provenance block shared by the report file and the PLP sidecar.
+        /// </summary>
         private async Task<string> BuildAnalysisReportAsync()
         {
             var options = BuildOptions();

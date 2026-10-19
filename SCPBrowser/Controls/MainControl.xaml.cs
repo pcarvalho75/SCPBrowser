@@ -50,7 +50,7 @@ namespace SCPBrowser
         /// The data as loaded for analysis (null before a load), for views outside this tab that report per-run or
         /// distinct identifications with the same filtering the Explorer uses. This is the object the load produced,
         /// not _currentData: UpdateChart replaces _currentData with the plate-filtered copy after every filter pass,
-        /// and that copy drops the runs of unselected plates and carries no ProteinsPerFile/PeptidesPerFile.
+        /// and that copy drops the runs of unselected plates (and their ProteinsPerFile/PeptidesPerFile entries).
         /// </summary>
         public ProteomicsData? LoadedData => _loadedData;
 

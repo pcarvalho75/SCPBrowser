@@ -927,8 +927,8 @@ namespace SCPBrowser
         {
             bool applyMarkers = _applyKeyMarkersCheckbox?.IsChecked ?? false;
             
-            // Count total markers across all cell types
-            int totalMarkers = _keyMarkers.Values.Sum(m => m.Count);
+            // Distinct marker genes across all cell types (a gene marking two types is still one marker)
+            int totalMarkers = _keyMarkers.Values.SelectMany(m => m).Distinct(StringComparer.OrdinalIgnoreCase).Count();
             
             // If checkbox is on but no markers defined, classify without markers
             if (applyMarkers && totalMarkers == 0)

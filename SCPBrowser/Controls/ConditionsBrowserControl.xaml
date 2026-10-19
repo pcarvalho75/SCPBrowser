@@ -236,7 +236,7 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- Protein quant rows -->
+                                    <!-- Distinct proteins (the quant rows a delete removes are listed in the delete dialog) -->
                                     <Border Grid.Row="0" Grid.Column="2"
                                             Background="White"
                                             CornerRadius="4"
@@ -245,7 +245,8 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                                             BorderBrush="#e2e8f0"
                                             BorderThickness="1">
                                         <StackPanel>
-                                            <TextBlock Text="Protein Quant Rows" FontSize="11" Foreground="#64748b"/>
+                                            <TextBlock Text="Distinct Proteins" FontSize="11" Foreground="#64748b"
+                                                       ToolTip="Protein groups identified in this condition's runs, each counted once however many runs saw it (data as loaded, after the FDR filter)"/>
                                             <TextBlock x:Name="StatProteinQuantText" Text="0"
                                                        FontSize="20" FontWeight="Bold" Foreground="#10b981"/>
                                         </StackPanel>

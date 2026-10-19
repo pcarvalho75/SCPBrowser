@@ -406,7 +406,15 @@ namespace SCPBrowser.Services
                 ProteinToGeneMap = new Dictionary<string, string>(source.ProteinToGeneMap),
                 ProteinQuantMatrix = new Dictionary<string, Dictionary<string, double>>(),
                 ContaminantIds = new HashSet<string>(source.ContaminantIds, StringComparer.OrdinalIgnoreCase),
-                IsGeneMatrix = source.IsGeneMatrix // preserve the gene-matrix flag through filtering (drives the axis relabel)
+                IsGeneMatrix = source.IsGeneMatrix, // preserve the gene-matrix flag through filtering (drives the axis relabel)
+                // The per-run identification lists (shared arrays, not copies), so the filtered data can still report
+                // distinct counts over its own runs, also after a second filter stage.
+                ProteinsPerFile = source.ProteinsPerFile
+                    .Where(kvp => allowedRawFiles.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                PeptidesPerFile = source.PeptidesPerFile
+                    .Where(kvp => allowedRawFiles.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
             };
 
             // Filter protein quant matrix
@@ -425,7 +433,10 @@ namespace SCPBrowser.Services
             // Update totals
             filtered.TotalRawFiles = filtered.RawFileNames.Count;
             filtered.TotalProteinGroups = filtered.ProteinQuantMatrix.Count;
-            filtered.TotalPeptides = source.AllPeptideSequences.Count; // Use unique sequences from source
+            // Distinct peptides of the runs kept. It was the source's whole-dataset count, so it ignored the filter, and
+            // after a second filter stage (whose source is a filtered copy without that set) it was 0.
+            filtered.TotalPeptides = filtered.CountDistinctAcrossRuns(filtered.RawFileNames).Peptides
+                                     ?? source.AllPeptideSequences.Count;
 
             return filtered;
         }

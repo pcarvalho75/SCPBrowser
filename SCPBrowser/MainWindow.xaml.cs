@@ -2905,7 +2905,9 @@ namespace SCPBrowser
                 await UpdatePipelineStatusAsync();
 
                 // Show summary
-                int totalMarkers = keyMarkers?.Values.Sum(m => m.Count) ?? 0;
+                // Distinct marker genes (a gene marking two cell types is still one marker)
+                int totalMarkers = keyMarkers?.Values.SelectMany(m => m)
+                                       .Distinct(StringComparer.OrdinalIgnoreCase).Count() ?? 0;
                 int excludedCount = excludedCellTypes?.Count ?? 0;
                 string excludedNote = excludedCount > 0 ? $"\n{excludedCount} cell type(s) excluded." : "";
                 string message = applyMarkers

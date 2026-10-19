@@ -159,6 +159,23 @@ namespace SCPBrowser
             {
                 var stats = await _parquetService.GetConditionStatsAsync(condition);
 
+                // A protein identified in several runs is one protein, so the condition's total is a distinct count
+                // across its runs, from the data as loaded (the database's per-run rows can predate the FDR filter).
+                // The tile showed the number of protein-quant rows, one per protein per run: 95,988 for 2,744
+                // distinct proteins in KOLF_GR_6mo of SpaceProjectV3. That row count stays in the delete dialog.
+                var loadedData = LoadedDataSource?.Invoke();
+                var runNames = _allRawFiles
+                    .Where(rf => string.Equals(rf.BiologicalCondition, condition, StringComparison.Ordinal))
+                    .Select(rf => rf.RawFileName)
+                    .ToList();
+                int? distinctProteins = loadedData == null
+                    ? null
+                    : (await Task.Run(() => loadedData.CountDistinctAcrossRuns(runNames))).Proteins;
+
+                // Another condition may have been selected while counting; its panel must not be overwritten.
+                if ((ConditionsListBox.SelectedItem as ConditionListItem)?.Name != condition)
+                    return;
+
                 ConditionHeaderText.Text = $"Condition: {condition}";
                 ConditionSubText.Text =
                     $"Removing this condition will purge {stats.RawFileCount:N0} raw file(s) and all dependent rows.";
@@ -166,7 +183,7 @@ namespace SCPBrowser
 
                 StatRawFilesText.Text = stats.RawFileCount.ToString("N0");
                 StatPlatesText.Text = stats.PlateCount.ToString("N0");
-                StatProteinQuantText.Text = stats.ProteinQuantRowCount.ToString("N0");
+                StatProteinQuantText.Text = distinctProteins?.ToString("N0") ?? "n/a";
                 StatClassificationsText.Text = stats.ClassificationCount.ToString("N0");
                 StatExclusionsText.Text = stats.ExclusionCount.ToString("N0");
                 StatOrphanImportsText.Text = stats.OrphanImportCount.ToString("N0");

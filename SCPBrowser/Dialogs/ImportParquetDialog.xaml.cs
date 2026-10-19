@@ -34,6 +34,9 @@ namespace SCPBrowser
         // it is closed, because retrying on top of a half-written import would double-insert.
         private string _blockedReason;
 
+        // Distinct protein groups in the previewed file, for the import record (every run of the file is imported).
+        private int _previewProteinGroups;
+
         private ObservableCollection<RawFileInfo> _rawFiles;
         private ObservableCollection<RawFileInfo> _filteredRawFiles;
         private ObservableCollection<PlateInfo> _plates;
@@ -421,6 +424,7 @@ namespace SCPBrowser
 
                 // Load data to extract raw file names
                 var data = await parquetService.LoadParquetFileAsync(filePath, mapping);
+                _previewProteinGroups = data.TotalProteinGroups;
 
                 // Clear and populate raw files
                 RawFiles.Clear();
@@ -999,7 +1003,9 @@ namespace SCPBrowser
                     FileHash = fileHash,
                     ImportTimestamp = DateTime.Now,
                     RowCount = 0, // Will be updated after reading parquet
-                    ProteinCount = RawFiles.Sum(rf => rf.ProteinCount),
+                    // Distinct protein groups in the file. Summing the runs' counts counted a protein once per run
+                    // that saw it (the same overcount the plate and condition summaries had).
+                    ProteinCount = _previewProteinGroups,
                     CellCount = RawFiles.Count,
                     ColumnMappingJson = mappingJson
                 };

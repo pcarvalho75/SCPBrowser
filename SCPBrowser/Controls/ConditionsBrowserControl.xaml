@@ -12,6 +12,46 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900"
              Background="White">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+
+        <Style x:Key="NcSectionTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#1e293b"/>
+            <Setter Property="Margin" Value="0,10,0,6"/>
+        </Style>
+
+        <Style x:Key="NcText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Foreground" Value="#475569"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style x:Key="NcCheckBox" TargetType="CheckBox">
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Foreground" Value="#334155"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,3"/>
+        </Style>
+
+        <Style x:Key="NcNumberBox" TargetType="TextBox">
+            <Setter Property="Width" Value="46"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Padding" Value="3,1"/>
+            <Setter Property="Margin" Value="5,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+
+        <Style x:Key="NcButton" TargetType="Button">
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Padding" Value="12,5"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+    </UserControl.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -74,10 +114,22 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
-                                        <TextBlock Grid.Row="0"
-                                                   Text="{Binding Name}"
-                                                   FontWeight="SemiBold"
-                                                   FontSize="13"/>
+                                        <DockPanel Grid.Row="0">
+                                            <Border DockPanel.Dock="Right"
+                                                    Background="#ede9fe"
+                                                    CornerRadius="3"
+                                                    Padding="5,1"
+                                                    Margin="6,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Visibility="{Binding IsNegativeControl, Converter={StaticResource BoolToVisibility}}"
+                                                    ToolTip="Negative control: its runs are blanks, used to estimate the background">
+                                                <TextBlock Text="Negative control" FontSize="10" Foreground="#5b21b6"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="13"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </DockPanel>
                                         <TextBlock Grid.Row="1"
                                                    FontSize="11"
                                                    Foreground="#64748b"
@@ -114,11 +166,26 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                             Padding="15,12"
                             Margin="0,0,0,10">
                         <StackPanel>
-                            <TextBlock x:Name="ConditionHeaderText"
-                                       Text="Select a condition to view its impact"
-                                       FontSize="14"
-                                       FontWeight="SemiBold"
-                                       Margin="0,0,0,5"/>
+                            <DockPanel>
+                                <CheckBox x:Name="NegativeControlCheckBox"
+                                          DockPanel.Dock="Right"
+                                          Content="Negative control (blanks)"
+                                          FontSize="11.5"
+                                          Foreground="#5b21b6"
+                                          VerticalAlignment="Top"
+                                          VerticalContentAlignment="Center"
+                                          Margin="12,1,0,0"
+                                          Visibility="Collapsed"
+                                          ToolTip="This condition's runs are blanks (no cell). Their proteins estimate the background that can be removed from every run; see the Negative Controls tab below"
+                                          Checked="NegativeControlCheckBox_Changed"
+                                          Unchecked="NegativeControlCheckBox_Changed"/>
+                                <TextBlock x:Name="ConditionHeaderText"
+                                           Text="Select a condition to view its impact"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="0,0,0,5"/>
+                            </DockPanel>
                             <TextBlock x:Name="ConditionSubText"
                                        FontSize="11"
                                        Foreground="#64748b"
@@ -187,13 +254,12 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                                       Margin="0,4,0,4"
                                       Visibility="Collapsed"/>
 
-                        <!-- Stats grid -->
-                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <!-- The selected condition's blast radius, and the project's negative controls -->
+                        <TabControl x:Name="DetailTabs" Grid.Row="2" Visibility="Collapsed" Padding="8"
+                                    SelectionChanged="DetailTabs_SelectionChanged">
+                        <TabItem x:Name="BlastRadiusTab" Header="Blast Radius">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel x:Name="StatsPanel" Visibility="Collapsed">
-                                <TextBlock Text="Blast Radius"
-                                           FontSize="13"
-                                           FontWeight="SemiBold"
-                                           Margin="0,0,0,8"/>
 
                                 <Grid Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>
@@ -320,6 +386,133 @@ Location: SCPBrowser/Controls/ConditionsBrowserControl.xaml
                                 </Border>
                             </StackPanel>
                         </ScrollViewer>
+                        </TabItem>
+
+                        <TabItem x:Name="NegativeControlsTab" Header="Negative Controls">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Margin="2,0,6,4">
+                                    <TextBlock x:Name="NcIntroText" Style="{StaticResource NcText}"/>
+
+                                    <StackPanel x:Name="NcBody">
+                                        <TextBlock Text="Blank runs used for the estimate" Style="{StaticResource NcSectionTitle}"/>
+                                        <TextBlock Style="{StaticResource NcText}" Margin="0,0,0,6"
+                                                   Text="Untick a contaminated blank to leave it out of the background estimate (or click its dot in the plot). Left-out blanks are drawn hollow."/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                            <Button x:Name="SuggestOutliersButton" Content="Suggest outliers" Style="{StaticResource NcButton}"
+                                                    Click="SuggestOutliersButton_Click"
+                                                    ToolTip="Leaves out blanks with far more protein groups than the other blanks (above the median plus 3 robust deviations and above 1.5 times the median); every other blank is used"/>
+                                            <Button x:Name="UseAllBlanksButton" Content="Use all blanks" Style="{StaticResource NcButton}"
+                                                    Click="UseAllBlanksButton_Click"/>
+                                        </StackPanel>
+                                        <TextBlock x:Name="NcSuggestText" Style="{StaticResource NcText}" Foreground="#5b21b6" Margin="0,0,0,4" Visibility="Collapsed"/>
+                                        <Border BorderBrush="#e2e8f0" BorderThickness="1" CornerRadius="4" Padding="8,4" Background="#f8fafc">
+                                            <StackPanel x:Name="BlankRunsPanel"/>
+                                        </Border>
+
+                                        <TextBlock Text="Background removal" Style="{StaticResource NcSectionTitle}"/>
+                                        <CheckBox x:Name="RemovalEnabledCheckBox" Style="{StaticResource NcCheckBox}" FontWeight="SemiBold"
+                                                  Content="Remove the background from every run"
+                                                  Checked="NcOption_Changed" Unchecked="NcOption_Changed"
+                                                  ToolTip="Applied after loading and the 1% FDR filter, before every analysis; the data as loaded is never changed, and unticking this restores it"/>
+                                        <StackPanel x:Name="RulesPanel" Margin="18,2,0,0">
+                                            <StackPanel Orientation="Horizontal" Margin="0,2">
+                                                <CheckBox x:Name="FrequencyCheckBox" Style="{StaticResource NcCheckBox}" Margin="0"
+                                                          Content="Frequency: remove a protein found in at least"
+                                                          Checked="NcOption_Changed" Unchecked="NcOption_Changed"/>
+                                                <TextBox x:Name="MinFractionBox" Style="{StaticResource NcNumberBox}" TextChanged="NcNumber_Changed"/>
+                                                <TextBlock Text="% of the selected blanks" Style="{StaticResource NcText}"/>
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,2">
+                                                <CheckBox x:Name="IntensityCheckBox" Style="{StaticResource NcCheckBox}" Margin="0"
+                                                          Content="Intensity: remove a measurement below"
+                                                          Checked="NcOption_Changed" Unchecked="NcOption_Changed"/>
+                                                <TextBox x:Name="IntensityFactorBox" Style="{StaticResource NcNumberBox}" TextChanged="NcNumber_Changed"/>
+                                                <TextBlock Text="x the" Style="{StaticResource NcText}" Margin="0,0,5,0"/>
+                                                <ComboBox x:Name="BlankLevelCombo" FontSize="11.5" Width="80" VerticalAlignment="Center"
+                                                          SelectionChanged="NcOption_Changed">
+                                                    <ComboBoxItem Content="max" ToolTip="The highest blank intensity: the stricter bar"/>
+                                                    <ComboBoxItem Content="median" ToolTip="The median blank intensity: less sensitive to one high blank"/>
+                                                </ComboBox>
+                                                <TextBlock Text="blank level" Style="{StaticResource NcText}" Margin="5,0,0,0"/>
+                                            </StackPanel>
+                                            <TextBlock Style="{StaticResource NcText}" FontSize="10.5" Foreground="#94a3b8" Margin="0,0,0,4"
+                                                       Text="With both rules, frequency applies first; the intensity rule then judges what is left. A protein's blank level comes from the selected blanks that detect it."/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,2">
+                                                <TextBlock Text="Blanks apply to" Style="{StaticResource NcText}" Margin="0,0,8,0"/>
+                                                <RadioButton x:Name="PerPlateRadio" Content="their own plate" GroupName="NcScope" FontSize="11.5"
+                                                             VerticalContentAlignment="Center" Margin="0,0,12,0"
+                                                             Checked="NcOption_Changed"
+                                                             ToolTip="Each plate's blanks apply only to that plate's runs. A plate with no selected blank uses all the selected blanks"/>
+                                                <RadioButton x:Name="WholeProjectRadio" Content="the whole project" GroupName="NcScope" FontSize="11.5"
+                                                             VerticalContentAlignment="Center"
+                                                             Checked="NcOption_Changed"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <CheckBox x:Name="ExcludeBlanksCheckBox" Style="{StaticResource NcCheckBox}" Margin="0,6,0,0"
+                                                  Content="Leave the blank runs out of the cell analyses (Explorer, classification, protein matrix, exports)"
+                                                  Checked="NcOption_Changed" Unchecked="NcOption_Changed"/>
+
+                                        <TextBlock Text="Preview" Style="{StaticResource NcSectionTitle}"/>
+                                        <Border BorderBrush="#ddd6fe" BorderThickness="1" CornerRadius="4" Padding="10,8" Background="#faf5ff">
+                                            <StackPanel x:Name="PreviewPanel"/>
+                                        </Border>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                            <Button x:Name="ApplyNegativeControlsButton" Content="Apply and reprocess" Style="{StaticResource NcButton}"
+                                                    FontWeight="SemiBold" Background="#6d28d9" Foreground="White" BorderThickness="0"
+                                                    Click="ApplyNegativeControlsButton_Click"
+                                                    ToolTip="Saves these settings in the project and rebuilds every analysis from the data already loaded (no file is read again)"/>
+                                            <Button x:Name="DiscardNegativeControlsButton" Content="Discard changes" Style="{StaticResource NcButton}"
+                                                    Click="DiscardNegativeControlsButton_Click"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <TextBlock x:Name="NcStatusText" Style="{StaticResource NcText}" Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+
+                        <TabItem x:Name="BlankProteinsTab" Header="Blank Proteins">
+                            <DockPanel>
+                                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                    <Button DockPanel.Dock="Right" x:Name="ExportBlankProteinsButton" Content="Export CSV..."
+                                            Style="{StaticResource NcButton}" Margin="8,0,0,0"
+                                            Click="ExportBlankProteinsButton_Click"/>
+                                    <Grid DockPanel.Dock="Right" Width="160" VerticalAlignment="Center">
+                                        <TextBox x:Name="BlankProteinFilterBox" FontSize="11.5" Padding="3,1"
+                                                 TextChanged="BlankProteinFilterBox_TextChanged"
+                                                 ToolTip="Filter by protein or gene"/>
+                                        <TextBlock x:Name="BlankProteinFilterWatermark" Text="Filter protein or gene" FontSize="11.5"
+                                                   Foreground="#a3aab5" Margin="6,2,0,0" IsHitTestVisible="False"/>
+                                    </Grid>
+                                    <TextBlock x:Name="BlankProteinsSummaryText" Style="{StaticResource NcText}"/>
+                                </DockPanel>
+                                <DataGrid x:Name="BlankProteinsGrid"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="True"
+                                          HeadersVisibility="Column"
+                                          GridLinesVisibility="Horizontal"
+                                          HorizontalGridLinesBrush="#eef0f3"
+                                          FontSize="11.5"
+                                          RowHeight="22"
+                                          MinHeight="120"
+                                          EnableRowVirtualization="True"
+                                          CanUserReorderColumns="False"
+                                          SelectionMode="Extended">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Protein" Binding="{Binding Protein}" Width="160"/>
+                                        <DataGridTextColumn Header="Genes" Binding="{Binding Genes}" Width="100"/>
+                                        <DataGridTextColumn Header="Blanks" Binding="{Binding BlanksText}" SortMemberPath="BlankFraction" Width="60"/>
+                                        <DataGridTextColumn Header="Blank level" Binding="{Binding BlankLevel, StringFormat={}{0:0.##E+0}}" Width="80"/>
+                                        <DataGridTextColumn Header="Cells" Binding="{Binding CellsText}" SortMemberPath="CellFraction" Width="60"/>
+                                        <DataGridTextColumn Header="Cell / blank" Binding="{Binding MedianRatio, StringFormat={}{0:G3}}" Width="72"/>
+                                        <DataGridTextColumn Header="Kept in cells" Binding="{Binding CellKept}" Width="80"/>
+                                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
+                                        <DataGridTextColumn Header="Plate" Binding="{Binding Scope}" Width="*"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </DockPanel>
+                        </TabItem>
+                        </TabControl>
                     </Grid>
                 </DockPanel>
                 </ScrollViewer>

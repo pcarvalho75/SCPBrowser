@@ -27,6 +27,18 @@ namespace SCPBrowser
 
         /// <summary>Context for the hover label, such as the run's plate or condition.</summary>
         public string Detail { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Drawn as a ring in its own color, and still part of the box and of n: a blank run left out of the
+        /// negative-control background estimate.
+        /// </summary>
+        public bool IsHollow { get; init; }
+
+        /// <summary>Shown in the hover label in place of the value, such as "312 / 447" (kept of identified); null shows the value.</summary>
+        public string? ValueText { get; init; }
+
+        /// <summary>A last remark for the hover label, such as "left out of the blank estimate".</summary>
+        public string? Note { get; init; }
     }
 
     /// <summary>One box: the IQR, median and whiskers of its included runs, in one color.</summary>
@@ -58,6 +70,9 @@ namespace SCPBrowser
 
         /// <summary>Drawn as a ring, the mark used for excluded runs.</summary>
         public bool IsRing { get; init; }
+
+        /// <summary>Drawn as a ring in <see cref="Color"/>, the mark of a hollow run.</summary>
+        public bool IsHollow { get; init; }
     }
 
     public class IdentificationBoxPlot : FrameworkElement
@@ -734,6 +749,8 @@ namespace SCPBrowser
                     var color = entry.IsRing ? ExcludedColor : entry.Color;
                     if (entry.IsRing)
                         dc.DrawEllipse(null, Frozen(new Pen(Frozen(new SolidColorBrush(color)), 1.3)), new Point(x, y), 3.6, 3.6);
+                    else if (entry.IsHollow)
+                        dc.DrawEllipse(null, Frozen(new Pen(Frozen(new SolidColorBrush(color)), 1.6)), new Point(x, y), 3.6, 3.6);
                     else
                         dc.DrawEllipse(Frozen(new SolidColorBrush(color)), null, new Point(x, y), 4.2, 4.2);
                     dc.DrawText(text, new Point(x + 8, y - text.Height / 2));
@@ -817,6 +834,12 @@ namespace SCPBrowser
                         var center = new Point(cx + box.Jitter[i] * layout.JitterHalfWidth, YToScreen(layout, run.Value));
                         if (run.IsExcluded)
                             dc.DrawEllipse(null, ringPen, center, Math.Max(1.5, layout.DotRadius - 0.4), Math.Max(1.5, layout.DotRadius - 0.4));
+                        else if (run.IsHollow)
+                            // Filled with the background so the dots behind do not show through the ring (none on a
+                            // transparent figure, which has no background color).
+                            dc.DrawEllipse(layout.ForExport && _style.Background == PlotBackground.Transparent ? null : Brush(layout.Background),
+                                Frozen(new Pen(Brush(run.Color), 1.6)), center,
+                                Math.Max(1.5, layout.DotRadius - 0.3), Math.Max(1.5, layout.DotRadius - 0.3));
                         else
                             dc.DrawEllipse(Brush(run.Color), edgePen, center, layout.DotRadius, layout.DotRadius);
                         if (recordHits)
@@ -903,15 +926,16 @@ namespace SCPBrowser
                     return;
                 var outline = Frozen(new Pen(Frozen(new SolidColorBrush(Color.FromRgb(0x1F, 0x29, 0x37))), 1.4));
                 dc.DrawEllipse(Brushes.White, null, hit.Center, hit.Radius + 2.6, hit.Radius + 2.6);
-                if (_hoverRun.IsExcluded)
+                if (_hoverRun.IsExcluded || _hoverRun.IsHollow)
                     dc.DrawEllipse(null, outline, hit.Center, hit.Radius + 0.6, hit.Radius + 0.6);
                 else
                     dc.DrawEllipse(Brush(_hoverRun.Color), outline, hit.Center, hit.Radius + 0.6, hit.Radius + 0.6);
 
-                string value = $"{_hoverRun.Value.ToString("N0", CultureInfo.CurrentCulture)} {_valueUnit}".Trim();
+                string value = $"{_hoverRun.ValueText ?? _hoverRun.Value.ToString("N0", CultureInfo.CurrentCulture)} {_valueUnit}".Trim();
                 var parts = new List<string> { value };
                 if (_hoverRun.Detail.Length > 0) parts.Add(_hoverRun.Detail);
                 if (_hoverRun.IsExcluded) parts.Add("excluded");
+                if (!string.IsNullOrEmpty(_hoverRun.Note)) parts.Add(_hoverRun.Note);
                 DrawCallout(dc, layout, hit.Center, hit.Radius, Shorten(_hoverRun.RunName, 64), string.Join("  ·  ", parts));
             }
             else if (_hoverBox?.Stats is { } stats)

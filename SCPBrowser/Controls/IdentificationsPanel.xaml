@@ -147,6 +147,20 @@ Location: SCPBrowser/Controls/IdentificationsPanel.xaml
                           ToolTip="One box per plate inside each condition, so a plate effect within a condition shows as a shift between neighbouring boxes"
                           Checked="PlotOption_Changed"
                           Unchecked="PlotOption_Changed"/>
+                <Border x:Name="RemovalSwitch" Style="{StaticResource SegmentTrack}" Margin="0,0,8,0" Visibility="Collapsed"
+                        ToolTip="Identifications as loaded, or what is left after negative-control background removal (the settings below, applied or not). The hover label shows both: kept / identified">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="RawValuesRadio"
+                                     Content="Raw"
+                                     IsChecked="True"
+                                     Style="{StaticResource SegmentStyle}"
+                                     Checked="RemovalRadio_Checked"/>
+                        <RadioButton x:Name="AfterRemovalRadio"
+                                     Content="After removal"
+                                     Style="{StaticResource SegmentStyle}"
+                                     Checked="RemovalRadio_Checked"/>
+                    </StackPanel>
+                </Border>
                 <Border x:Name="MetricSwitch" Style="{StaticResource SegmentTrack}">
                     <StackPanel Orientation="Horizontal">
                         <RadioButton x:Name="ProteinsRadio"

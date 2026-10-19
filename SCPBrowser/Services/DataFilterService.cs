@@ -414,6 +414,9 @@ namespace SCPBrowser.Services
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
                 PeptidesPerFile = source.PeptidesPerFile
                     .Where(kvp => allowedRawFiles.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                PeptideProteinGroupsPerFile = source.PeptideProteinGroupsPerFile
+                    .Where(kvp => allowedRawFiles.Contains(kvp.Key))
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
             };
 

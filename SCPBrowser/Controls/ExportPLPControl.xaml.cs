@@ -572,6 +572,48 @@ namespace SCPBrowser
         /// <summary>
         /// Builds the plain-text provenance block shared by the report file and the PLP sidecar.
         /// </summary>
+        /// <summary>
+        /// The blanks, the rule and its effect, as applied to the data this report describes (the settings saved and
+        /// applied on the last load; changes previewed in the Conditions tab but not applied are not in effect).
+        /// </summary>
+        private static void AppendNegativeControls(StringBuilder sb, BackgroundRemovalResult? applied, CultureInfo inv)
+        {
+            if (applied == null)
+            {
+                sb.AppendLine("    None: no condition is marked as a negative control, so the data are as loaded.");
+                return;
+            }
+            var plan = applied.Plan;
+            var s = plan.Settings;
+            sb.AppendLine(ReportLine("Negative-control conditions", string.Join(", ", s.Conditions)));
+            sb.AppendLine(ReportLine("Blank runs", $"{plan.BlankRuns.Count.ToString(inv)} ({plan.SelectedBlanks.Count.ToString(inv)} used for the estimate, " +
+                                                   $"{(plan.BlankRuns.Count - plan.SelectedBlanks.Count).ToString(inv)} left out)"));
+            foreach (var run in plan.BlankRuns.Where(r => !plan.SelectedBlanks.Contains(r)).OrderBy(r => r, StringComparer.Ordinal))
+                sb.AppendLine("    left out of the estimate: " + run);
+            sb.AppendLine(ReportLine("Blank runs in the analyses", s.ExcludeBlankRunsFromAnalysis ? "left out" : "kept"));
+            if (!s.RemovesBackground)
+            {
+                sb.AppendLine(ReportLine("Background removal", "off"));
+                return;
+            }
+            sb.AppendLine(ReportLine("Background removal", "on"));
+            sb.AppendLine(ReportLine("Frequency rule", s.UseFrequency
+                ? $"remove a protein found in at least {(s.MinFraction * 100).ToString("0.##", inv)}% of the selected blanks" : "off"));
+            sb.AppendLine(ReportLine("Intensity rule", s.UseIntensity
+                ? $"remove a measurement below {s.IntensityFactor.ToString("0.##", inv)} x the {(s.BlankLevel == Models.BlankLevelStatistic.Max ? "max" : "median")} blank level" : "off"));
+            sb.AppendLine(ReportLine("Blanks apply to", s.PerPlate ? "their own plate (plates without a selected blank use all of them)" : "the whole project"));
+            foreach (var scope in plan.Scopes)
+                sb.AppendLine($"    {scope.Name}{(scope.UsesProjectBlanks ? " (all selected blanks)" : "")}: {scope.SelectedBlanks.Count.ToString(inv)} blank(s), " +
+                              $"{scope.BlankProteins.Count.ToString(inv)} proteins in them, {scope.FrequentProteins.Count.ToString(inv)} removed by the frequency rule");
+            int removed = applied.MeasurementsRemovedByFrequency + applied.MeasurementsRemovedByIntensity;
+            sb.AppendLine(ReportLine("Measurements removed", $"{removed.ToString(inv)} of {applied.MeasurementsTotal.ToString(inv)} protein measurements " +
+                                                             $"({applied.MeasurementsRemovedByFrequency.ToString(inv)} by frequency, {applied.MeasurementsRemovedByIntensity.ToString(inv)} by intensity)"));
+            sb.AppendLine(ReportLine("Proteins with no measurement left", applied.ProteinsRemovedEverywhere.ToString(inv)));
+            sb.AppendLine();
+            sb.AppendLine("    Applied after loading and the 1% FDR filter and before every filter and analysis; the peptides");
+            sb.AppendLine("    seen only under a removed protein are removed with it. The imported data are not changed.");
+        }
+
         private async Task<string> BuildAnalysisReportAsync()
         {
             var options = BuildOptions();
@@ -680,6 +722,12 @@ namespace SCPBrowser
             sb.AppendLine("    The contaminant-ratio cutoff and the lasso outline are session-only state and are");
             sb.AppendLine("    not persisted with the project; the run list at the end of this report is the only");
             sb.AppendLine("    durable record of which cells this selection contained.");
+
+            // --- Negative controls ---
+            sb.AppendLine();
+            sb.AppendLine("Negative controls (background removal)");
+            sb.AppendLine("--------------------------------------");
+            AppendNegativeControls(sb, (Window.GetWindow(this) as MainWindow)?.AppliedBackgroundRemoval, inv);
 
             // --- Dimensionality reduction ---
             sb.AppendLine();

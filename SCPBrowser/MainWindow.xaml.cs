@@ -102,6 +102,11 @@ namespace SCPBrowser
             // box plots of identifications per run read their values from it. The plots take plate colors from
             // PlateFilterControl (the single source) and condition colors from the Explorer legend.
             ProjectBrowserDialog.LoadedDataSource = () => MainControlTab.LoadedData;
+
+            // The Conditions tab marks negative controls and previews their background removal on the loaded data;
+            // applying them rebuilds the analyses from memory.
+            ProjectBrowserDialog.AppliedRemovalSource = () => MainControlTab.BackgroundRemoval;
+            ProjectBrowserDialog.NegativeControlsApplied += ProjectBrowserDialog_NegativeControlsApplied;
             ProjectBrowserDialog.PlateColorSource = () => PlateFilterControl.GetPlateColorMapById();
             ProjectBrowserDialog.ConditionColorSource = () => PeptideTicTab.GetBioConditionColorMap();
 
@@ -2210,7 +2215,11 @@ namespace SCPBrowser
         /// Loads the given data files and waits for everything the load triggers, under the wait screen. The caller hides
         /// the overlay afterwards.
         /// </summary>
-        private async Task LoadProjectDataAsync(List<string> paths)
+        private Task LoadProjectDataAsync(List<string> paths) =>
+            RunProjectLoadAsync(() => MainControlTab.LoadDataFromProject(paths, _projectReferenceDatabasePath));
+
+        // A load, or a rebuild of the analyses from the loaded data, and everything its DataLoaded triggers.
+        private async Task RunProjectLoadAsync(Func<Task> load)
         {
             _postLoadWork = Task.CompletedTask;
             IsLoadingProjectData = true;
@@ -2220,13 +2229,44 @@ namespace SCPBrowser
             LoadingOverlay.BeginHold();
             try
             {
-                await MainControlTab.LoadDataFromProject(paths, _projectReferenceDatabasePath);
+                await load();
                 await _postLoadWork;
             }
             finally
             {
                 LoadingOverlay.EndHold();
                 IsLoadingProjectData = false;
+            }
+        }
+
+        /// <summary>What negative-control background removal did on the last load (null when no negative control applies).</summary>
+        public BackgroundRemovalResult? AppliedBackgroundRemoval => MainControlTab.BackgroundRemoval;
+
+        // Set when the negative controls changed the data the cells are classified on, so the next classification
+        // recomputes instead of serving the predictions stored for the old data.
+        private bool _reclassifyAfterNegativeControls;
+
+        private async void ProjectBrowserDialog_NegativeControlsApplied(object? sender, EventArgs e)
+        {
+            if (!_hasOpenProject) return;
+            try
+            {
+                _reclassifyAfterNegativeControls = true;
+                MainControlTab.ClearCellTypePredictions();
+                await RunProjectLoadAsync(() => MainControlTab.ReapplyNegativeControlsAsync());
+                if (ProjectBrowserDialog.Visibility == Visibility.Visible)
+                {
+                    LoadingOverlay.SetProgress("Refreshing project browser...");
+                    await ProjectBrowserDialog.RefreshConditionsAsync();
+                }
+                LoadingOverlay.Hide();
+                await UpdatePipelineStatusAsync();
+            }
+            catch (Exception ex)
+            {
+                LoadingOverlay.Hide();
+                MessageBox.Show($"Applying the negative controls failed:\n\n{ex.Message}", "Negative Controls",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2520,13 +2560,15 @@ namespace SCPBrowser
                 var keyMarkers = ProjectBrowserDialog.GetKeyMarkers();
                 var excludedCellTypes = ProjectBrowserDialog.GetExcludedCellTypes();
                 var priorWeights = ProjectBrowserDialog.GetPriorWeights();
+                bool recompute = _reclassifyAfterNegativeControls;
+                _reclassifyAfterNegativeControls = false;
                 var predictions = await MainControlTab.GetCellTypePredictionsAsync(
                     proteomicsData,
                     _projectReferenceDatabasePath,
                     importId.Value,
                     progressReporter,
                     keyMarkers,
-                    forceRecompute: false,
+                    forceRecompute: recompute,
                     excludedCellTypes,
                     priorWeights);
 
@@ -2602,13 +2644,15 @@ namespace SCPBrowser
                 var keyMarkers = ProjectBrowserDialog.GetKeyMarkers();
                 var excludedCellTypes = ProjectBrowserDialog.GetExcludedCellTypes();
                 var priorWeights = ProjectBrowserDialog.GetPriorWeights();
+                bool recompute = _reclassifyAfterNegativeControls;
+                _reclassifyAfterNegativeControls = false;
                 var predictions = await MainControlTab.GetCellTypePredictionsAsync(
                     proteomicsData,
                     _projectReferenceDatabasePath,
                     importId.Value,
                     progressReporter,
                     keyMarkers,
-                    forceRecompute: false,
+                    forceRecompute: recompute,
                     excludedCellTypes,
                     priorWeights);
 

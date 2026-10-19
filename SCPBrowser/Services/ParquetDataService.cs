@@ -94,6 +94,14 @@ namespace SCPBrowser.Services
         public Dictionary<string, string[]> PeptidesPerFile { get; set; } = new();
 
         /// <summary>
+        /// For each run, the protein groups each peptide sequence was identified under, so that removing a protein from
+        /// a run (negative-control background removal) also removes the peptides seen only under it. One map per report
+        /// file, shared by that file's runs, holding every group a sequence was seen under anywhere in the file. Empty
+        /// for a gene matrix.
+        /// </summary>
+        public Dictionary<string, Dictionary<string, string[]>> PeptideProteinGroupsPerFile { get; set; } = new();
+
+        /// <summary>
         /// Distinct protein groups and peptides identified across the given runs, each counted once however many of the
         /// runs saw it. A run missing from this data had no identification pass the filters and adds nothing. A count is
         /// null when this data holds no per-run identities for it (peptides of a gene matrix) or knows none of the runs.
@@ -454,6 +462,8 @@ namespace SCPBrowser.Services
                     mergedData.ProteinsPerFile[kvp.Key] = kvp.Value;
                 foreach (var kvp in additionalData.PeptidesPerFile)
                     mergedData.PeptidesPerFile[kvp.Key] = kvp.Value;
+                foreach (var kvp in additionalData.PeptideProteinGroupsPerFile)
+                    mergedData.PeptideProteinGroupsPerFile[kvp.Key] = kvp.Value;
 
                 // Merge TotalIonCurrentPerFile (the guard above rules out a key collision)
                 foreach (var kvp in additionalData.TotalIonCurrentPerFile)
@@ -546,6 +556,7 @@ namespace SCPBrowser.Services
             var ticByFile = new Dictionary<string, double>();
             var targetProteinTicByFile = new Dictionary<string, double>();
             var proteinQuantMatrix = new Dictionary<string, Dictionary<string, double>>();
+            var peptideProteinGroups = new Dictionary<string, string[]>(StringComparer.Ordinal);
 
             using (Stream fileStream = File.OpenRead(filePath))
             {
@@ -697,6 +708,16 @@ namespace SCPBrowser.Services
                                 {
                                     peptides.Add(peptide);
                                     filePeptides.Add(peptide);
+
+                                    if (!string.IsNullOrEmpty(protein))
+                                    {
+                                        ref var groups = ref System.Runtime.InteropServices.CollectionsMarshal
+                                            .GetValueRefOrAddDefault(peptideProteinGroups, peptide, out bool seen);
+                                        if (!seen)
+                                            groups = new[] { protein };
+                                        else if (Array.IndexOf(groups, protein) < 0)
+                                            groups = [.. groups, protein];
+                                    }
                                 }
 
                                 if (ticParsed[row])
@@ -733,6 +754,7 @@ namespace SCPBrowser.Services
                 data.ProteinsPerFile[rawFile] = proteinsByFile[rawFile].ToArray();
                 data.PeptidesPerFile[rawFile] = peptidesByFile[rawFile].ToArray();
                 data.TotalIonCurrentPerFile[rawFile] = ticByFile[rawFile];
+                data.PeptideProteinGroupsPerFile[rawFile] = peptideProteinGroups;
 
                 if (mapping.TargetProteinIdentifiers != null && mapping.TargetProteinIdentifiers.Count > 0)
                 {

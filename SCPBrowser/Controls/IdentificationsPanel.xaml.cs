@@ -25,6 +25,19 @@ namespace SCPBrowser
         Condition
     }
 
+    /// <summary>
+    /// The negative-control view of the plot: which runs are blanks, which blanks are left out of the background
+    /// estimate, and each run's counts after background removal.
+    /// </summary>
+    public sealed class NegativeControlOverlay
+    {
+        public IReadOnlySet<string> BlankRuns { get; init; } = new HashSet<string>();
+        public IReadOnlySet<string> LeftOutBlanks { get; init; } = new HashSet<string>();
+
+        /// <summary>Per-run counts after removal; null when no removal is set.</summary>
+        public IReadOnlyDictionary<string, RunRemovalSummary>? Removal { get; init; }
+    }
+
     public partial class IdentificationsPanel : UserControl
     {
         /// <summary>
@@ -48,13 +61,18 @@ namespace SCPBrowser
         private IReadOnlyList<PlateInfo> _plates = Array.Empty<PlateInfo>();
         private ProteomicsData? _data;
         private IReadOnlySet<string> _excludedRuns = new HashSet<string>();
+        private NegativeControlOverlay? _negativeControls;
         private List<ResolvedRun> _plottedRuns = new();
         private bool _isGeneMatrix;
         private int _lastNotLoaded, _lastNotShown;
         private string _lastNotShownReason = string.Empty;
 
-        /// <summary>A database run with the value plotted for it.</summary>
-        private sealed record ResolvedRun(RawFileInfo File, int Value, bool IsExcluded, bool HasNoIdentifications);
+        /// <summary>
+        /// A database run with the value plotted for it. Raw is the count as loaded and Kept the count after background
+        /// removal (null without removal); Value is the one plotted.
+        /// </summary>
+        private sealed record ResolvedRun(RawFileInfo File, int Value, bool IsExcluded, bool HasNoIdentifications,
+            int Raw = 0, int? Kept = null, bool IsBlank = false, bool IsLeftOutBlank = false);
 
         public IdentificationsPanel()
         {
@@ -139,6 +157,25 @@ namespace SCPBrowser
 
         private bool UsePeptides => !_isGeneMatrix && PeptidesRadio.IsChecked == true;
 
+        /// <summary>
+        /// Marks the blank runs (hollow when left out of the background estimate) and gives each run its counts after
+        /// background removal, shown with the Raw / After removal switch. Null clears the view.
+        /// </summary>
+        public void SetNegativeControls(NegativeControlOverlay? overlay)
+        {
+            _negativeControls = overlay;
+            bool hasRemoval = overlay?.Removal != null;
+            RemovalSwitch.Visibility = hasRemoval ? Visibility.Visible : Visibility.Collapsed;
+            if (!hasRemoval && AfterRemovalRadio.IsChecked == true)
+                RawValuesRadio.IsChecked = true; // rebuilds
+            else
+                Rebuild();
+        }
+
+        private bool ShowAfterRemoval => _negativeControls?.Removal != null && AfterRemovalRadio.IsChecked == true;
+
+        private void RemovalRadio_Checked(object sender, RoutedEventArgs e) => Rebuild();
+
         private void ApplyGrouping()
         {
             if (SplitByPlateCheckBox == null)
@@ -207,7 +244,14 @@ namespace SCPBrowser
                 Value = run.Value,
                 Color = color,
                 IsExcluded = run.IsExcluded,
-                Detail = detail
+                Detail = detail,
+                IsHollow = run.IsLeftOutBlank,
+                ValueText = run.Kept.HasValue
+                    ? $"{run.Kept.Value.ToString("N0", CultureInfo.CurrentCulture)} / {run.Raw.ToString("N0", CultureInfo.CurrentCulture)}"
+                    : null,
+                Note = run.IsLeftOutBlank ? "blank left out of the estimate (click to use it)"
+                    : run.IsBlank ? "blank used for the estimate (click to leave it out)"
+                    : null
             };
 
             var categories = new List<BoxPlotCategory>();
@@ -324,6 +368,8 @@ namespace SCPBrowser
             int excluded = _plottedRuns.Count(r => r.IsExcluded);
             if (excluded > 0)
                 legend.Add(new BoxPlotLegendEntry { Label = "Excluded", IsRing = true });
+            if (_plottedRuns.Any(r => r.IsLeftOutBlank))
+                legend.Add(new BoxPlotLegendEntry { Label = "Blank left out", IsHollow = true, Color = PlotColors.NoPlate });
 
             Plot.EmptyMessage = _grouping == IdentificationGrouping.Plate
                 ? "No plates with runs in this project yet."
@@ -347,16 +393,26 @@ namespace SCPBrowser
                 .Where(rf => data.ProteinCountPerFile.ContainsKey(rf.RawFileName))
                 .Select(rf => rf.ImportId)
                 .ToHashSet();
+            var nc = _negativeControls;
+            bool after = ShowAfterRemoval;
 
             var runs = new List<ResolvedRun>(_rawFiles.Count);
             int notLoaded = 0;
             foreach (var rf in _rawFiles)
             {
                 bool excluded = _excludedRuns.Contains(rf.RawFileName);
+                bool isBlank = nc != null && nc.BlankRuns.Contains(rf.RawFileName);
+                bool leftOut = isBlank && nc!.LeftOutBlanks.Contains(rf.RawFileName);
                 if (counts.TryGetValue(rf.RawFileName, out int value))
-                    runs.Add(new ResolvedRun(rf, value, excluded, HasNoIdentifications: false));
+                {
+                    int? kept = null;
+                    if (nc?.Removal != null && nc.Removal.TryGetValue(rf.RawFileName, out var summary))
+                        kept = peptides ? summary.KeptPeptides : summary.KeptProteins;
+                    runs.Add(new ResolvedRun(rf, after && kept.HasValue ? kept.Value : value, excluded, HasNoIdentifications: false,
+                        Raw: value, Kept: kept, IsBlank: isBlank, IsLeftOutBlank: leftOut));
+                }
                 else if (loadedImports.Contains(rf.ImportId))
-                    runs.Add(new ResolvedRun(rf, 0, excluded, HasNoIdentifications: true));
+                    runs.Add(new ResolvedRun(rf, 0, excluded, HasNoIdentifications: true, IsBlank: isBlank, IsLeftOutBlank: leftOut));
                 else
                     notLoaded++;
             }
@@ -383,6 +439,11 @@ namespace SCPBrowser
                 parts.Add(points == PlotPoints.All
                     ? $"{Plural(excluded, "manually excluded " + unit)} {(excluded == 1 ? "is" : "are")} drawn as {(excluded == 1 ? "a ring" : "rings")} and left out of the boxes and n."
                     : $"{Plural(excluded, "manually excluded " + unit)} {(excluded == 1 ? "is" : "are")} left out of the boxes and n.");
+            if (ShowAfterRemoval)
+                parts.Add("Values after negative-control background removal; the hover label shows kept / identified.");
+            int leftOut = _plottedRuns.Count(r => r.IsLeftOutBlank);
+            if (leftOut > 0 && points == PlotPoints.All)
+                parts.Add($"{Plural(leftOut, "blank " + unit)} left out of the background estimate {(leftOut == 1 ? "is" : "are")} drawn hollow and stay in the box; click a blank to leave it out or use it.");
             if (notShown > 0)
                 parts.Add($"{Plural(notShown, unit)} {notShownReason} {(notShown == 1 ? "is" : "are")} not shown.");
             if (notLoaded > 0)

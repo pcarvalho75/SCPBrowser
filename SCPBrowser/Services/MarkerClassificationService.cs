@@ -25,6 +25,13 @@ namespace SCPBrowser.Services
 
         public MarkerClassificationService(string projectDbPath) : base(projectDbPath) { }
 
+        /// <summary>
+        /// The negative-control background removal applied to the loaded data, or null. This service reads per-cell
+        /// intensities from protein_quant_summary, not from the loaded data, so without it a protein removed from a
+        /// cell as background would still count as one of its markers, and blank runs would be classified as cells.
+        /// </summary>
+        public BackgroundRemovalResult? BackgroundRemoval { get; set; }
+
         // ------------------------------------------------------------------ CRUD
 
         public async Task<List<MarkerClass>> GetClassesAsync()
@@ -290,6 +297,7 @@ namespace SCPBrowser.Services
             var contaminants = new HashSet<string>(await pdb.LoadContaminantsAsync(), StringComparer.OrdinalIgnoreCase);
 
             progress?.Report("Reading protein intensities per cell...");
+            var removal = BackgroundRemoval;
             var levels = new Dictionary<string, Dictionary<string, double>>(StringComparer.OrdinalIgnoreCase);
             await WithConnectionAsync(async conn =>
             {
@@ -303,6 +311,7 @@ namespace SCPBrowser.Services
                 {
                     string cell = r.GetString(0), group = r.GetString(1);
                     if (contaminants.Count > 0 && contaminants.Contains(group)) continue; // excluded: user-flagged contaminant
+                    if (removal != null && !removal.Keeps(cell, group)) continue; // negative-control background, or a blank
                     double v = r.GetDouble(2);
                     if (!levels.TryGetValue(cell, out var gl)) { gl = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase); levels[cell] = gl; }
                     foreach (var g in GenesForGroup(group, protGene))

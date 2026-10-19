@@ -84,6 +84,7 @@
 
   <h2>Analysis</h2>
   <a href="#qc">Quality control</a>
+  <a href="#negcontrols">Negative controls (blanks)</a>
   <a href="#reference">Reference profiles</a>
   <a href="#classification">Cell-type classification</a>
   <a href="#validation">Validating the classifier</a>
@@ -303,6 +304,56 @@ experiment.</div>
 <p>Uncheck a run in the selected-points grid, or exclude from the Cell Plate Viewer. <b>Clear Exclusions</b>
 restores every manually excluded run in the project — it is not limited to the current selection, and it
 cannot be undone.</p>
+
+<!-- ───────────────────────────── NEGATIVE CONTROLS ───────────────────────────── -->
+<h2 id="negcontrols">Negative controls and background removal</h2>
+<p>Blank wells (buffer or probe, no cell) show what a run picks up without a cell: carry-over, reagents,
+contaminants. Mark them as negative controls and SCPBrowser can remove that background from every run.</p>
+
+<h3>Marking the blanks</h3>
+<p>Open <span class="path">Project Browser ▸ Conditions</span>, select the condition that holds the blanks and
+tick <b>Negative control (blanks)</b>. Several conditions can be marked. The marking is saved in the project.</p>
+
+<h3>Choosing the blanks used for the estimate</h3>
+<p>A contaminated blank makes real proteins look like background. In the <b>Negative Controls</b> tab, untick it
+in the list, or click its dot in the plot (click again to use it). Blanks left out are drawn as hollow rings and
+stay in the box. <b>Suggest outliers</b> leaves out the blanks with far more protein groups than the others (above
+the median plus 3 robust deviations and above 1.5 times the median); check them in the plot before applying.</p>
+
+<h3>The rules</h3>
+<ul>
+  <li><b>Frequency</b> (on by default): a protein found in at least X% of the selected blanks (default 50%) is
+      removed from every run the blanks apply to.</li>
+  <li><b>Intensity</b> (off by default): each protein gets a blank level, the highest (default) or the median
+      intensity over the selected blanks that detect it. In each run, a measurement below k times that level
+      (default 3) is removed.</li>
+  <li>With both rules, frequency applies first and the intensity rule judges what is left.</li>
+  <li><b>Blanks apply to</b> their own plate (default) or the whole project. A plate without a selected blank uses
+      all the selected blanks, and the preview says so. With a single blank on a plate, every protein in it is
+      removed from that plate's runs.</li>
+  <li><b>Leave the blank runs out of the cell analyses</b> (on by default): blanks are not cells, so they are kept
+      out of the Explorer, classification, the protein matrix and the exports.</li>
+</ul>
+
+<h3>Preview, then apply</h3>
+<p>Every change is previewed at once: per plate, the proteins seen in the blanks and how many the rules remove;
+the share of protein measurements removed; and, per condition, the median share of protein groups its runs lose.
+The plot's <b>After removal</b> switch shows the counts after removal, and the hover label shows both numbers
+(kept / identified). The <b>Blank Proteins</b> tab lists every protein of the selected blanks with how many blanks
+and cells detect it, its blank level, the median cell-to-blank intensity ratio and what the rules do to it;
+<b>Export CSV</b> saves the table.</p>
+<p><b>Apply and reprocess</b> saves the settings and rebuilds every analysis from the data already in memory (no
+file is read again). Removal runs after loading and the 1% FDR filter, before every filter and analysis: the
+peptides seen only under a removed protein are removed with it, and each run's total ion current drops by the
+signal removed. The imported data never change: switching the removal off restores them, and the plot's
+<b>Raw</b> view always shows the counts as loaded.</p>
+<div class="note"><b>Read the preview before applying</b>
+In deep single-cell data, blanks share many proteins with real cells, usually the most abundant ones. A rule that
+removes half of a condition's proteins is usually too aggressive: raise the percentage, use the intensity rule
+on its own, or leave out contaminated blanks.</div>
+<p>The Analysis Report and the PatternLab export record the blanks, the rules and their effect. Marker-only
+classification honours the removal as well. The protein coverage viewer reads peptides straight from the
+parquet files, so it still shows every identified peptide.</p>
 
 <!-- ───────────────────────────── REFERENCE ───────────────────────────── -->
 <h2 id="reference">Reference profiles</h2>

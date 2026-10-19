@@ -32,9 +32,19 @@ namespace SCPBrowser.Controls
             public bool Enabled { get; set; } = true;
         }
 
+        /// <summary>The negative-control background removal applied on the last load (null when none). Set by the host.</summary>
+        public Func<BackgroundRemovalResult?>? AppliedRemovalSource { get; set; }
+
         public MarkerClassesControl()
         {
             InitializeComponent();
+        }
+
+        // Read at every pass: the negative controls can be re-applied while this tab stays open.
+        private void PassBackgroundRemoval()
+        {
+            if (_service != null)
+                _service.BackgroundRemoval = AppliedRemovalSource?.Invoke();
         }
 
         public async Task LoadAsync(string dbPath)
@@ -145,6 +155,7 @@ namespace SCPBrowser.Controls
             try
             {
                 var progress = new Progress<string>(m => StatusText.Text = m);
+                PassBackgroundRemoval();
                 var summary = await _service.ClassifyAndStoreAsync(progress);
                 if (summary.Count == 0)
                 {
@@ -187,6 +198,7 @@ namespace SCPBrowser.Controls
             {
                 // Class/marker enable state is persisted live on the Classes tab; just re-score with the current set.
                 var progress = new Progress<string>(s => DiagStatusText.Text = s);
+                PassBackgroundRemoval();
                 await _service.ClassifyAndStoreAsync(progress);
                 await RefreshDiagnosticsAsync();
                 CellsClassified?.Invoke(this, EventArgs.Empty); // recolour the main-screen scatter
@@ -202,6 +214,7 @@ namespace SCPBrowser.Controls
             try
             {
                 var progress = new Progress<string>(s => DiagStatusText.Text = s);
+                PassBackgroundRemoval();
                 _diag = await _service.ComputeDiagnosticsAsync(progress);
                 ClassBars.ItemsSource = _diag.ClassCounts;
                 PrevalenceBars.ItemsSource = _diag.Markers.Take(12).ToList();

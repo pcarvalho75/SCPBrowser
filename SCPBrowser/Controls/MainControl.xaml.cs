@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using SCPBrowser.GOTools;
+using SCPBrowser.Models;
 using SCPBrowser.Services;
 
 namespace SCPBrowser
@@ -53,6 +54,12 @@ namespace SCPBrowser
         /// and that copy drops the runs of unselected plates (and their ProteinsPerFile/PeptidesPerFile entries).
         /// </summary>
         public ProteomicsData? LoadedData => _loadedData;
+
+        /// <summary>
+        /// What negative-control background removal did on the last load (null when the project has no negative control
+        /// that changes the analyses). The analyses start from its cleaned copy; <see cref="LoadedData"/> stays as loaded.
+        /// </summary>
+        public BackgroundRemovalResult? BackgroundRemoval { get; private set; }
 
         public MainControl()
         {
@@ -487,6 +494,73 @@ namespace SCPBrowser
                 }
                 _loadedData = _currentData;
 
+                await CompleteLoadAsync(mainWindow, loadReferences: true);
+            }
+            catch (Exception ex)
+            {
+                var mainWindow = Window.GetWindow(this) as MainWindow;
+                if (mainWindow != null)
+                {
+                    mainWindow.LoadingOverlay.Hide();
+                }
+
+                MessageBox.Show($"Error reading file: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusText.Text = "Error loading file";
+            }
+        }
+
+        /// <summary>
+        /// Rebuilds the analysis data from the data already loaded, after the negative controls or their background
+        /// removal changed, and raises DataLoaded so every view is rebuilt from it, as after a load. No file is read again.
+        /// </summary>
+        public async Task ReapplyNegativeControlsAsync()
+        {
+            if (_loadedData == null)
+                return;
+            var mainWindow = Window.GetWindow(this) as MainWindow;
+            mainWindow?.LoadingOverlay.SetMessage("Applying Negative Controls...");
+            mainWindow?.LoadingOverlay.SetProgress("Removing background...");
+            mainWindow?.LoadingOverlay.Show();
+            _currentData = _loadedData;
+            await CompleteLoadAsync(mainWindow, loadReferences: false);
+        }
+
+        // Background removal from the project's negative controls, on the data as loaded. Returns the data the
+        // analyses start from: a cleaned copy, or the loaded data itself when no negative control changes anything.
+        private async Task<ProteomicsData> BuildAnalysisDataAsync(ProteomicsData loaded)
+        {
+            BackgroundRemoval = null;
+            if (string.IsNullOrEmpty(_projectDatabasePath))
+                return loaded;
+
+            var settings = await NegativeControlSettings.LoadAsync(new ProjectDatabaseService(_projectDatabasePath));
+            if (!settings.ChangesAnalysis)
+                return loaded;
+
+            var runToPlate = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var rf in await new ParquetDataService(_projectDatabasePath).GetRawFilesAsync())
+                if (rf.PlateId.HasValue)
+                    runToPlate[rf.RawFileName] = rf.PlateId.Value;
+            var plateNames = (await new PlateService(_projectDatabasePath).GetPlatesAsync())
+                .ToDictionary(p => p.PlateId, p => p.PlateName);
+
+            var result = await System.Threading.Tasks.Task.Run(() =>
+                BackgroundRemovalService.Apply(loaded, BackgroundRemovalService.BuildPlan(loaded, settings, runToPlate, plateNames)));
+            BackgroundRemoval = result;
+            return result.Cleaned ?? loaded;
+        }
+
+        // The part of a load that follows reading the files: negative-control background removal, the summary cards,
+        // the histogram, references and GO enrichment, then DataLoaded. Also run on its own when the negative controls
+        // are re-applied (loadReferences false: the reference database has not changed).
+        private async Task CompleteLoadAsync(MainWindow? mainWindow, bool loadReferences)
+        {
+            try
+            {
+                mainWindow?.LoadingOverlay.SetProgress("Applying negative controls...");
+                _currentData = await BuildAnalysisDataAsync(_loadedData!);
+
                 TotalRunsText.Text = _currentData.TotalRawFiles.ToString();
                 TotalProteinsText.Text = _currentData.TotalProteinGroups.ToString();
                 TotalPeptidesText.Text = _currentData.TotalPeptides.ToString();
@@ -522,7 +596,8 @@ namespace SCPBrowser
                     mainWindow.LoadingOverlay.SetProgress("Loading reference databases...");
                 }
 
-                await LoadTranscriptomicReferenceAsync();
+                if (loadReferences)
+                    await LoadTranscriptomicReferenceAsync();
                 await LoadGoEnrichmentAsync();
 
                 // Both loaders report a missing reference / unconfigured GO database into StatusText, and this line
@@ -538,6 +613,9 @@ namespace SCPBrowser
                 StatusText.Text = missing.Count > 0
                     ? $"{loadSummary} — {string.Join("; ", missing)}"
                     : loadSummary;
+                string? removal = BackgroundRemoval?.Describe();
+                if (!string.IsNullOrEmpty(removal))
+                    StatusText.Text += $" | Negative controls: {removal}";
 
                 if (mainWindow != null)
                 {
@@ -550,15 +628,10 @@ namespace SCPBrowser
             }
             catch (Exception ex)
             {
-                var mainWindow = Window.GetWindow(this) as MainWindow;
-                if (mainWindow != null)
-                {
-                    mainWindow.LoadingOverlay.Hide();
-                }
-
-                MessageBox.Show($"Error reading file: {ex.Message}", "Error",
+                mainWindow?.LoadingOverlay.Hide();
+                MessageBox.Show($"Error preparing the loaded data: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusText.Text = "Error loading file";
+                StatusText.Text = "Error preparing the loaded data";
             }
         }
 

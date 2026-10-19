@@ -47,6 +47,20 @@ namespace SCPBrowser
             }
         }
 
+        /// <summary>What the applied negative controls did on the last load, for the Conditions tab (null when none apply).</summary>
+        public Func<BackgroundRemovalResult?>? AppliedRemovalSource
+        {
+            get => ConditionsBrowser.AppliedRemovalSource;
+            set
+            {
+                ConditionsBrowser.AppliedRemovalSource = value;
+                MarkerClassesBrowser.AppliedRemovalSource = value;
+            }
+        }
+
+        /// <summary>Raised when the Conditions tab saved new negative-control settings and the analyses must be rebuilt.</summary>
+        public event EventHandler? NegativeControlsApplied;
+
         /// <summary>Plate colors by plate id for the box plots; the host passes PlateFilterControl's, the single source.</summary>
         public Func<IReadOnlyDictionary<int, Color>?>? PlateColorSource
         {
@@ -83,6 +97,7 @@ namespace SCPBrowser
 
             // Subscribe to condition delete so we can refresh sibling controls and bubble up
             ConditionsBrowser.ConditionDeleted += ConditionsBrowser_ConditionDeleted;
+            ConditionsBrowser.NegativeControlsApplied += (s, e) => NegativeControlsApplied?.Invoke(this, e);
 
             // Bubble the Marker Classes "classified" event up to MainWindow so it can colour the scatter.
             MarkerClassesBrowser.CellsClassified += (s, e) => MarkerCellsClassified?.Invoke(this, e);
@@ -177,6 +192,13 @@ namespace SCPBrowser
             _projectDbService = new ProjectDatabaseService(_databasePath);
             await LoadAllChildControlsAsync(_databasePath);
         }
+
+        /// <summary>
+        /// Reloads only the Conditions tab (its negative controls and plot), keeping its selection: after the
+        /// negative controls were applied nothing else in this dialog changed.
+        /// </summary>
+        public Task RefreshConditionsAsync() =>
+            string.IsNullOrEmpty(_databasePath) ? Task.CompletedTask : ConditionsBrowser.ReloadKeepingSelectionAsync();
 
         private async Task LoadAllChildControlsAsync(string databasePath)
         {
